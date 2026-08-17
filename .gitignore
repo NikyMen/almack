@@ -1,0 +1,13 @@
+node_modules
+.next
+.env
+.env.local
+*.db
+*.db-journal
+drizzle/meta
+next-env.d.ts
+.wa-auth/
+# Artefactos de build (los regenera `pnpm build`; no deben versionarse)
+*.tsbuildinfo
+# Comprobantes subidos desde la app (Compras) — se sirven por /api/uploads
+/uploads
