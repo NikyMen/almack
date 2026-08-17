@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build",
+    "vercel-build": "pnpm db:push && next build",
     "start": "next start",
     "lint": "next lint",
     "db:push": "tsx src/db/migrate.ts",
