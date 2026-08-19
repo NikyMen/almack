@@ -9,13 +9,13 @@ export function Footer() {
         <div>
           <Logo />
           <p className="mt-4 max-w-sm text-sm leading-relaxed text-white/60">
-            Catálogo online con precios y disponibilidad actualizados desde GestorIA.
+            Catálogo online con precios y disponibilidad actualizados desde Almack.
           </p>
         </div>
         <div>
           <h4 className="mb-3 font-semibold text-white">Navegación</h4>
           <ul className="space-y-2 text-sm">
-            <li><Link href="/tienda" className="hover:text-brand-gold">Inicio</Link></li>
+            <li><Link href="/" className="hover:text-brand-gold">Inicio</Link></li>
             <li><Link href="/tienda/productos" className="hover:text-brand-gold">Productos</Link></li>
             <li><Link href="/tienda/ofertas" className="hover:text-brand-gold">Ofertas</Link></li>
           </ul>
@@ -30,7 +30,7 @@ export function Footer() {
         </div>
       </div>
       <div className="border-t border-white/10 py-4 text-center text-xs text-white/45">
-        © {new Date().getFullYear()} Consultoría Digital · Tienda administrada con GestorIA
+        © {new Date().getFullYear()} · Hecho por Nicolas Mendez
       </div>
     </footer>
   );

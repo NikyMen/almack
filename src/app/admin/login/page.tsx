@@ -15,14 +15,14 @@ export default function LoginPage() {
         <div className="mb-8 flex flex-col items-center text-center">
           <Image
             src="/brand/logo-cd.webp"
-            alt="Consultoría Digital"
+            alt="Almack"
             width={240}
             height={160}
             priority
             className="h-auto w-52"
           />
           <p className="mt-2 text-sm text-slate-400">
-            <span className="font-semibold text-lime">GestorIA</span> · ERP con Inteligencia Artificial
+            <span className="font-semibold text-lime">Almack</span> · Tu kiosco amigo
           </p>
         </div>
 
@@ -33,7 +33,7 @@ export default function LoginPage() {
         </div>
 
         <p className="mt-6 text-center text-xs text-slate-500">
-          © {new Date().getFullYear()} Consultoría Digital · Cerebros jóvenes, ideas poderosas
+          © {new Date().getFullYear()} · Hecho por Nicolas Mendez
         </p>
       </div>
     </div>

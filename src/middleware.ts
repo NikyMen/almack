@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 const COOKIE = "gestoria_session";
 
 // Chequeo liviano de presencia de cookie (Edge runtime, sin crypto).
-// La verificación real de la firma se hace en src/app/(app)/layout.tsx.
+// La verificación real de la firma se hace en el layout protegido de /admin.
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
@@ -19,17 +19,17 @@ export function middleware(req: NextRequest) {
   }
 
   const hasCookie = Boolean(req.cookies.get(COOKIE)?.value);
-  const isLogin = pathname === "/login";
+  const isLogin = pathname === "/admin/login";
 
   if (!hasCookie && !isLogin) {
     const url = req.nextUrl.clone();
-    url.pathname = "/login";
+    url.pathname = "/admin/login";
     return NextResponse.redirect(url);
   }
 
   if (hasCookie && isLogin) {
     const url = req.nextUrl.clone();
-    url.pathname = "/";
+    url.pathname = "/admin";
     return NextResponse.redirect(url);
   }
 

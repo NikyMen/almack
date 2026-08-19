@@ -20,17 +20,17 @@ export type Modulo = { key: ModuloKey; label: string; href: string; oculto?: boo
 // desactiva la ruta ni el backend: /whatsapp y /tienda siguen funcionando si se
 // entra por URL. Volver a mostrarlos = borrar la línea `oculto: true`.
 export const MODULOS: Modulo[] = [
-  { key: "panel", label: "Panel", href: "/" },
-  { key: "caja", label: "Caja", href: "/caja" },
-  { key: "stock", label: "Stock", href: "/stock" },
-  { key: "ventas", label: "Ventas", href: "/ventas" },
-  { key: "compras", label: "Compras", href: "/compras" },
-  { key: "clientes", label: "Clientes", href: "/clientes" },
-  { key: "facturacion", label: "Facturación", href: "/facturacion" },
+  { key: "panel", label: "Panel", href: "/admin" },
+  { key: "caja", label: "Caja", href: "/admin/caja" },
+  { key: "stock", label: "Stock", href: "/admin/stock" },
+  { key: "ventas", label: "Ventas", href: "/admin/ventas" },
+  { key: "compras", label: "Compras", href: "/admin/compras" },
+  { key: "clientes", label: "Clientes", href: "/admin/clientes" },
+  { key: "facturacion", label: "Facturación", href: "/admin/facturacion" },
   { key: "tienda", label: "Tienda online", href: "/tienda", oculto: true },
-  { key: "whatsapp", label: "WhatsApp", href: "/whatsapp", oculto: true },
-  { key: "ia", label: "Asistente IA", href: "/ia" },
-  { key: "equipo", label: "Equipo", href: "/equipo" },
+  { key: "whatsapp", label: "WhatsApp", href: "/admin/whatsapp", oculto: true },
+  { key: "ia", label: "Asistente IA", href: "/admin/ia" },
+  { key: "equipo", label: "Equipo", href: "/admin/equipo" },
 ];
 
 export const MODULOS_VISIBLES = MODULOS.filter((m) => !m.oculto);
@@ -71,5 +71,5 @@ export function tieneAcceso(u: UsuarioActual | null, modulo: ModuloKey): boolean
 export function primerModuloPermitido(u: UsuarioActual): string {
   if (u.rol === "admin") return "/";
   const m = MODULOS_VISIBLES.find((x) => u.permisos.includes(x.key));
-  return m?.href ?? "/login";
+  return m?.href ?? "/admin/login";
 }

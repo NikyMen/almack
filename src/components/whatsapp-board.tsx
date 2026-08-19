@@ -42,7 +42,7 @@ import {
   guardarPresupuesto,
   marcarVentaExitosa,
   refrescarAvatar,
-} from "@/app/(app)/whatsapp/actions";
+} from "@/app/admin/(protected)/whatsapp/actions";
 
 export type EtapaDTO = { id: number; nombre: string; color: string; orden: number; esExito: boolean };
 type MiembroDTO = { id: number; nombre: string };

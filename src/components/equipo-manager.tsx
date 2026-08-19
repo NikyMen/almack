@@ -8,7 +8,7 @@ import {
   actualizarUsuario,
   eliminarUsuario,
   type UsuarioInput,
-} from "@/app/(app)/equipo/actions";
+} from "@/app/admin/(protected)/equipo/actions";
 import { Plus, Pencil, Trash2, Loader2, X, ShieldCheck } from "lucide-react";
 
 type UsuarioRow = {

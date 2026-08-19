@@ -26,7 +26,7 @@ export default async function Panel() {
         title="Panel"
         subtitle="Indicadores clave de tu negocio."
         action={
-          <Link href="/ia" className="btn-primary">
+          <Link href="/admin/ia" className="btn-primary">
             <Sparkles className="h-4 w-4" /> Preguntar a la IA
           </Link>
         }

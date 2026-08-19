@@ -14,10 +14,10 @@ export async function login(_prev: unknown, formData: FormData) {
     return { error: "Usuario o contraseña incorrectos." };
   }
   await createSession(user);
-  redirect("/");
+  redirect("/admin");
 }
 
 export async function logout() {
   await destroySession();
-  redirect("/login");
+  redirect("/admin/login");
 }

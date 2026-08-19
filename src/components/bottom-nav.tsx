@@ -71,7 +71,7 @@ export function BottomNav({ usuario }: { usuario: UsuarioActual }) {
       // para no perder lo que hay cargado.
       window.dispatchEvent(new CustomEvent("gestoria:scan", { detail: codigo }));
     } else {
-      router.push(`/caja?scan=${encodeURIComponent(codigo)}`);
+      router.push(`/admin/caja?scan=${encodeURIComponent(codigo)}`);
     }
   }
 
@@ -89,7 +89,7 @@ export function BottomNav({ usuario }: { usuario: UsuarioActual }) {
           {/* Botón central elevado: abre la cámara */}
           <div className="relative w-16 shrink-0">
             <button
-              onClick={() => (puedeCaja ? setEscaneando(true) : router.push("/caja"))}
+              onClick={() => (puedeCaja ? setEscaneando(true) : router.push("/admin/caja"))}
               className="absolute -top-5 left-1/2 flex h-14 w-14 -translate-x-1/2 flex-col items-center justify-center rounded-full bg-lime text-navy shadow-lg shadow-lime/30 transition active:scale-95"
               aria-label="Escanear código de barras"
             >

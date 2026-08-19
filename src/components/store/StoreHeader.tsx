@@ -11,7 +11,7 @@ import { useUI } from "@/store/ui";
 import { cn } from "@/lib/cn";
 
 const navLinks = [
-  { href: "/tienda", label: "Inicio" },
+  { href: "/", label: "Inicio" },
   { href: "/tienda/productos", label: "Productos" },
   { href: "/tienda/ofertas", label: "Ofertas" },
 ];
@@ -34,14 +34,14 @@ export function StoreHeader() {
           <Menu size={24} />
         </button>
 
-        <Link href="/tienda" aria-label="Inicio de la tienda Consultoría Digital">
+        <Link href="/" aria-label="Inicio de la tienda Almack">
           <Logo />
         </Link>
 
         {/* Navegación horizontal solo en escritorio */}
         <nav className="hidden items-center gap-1 md:flex">
           {navLinks.map(({ href, label }) => {
-            const active = href === "/tienda" ? pathname === "/tienda" : pathname.startsWith(href);
+            const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
             return (
               <Link
                 key={href}

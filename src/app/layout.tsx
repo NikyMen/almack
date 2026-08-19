@@ -14,7 +14,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "GestorIA — ERP con Inteligencia Artificial",
+  title: "Almack — Tu kiosco amigo",
   description:
     "Gestioná ventas, compras, stock, clientes y facturación. La IA transforma tus productos en contenido listo para vender.",
   icons: { icon: "/brand/favicon.png" },
@@ -27,7 +27,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   viewportFit: "cover",
-  themeColor: "#0c1015",
+  themeColor: "#ff711f",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

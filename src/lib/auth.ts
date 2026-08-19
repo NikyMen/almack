@@ -127,14 +127,14 @@ export async function getUsuarioActual(): Promise<UsuarioActual | null> {
 // Guard para usar al inicio de las páginas del route group (app).
 export async function requireAcceso(modulo: ModuloKey): Promise<UsuarioActual> {
   const u = await getUsuarioActual();
-  if (!u) redirect("/login");
+  if (!u) redirect("/admin/login");
   if (!tieneAcceso(u, modulo)) redirect(primerModuloPermitido(u));
   return u;
 }
 
 export async function requireAdmin(): Promise<UsuarioActual> {
   const u = await getUsuarioActual();
-  if (!u) redirect("/login");
+  if (!u) redirect("/admin/login");
   if (u.rol !== "admin") redirect(primerModuloPermitido(u));
   return u;
 }

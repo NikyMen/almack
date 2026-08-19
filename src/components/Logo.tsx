@@ -1,13 +1,13 @@
 import Image from "next/image";
 import { cn } from "@/lib/cn";
 
-/** Logo oficial de Consultoría Digital, recortado visualmente sin duplicar el asset. */
+/** Logo de Almack, recortado visualmente sin duplicar el asset. */
 export function Logo({ className }: { className?: string; dark?: boolean }) {
   return (
     <div className={cn("relative h-10 w-[212px] overflow-hidden rounded-lg bg-brand-ink", className)}>
       <Image
         src="/brand/logo-cd.webp"
-        alt="Consultoría Digital"
+        alt="Almack"
         width={600}
         height={400}
         priority

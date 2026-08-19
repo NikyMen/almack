@@ -7,7 +7,7 @@ import {
 import {
   listarConversaciones, obtenerMensajes, enviarMensaje, eliminarConversacion,
   type ConversacionResumen, type MensajeChat,
-} from "@/app/(app)/ia/actions";
+} from "@/app/admin/(protected)/ia/actions";
 
 const EJEMPLOS = [
   "¿Qué productos tienen stock bajo?",

@@ -15,7 +15,7 @@ import { crearCompra } from "@/app/actions";
 import {
   subirImagenCompra, transcribirImagenCompra, editarCompra, cambiarEstadoCompra,
   eliminarCompra, historialCompra,
-} from "@/app/(app)/compras/actions";
+} from "@/app/admin/(protected)/compras/actions";
 
 export function ComprasTabla({ compras }: { compras: Compra[] }) {
   const [nueva, setNueva] = useState(false);

@@ -8,7 +8,7 @@ import { FondoApp } from "@/components/fx/fondo-app";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const usuario = await getUsuarioActual();
-  if (!usuario) redirect("/login");
+  if (!usuario) redirect("/admin/login");
 
   return (
     <NavProvider>

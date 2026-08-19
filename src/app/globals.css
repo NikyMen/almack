@@ -1,26 +1,26 @@
 @import "tailwindcss";
 
 @theme {
-  /* Paleta de marca Consultoría Digital */
-  --color-navy: #0c1015;
-  --color-navy-deep: #080b0f;
-  --color-lime: #c5ed1b;
-  --color-lime-soft: #e4f78a;
-  --color-ink: #0c1015;
+  /* Paleta Almack inspirada en la imagen de marca */
+  --color-navy: #003f31;
+  --color-navy-deep: #002a21;
+  --color-lime: #ff711f;
+  --color-lime-soft: #ffb07d;
+  --color-ink: #003f31;
 
   /* Escala "brand" mapeada a la lima de la marca para reutilizar utilidades */
-  --color-brand-50: #f6fbe1;
-  --color-brand-100: #eef7c4;
-  --color-brand-500: #c5ed1b;
-  --color-brand-600: #a8cc12;
-  --color-brand-700: #6f8c00;
-  --color-brand-ink: #171717;
-  --color-brand-red: #c8102e;
-  --color-brand-dark: #940d23;
-  --color-brand-gold: #f6b40a;
-  --color-brand-cream: #f8f3e9;
-  --shadow-soft: 0 8px 24px rgb(23 23 23 / 0.08);
-  --shadow-card: 0 14px 32px rgb(23 23 23 / 0.14);
+  --color-brand-50: #fff1e8;
+  --color-brand-100: #ffd9c2;
+  --color-brand-500: #ff711f;
+  --color-brand-600: #e85b0d;
+  --color-brand-700: #b64100;
+  --color-brand-ink: #003f31;
+  --color-brand-red: #ff711f;
+  --color-brand-dark: #c94d09;
+  --color-brand-gold: #ff9a5b;
+  --color-brand-cream: #f4eee4;
+  --shadow-soft: 0 8px 24px rgb(0 63 49 / 0.08);
+  --shadow-card: 0 14px 32px rgb(0 63 49 / 0.14);
   --radius-xl2: 1.25rem;
 
   --font-sans: var(--font-inter), system-ui, "Segoe UI", Arial, sans-serif;
@@ -32,7 +32,7 @@
 }
 
 body {
-  background: #f5f7f0;
+  background: #f4eee4;
   color: var(--color-ink);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
@@ -84,15 +84,15 @@ h1, h2, h3, .font-display {
   @apply w-full rounded-xl border border-black/10 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-brand-red focus:ring-2 focus:ring-brand-red/15;
 }
 
-/* La tienda pública usa exclusivamente la identidad de Consultoría Digital. */
+/* La tienda pública usa la identidad Almack. */
 .gestoria-store {
-  --color-brand-red: #0c1015;
-  --color-brand-dark: #080b0f;
-  --color-brand-gold: #c5ed1b;
-  --color-brand-cream: #f5f7f0;
-  --color-brand-ink: #0c1015;
-  --shadow-soft: 0 8px 24px rgb(12 16 21 / 0.08);
-  --shadow-card: 0 14px 32px rgb(12 16 21 / 0.16);
+  --color-brand-red: #ff711f;
+  --color-brand-dark: #c94d09;
+  --color-brand-gold: #ff9a5b;
+  --color-brand-cream: #f4eee4;
+  --color-brand-ink: #003f31;
+  --shadow-soft: 0 8px 24px rgb(0 63 49 / 0.08);
+  --shadow-card: 0 14px 32px rgb(0 63 49 / 0.16);
 }
 
 /* Tecla del atajo, en el modal de cobro */

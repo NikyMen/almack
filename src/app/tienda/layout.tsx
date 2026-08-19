@@ -10,8 +10,8 @@ import { Toaster } from "@/components/store/Toaster";
 import { FloatingActions } from "@/components/store/FloatingActions";
 
 export const metadata: Metadata = {
-  title: "Tienda online · Consultoría Digital",
-  description: "Comprá online los productos publicados desde GestorIA, con stock y precios actualizados.",
+  title: "Almack · Tu kiosco amigo",
+  description: "Comprá online en Almack con stock y precios actualizados.",
 };
 
 export default function TiendaLayout({ children }: { children: ReactNode }) {

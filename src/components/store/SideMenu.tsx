@@ -50,7 +50,7 @@ export function SideMenu() {
         <div className="border-t border-black/5 px-4 py-4 text-sm text-brand-ink/70">
           <p className="flex items-start gap-2">
             <ShieldCheck size={17} className="mt-0.5 shrink-0 text-brand-red" />
-            Precios y stock sincronizados directamente con GestorIA.
+            Precios y stock sincronizados directamente con Almack.
           </p>
         </div>
       </aside>
