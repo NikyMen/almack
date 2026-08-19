@@ -28,7 +28,7 @@ export default async function LoginPage() {
             width={720}
             height={360}
             priority
-            className="h-auto w-60 object-contain"
+            className="h-auto w-60 rounded-2xl object-contain shadow-lg shadow-black/40 ring-1 ring-white/10"
           />
           <p className="mt-2 text-sm text-slate-400">
             <span className="font-semibold text-lime">Almack</span> · Tu kiosco amigo

@@ -5,6 +5,7 @@ export type ModuloKey =
   | "panel"
   | "caja"
   | "stock"
+  | "movimientos"
   | "ventas"
   | "compras"
   | "clientes"
@@ -23,6 +24,7 @@ export const MODULOS: Modulo[] = [
   { key: "panel", label: "Panel", href: "/admin" },
   { key: "caja", label: "Caja", href: "/admin/caja" },
   { key: "stock", label: "Stock", href: "/admin/stock" },
+  { key: "movimientos", label: "Mover stock", href: "/admin/movimientos" },
   { key: "ventas", label: "Ventas", href: "/admin/ventas" },
   { key: "compras", label: "Compras", href: "/admin/compras" },
   { key: "clientes", label: "Clientes", href: "/admin/clientes" },
@@ -60,6 +62,14 @@ export function esAdmin(u: UsuarioActual | null): boolean {
   return u?.rol === "admin";
 }
 
+// El superadmin es el dueño del sistema: el único que puede saltar de una
+// sucursal a otra y dar de alta o renombrar locales. Hoy es "cualquier usuario
+// con rol admin" (que en la práctica es uno solo). Si algún día hay varios
+// admins y hace falta distinguir, este es el único lugar a cambiar.
+export function esSuperAdmin(u: UsuarioActual | null): boolean {
+  return u?.rol === "admin";
+}
+
 export function tieneAcceso(u: UsuarioActual | null, modulo: ModuloKey): boolean {
   if (!u) return false;
   if (u.rol === "admin") return true;
@@ -72,4 +82,17 @@ export function primerModuloPermitido(u: UsuarioActual): string {
   if (u.rol === "admin") return "/";
   const m = MODULOS_VISIBLES.find((x) => u.permisos.includes(x.key));
   return m?.href ?? "/admin/login";
+}
+
+// Qué módulo corresponde a una ruta. Se queda con la coincidencia más larga
+// porque "/admin" (Panel) es prefijo de todas las rutas del panel: con un
+// startsWith suelto, Panel quedaba marcado como activo en todas las secciones.
+export function moduloActivo(path: string): ModuloKey | null {
+  let mejor: Modulo | null = null;
+  for (const m of MODULOS) {
+    const base = m.href.endsWith("/") ? m.href : `${m.href}/`;
+    if (path !== m.href && !path.startsWith(base)) continue;
+    if (!mejor || m.href.length > mejor.href.length) mejor = m;
+  }
+  return mejor?.key ?? null;
 }

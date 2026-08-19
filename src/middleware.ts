@@ -10,6 +10,7 @@ export function middleware(req: NextRequest) {
   // Rutas públicas (sin sesión): la tienda online para clientes y los endpoints
   // de MercadoPago (creación de preferencia + webhook de confirmación).
   if (
+    pathname === "/" ||
     pathname.startsWith("/store") ||
     pathname.startsWith("/tienda") ||
     pathname.startsWith("/api/mp") ||

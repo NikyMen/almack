@@ -4,6 +4,21 @@ import { sql } from "drizzle-orm";
 const now = sql`(strftime('%s','now'))`;
 
 // ---------------------------------------------------------------------------
+// Sucursales (locales)
+// ---------------------------------------------------------------------------
+// Cada local con stock propio. El panel arranca en "Todas" (sin sucursal
+// elegida) y desde el logo se entra a una en particular; ver src/lib/sucursal.ts.
+export const sucursales = sqliteTable("sucursales", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  nombre: text("nombre").notNull(),
+  direccion: text("direccion").notNull().default(""),
+  telefono: text("telefono").notNull().default(""),
+  activo: integer("activo", { mode: "boolean" }).notNull().default(true),
+  orden: integer("orden").notNull().default(0),
+  creadoEn: integer("creado_en", { mode: "timestamp" }).default(now),
+});
+
+// ---------------------------------------------------------------------------
 // Productos / Stock
 // ---------------------------------------------------------------------------
 export const productos = sqliteTable("productos", {
@@ -33,6 +48,54 @@ export const tiendaProductoMeta = sqliteTable("tienda_producto_meta", {
   ofertaDelDia: integer("oferta_del_dia", { mode: "boolean" }).notNull().default(false),
 });
 
+// Desglose del stock por local. `productos.stock` sigue siendo el TOTAL de la
+// empresa (lo usan la caja, la tienda y las métricas históricas) y esta tabla
+// dice cuánto de ese total está en cada sucursal. Las dos se escriben juntas
+// desde src/lib/stock.ts: nunca tocar una sin la otra.
+export const stockSucursal = sqliteTable("stock_sucursal", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  productoId: integer("producto_id").notNull().references(() => productos.id),
+  sucursalId: integer("sucursal_id").notNull().references(() => sucursales.id),
+  cantidad: integer("cantidad").notNull().default(0),
+});
+
+// Remito interno: mercadería que se va de una sucursal a otra. Se aplica al
+// stock en el momento de crearse (no hay estado "en tránsito").
+export const stockMovimientos = sqliteTable("stock_movimientos", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  origenId: integer("origen_id").notNull().references(() => sucursales.id),
+  destinoId: integer("destino_id").notNull().references(() => sucursales.id),
+  usuarioId: integer("usuario_id").references(() => usuarios.id),
+  // Snapshot del nombre: el movimiento tiene que seguir siendo legible aunque
+  // el usuario se dé de baja (mismo criterio que compra_historial).
+  usuarioNombre: text("usuario_nombre").notNull().default(""),
+  nota: text("nota").notNull().default(""),
+  unidades: integer("unidades").notNull().default(0),
+  creadoEn: integer("creado_en", { mode: "timestamp" }).default(now),
+});
+
+export const stockMovimientoItems = sqliteTable("stock_movimiento_items", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  movimientoId: integer("movimiento_id").notNull().references(() => stockMovimientos.id),
+  productoId: integer("producto_id").notNull().references(() => productos.id),
+  descripcion: text("descripcion").notNull().default(""), // snapshot del nombre
+  cantidad: integer("cantidad").notNull().default(1),
+});
+
+// Gastos operativos. Nacieron para el flete de un traslado (nafta, peaje, changa)
+// pero sirven para cualquier gasto suelto de una sucursal.
+export const gastos = sqliteTable("gastos", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  sucursalId: integer("sucursal_id").references(() => sucursales.id),
+  // Si el gasto salió de un traslado, queda enganchado para poder ver el costo
+  // real de mover la mercadería.
+  movimientoId: integer("movimiento_id").references(() => stockMovimientos.id),
+  concepto: text("concepto").notNull().default(""),
+  categoria: text("categoria").notNull().default("otros"), // ver src/lib/gastos.ts
+  monto: real("monto").notNull().default(0),
+  fecha: integer("fecha", { mode: "timestamp" }).default(now),
+});
+
 // ---------------------------------------------------------------------------
 // Clientes
 // ---------------------------------------------------------------------------
@@ -52,6 +115,9 @@ export const clientes = sqliteTable("clientes", {
 export const ventas = sqliteTable("ventas", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   clienteId: integer("cliente_id").references(() => clientes.id),
+  // Local donde se hizo la venta. Null = anterior a las sucursales (o venta
+  // online sin local asignado).
+  sucursalId: integer("sucursal_id").references(() => sucursales.id),
   total: real("total").notNull().default(0),
   estado: text("estado").notNull().default("completada"), // completada | pendiente | cancelada
   canal: text("canal").notNull().default("local"), // local | online
@@ -101,6 +167,9 @@ export const ventaItems = sqliteTable("venta_items", {
 export const compras = sqliteTable("compras", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   proveedor: text("proveedor").notNull().default(""),
+  // Sucursal que recibe la mercadería: es a la que se le suma el stock al
+  // confirmar la recepción del remito.
+  sucursalId: integer("sucursal_id").references(() => sucursales.id),
   total: real("total").notNull().default(0),
   // pedido | falta_controlar | verificado (legacy: recibida | pendiente)
   estado: text("estado").notNull().default("pedido"),
@@ -122,6 +191,36 @@ export const compraHistorial = sqliteTable("compra_historial", {
   campo: text("campo").notNull().default(""),
   antes: text("antes").notNull().default(""),
   despues: text("despues").notNull().default(""),
+  creadoEn: integer("creado_en", { mode: "timestamp" }).default(now),
+});
+
+// Borrador de recepción: lo que se leyó de la foto del remito (o se agregó a
+// mano) ANTES de tocar el stock. Vive aparte de compra_items porque una línea
+// puede todavía no tener producto: puede ser uno nuevo, o uno dudoso que una
+// persona tiene que resolver. Recién al confirmar se mueve el stock, y ahí
+// se escriben los compra_items.
+export const compraLineas = sqliteTable("compra_lineas", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  compraId: integer("compra_id").notNull().references(() => compras.id),
+  descripcion: text("descripcion").notNull().default(""),
+  codigo: text("codigo").notNull().default(""), // SKU / código de barras del remito
+  cantidad: integer("cantidad").notNull().default(1),
+  precioUnit: real("precio_unit").notNull().default(0), // costo unitario
+  // Solo se usa al crear un producto nuevo; en los existentes no se toca nada
+  // del precio de venta.
+  precioVenta: real("precio_venta").notNull().default(0),
+  productoId: integer("producto_id").references(() => productos.id),
+  // match | duda | nuevo (ver src/lib/recepcion.ts)
+  estado: text("estado").notNull().default("nuevo"),
+  // JSON con los productos parecidos y su puntaje, para el menú de "Revisar"
+  candidatos: text("candidatos").notNull().default("[]"),
+  origen: text("origen").notNull().default("ia"), // ia | manual
+  // Una persona confirmó explícitamente esta línea (obligatorio para crear un
+  // producto nuevo o para aceptar un match dudoso).
+  confirmado: integer("confirmado", { mode: "boolean" }).notNull().default(false),
+  // Ya se aplicó al stock: la línea queda como historia y no se vuelve a sumar.
+  aplicado: integer("aplicado", { mode: "boolean" }).notNull().default(false),
+  aplicadoEn: integer("aplicado_en", { mode: "timestamp" }),
   creadoEn: integer("creado_en", { mode: "timestamp" }).default(now),
 });
 
@@ -251,6 +350,11 @@ export const iaMensajes = sqliteTable("ia_mensajes", {
   creadoEn: integer("creado_en", { mode: "timestamp" }).default(now),
 });
 
+export type Sucursal = typeof sucursales.$inferSelect;
+export type StockSucursal = typeof stockSucursal.$inferSelect;
+export type StockMovimiento = typeof stockMovimientos.$inferSelect;
+export type StockMovimientoItem = typeof stockMovimientoItems.$inferSelect;
+export type Gasto = typeof gastos.$inferSelect;
 export type Producto = typeof productos.$inferSelect;
 export type TiendaProductoMeta = typeof tiendaProductoMeta.$inferSelect;
 export type TiendaPedido = typeof tiendaPedidos.$inferSelect;
@@ -260,6 +364,7 @@ export type Cliente = typeof clientes.$inferSelect;
 export type Venta = typeof ventas.$inferSelect;
 export type Compra = typeof compras.$inferSelect;
 export type CompraHistorial = typeof compraHistorial.$inferSelect;
+export type CompraLinea = typeof compraLineas.$inferSelect;
 export type Factura = typeof facturas.$inferSelect;
 export type Usuario = typeof usuarios.$inferSelect;
 export type WaEtapa = typeof waEtapas.$inferSelect;

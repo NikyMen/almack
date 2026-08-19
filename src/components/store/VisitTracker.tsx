@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { createClientId } from "@/lib/client-id";
 import { track } from "@/lib/track";
 
 /**
@@ -13,14 +14,14 @@ export function VisitTracker() {
     const sessionKey = "er-presence-session";
     let sessionId = "";
     try {
-      sessionId = localStorage.getItem(sessionKey) ?? crypto.randomUUID();
+      sessionId = localStorage.getItem(sessionKey) ?? createClientId();
       localStorage.setItem(sessionKey, sessionId);
       if (!sessionStorage.getItem(visitKey)) {
         sessionStorage.setItem(visitKey, "1");
         track("visit", { path: window.location.pathname });
       }
     } catch {
-      sessionId = crypto.randomUUID();
+      sessionId = createClientId();
       track("visit", { path: window.location.pathname });
     }
 

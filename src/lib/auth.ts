@@ -63,7 +63,8 @@ export function credencialesConfiguradas(): boolean {
   return Boolean(process.env.AUTH_PASSWORD && process.env.AUTH_SECRET);
 }
 
-// Verifica primero contra la tabla usuarios; cae al admin por env como respaldo.
+// El administrador configurado por entorno es la credencial autoritativa de
+// recuperación. El resto de los usuarios se valida contra la base.
 export async function checkCredentials(user: string, pass: string): Promise<boolean> {
   // La base puede estar pendiente de migración; en ese caso todavía debe
   // funcionar el usuario bootstrap configurado por entorno.
@@ -73,9 +74,9 @@ export async function checkCredentials(user: string, pass: string): Promise<bool
   } catch {
     u = undefined;
   }
-  if (u && u.activo && verifyPassword(pass, u.passwordHash)) return true;
-  // Respaldo: admin por entorno (sólo si no hay un usuario DB con ese handle)
-  if (!u && user === USER && pass === PASS) return true;
+  if (u && !u.activo) return false;
+  if (user === USER && (!u || u.rol === "admin")) return pass === PASS;
+  if (u && verifyPassword(pass, u.passwordHash)) return true;
   return false;
 }
 

@@ -1,4 +1,4 @@
-// Configuración de PM2 para GestorIA.
+// Configuración de PM2 para Almack.
 //
 // IMPORTANTE: Baileys (WhatsApp) corre dentro de este mismo proceso de Next.js
 // como singleton en globalThis. Por eso DEBE ser una sola instancia en modo
@@ -8,9 +8,9 @@
 module.exports = {
   apps: [
     {
-      name: "gestoria",
+      name: "almack",
       script: "node_modules/next/dist/bin/next",
-      args: "start -p 3300",
+      args: "start -p 3400",
       cwd: __dirname,
       instances: 1, // <- una sola. No tocar.
       exec_mode: "fork", // <- fork, no cluster. No tocar.

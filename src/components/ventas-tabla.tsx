@@ -17,6 +17,8 @@ type Venta = {
   medioPago: string;
   fecha: number | Date | null;
   cliente: string | null;
+  /** Local donde se hizo. Null en las ventas anteriores a las sucursales. */
+  sucursal?: string | null;
 };
 
 const medio = (v: string) => ETIQUETA_MEDIO[v as MedioPago] ?? v;
@@ -36,6 +38,16 @@ export function VentasTabla({
     { key: "id", head: "#", cell: (v) => <span className="text-slate-400">#{v.id}</span>, value: (v) => v.id, sort: true },
     { key: "cliente", head: "Cliente", cell: (v) => <span className="font-medium">{v.cliente ?? "Consumidor final"}</span>, value: (v) => v.cliente ?? "Consumidor final" },
     { key: "canal", head: "Canal", cell: (v) => <Estado value={v.canal} />, value: (v) => v.canal, filter: true },
+    // La columna aparece sola cuando hay ventas con sucursal cargada: en la
+    // vista de un solo local no aporta nada.
+    ...(ventas.some((v) => v.sucursal)
+      ? [{
+          key: "sucursal", head: "Sucursal",
+          cell: (v: Venta) => <span className="text-slate-500">{v.sucursal ?? "—"}</span>,
+          value: (v: Venta) => v.sucursal ?? "—",
+          filter: true,
+        } satisfies Col<Venta>]
+      : []),
     { key: "medioPago", head: "Pago", cell: (v) => <span className="text-slate-500">{medio(v.medioPago)}</span>, value: (v) => medio(v.medioPago), filter: true },
     { key: "estado", head: "Estado", cell: (v) => <Estado value={v.estado} />, value: (v) => v.estado, filter: true },
     { key: "fecha", head: "Fecha", cell: (v) => <span className="text-slate-500">{fecha(v.fecha)}</span>, value: (v) => (v.fecha instanceof Date ? v.fecha.getTime() : Number(v.fecha)), sort: true },

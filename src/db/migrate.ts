@@ -10,11 +10,20 @@ function hashPassword(pass: string): string {
 }
 
 const MODULOS = [
-  "panel", "caja", "stock", "ventas", "compras", "clientes",
+  "panel", "caja", "stock", "movimientos", "ventas", "compras", "clientes",
   "facturacion", "tienda", "whatsapp", "ia", "equipo",
 ];
 
 const statements = [
+  `CREATE TABLE IF NOT EXISTS sucursales (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    nombre TEXT NOT NULL,
+    direccion TEXT NOT NULL DEFAULT '',
+    telefono TEXT NOT NULL DEFAULT '',
+    activo INTEGER NOT NULL DEFAULT 1,
+    orden INTEGER NOT NULL DEFAULT 0,
+    creado_en INTEGER DEFAULT (strftime('%s','now'))
+  )`,
   `CREATE TABLE IF NOT EXISTS productos (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     sku TEXT NOT NULL,
@@ -116,6 +125,23 @@ const statements = [
     texto TEXT NOT NULL DEFAULT '',
     creado_en INTEGER DEFAULT (strftime('%s','now'))
   )`,
+  `CREATE TABLE IF NOT EXISTS compra_lineas (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    compra_id INTEGER NOT NULL REFERENCES compras(id),
+    descripcion TEXT NOT NULL DEFAULT '',
+    codigo TEXT NOT NULL DEFAULT '',
+    cantidad INTEGER NOT NULL DEFAULT 1,
+    precio_unit REAL NOT NULL DEFAULT 0,
+    precio_venta REAL NOT NULL DEFAULT 0,
+    producto_id INTEGER REFERENCES productos(id),
+    estado TEXT NOT NULL DEFAULT 'nuevo',
+    candidatos TEXT NOT NULL DEFAULT '[]',
+    origen TEXT NOT NULL DEFAULT 'ia',
+    confirmado INTEGER NOT NULL DEFAULT 0,
+    aplicado INTEGER NOT NULL DEFAULT 0,
+    aplicado_en INTEGER,
+    creado_en INTEGER DEFAULT (strftime('%s','now'))
+  )`,
   `CREATE TABLE IF NOT EXISTS compra_items (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     compra_id INTEGER NOT NULL REFERENCES compras(id),
@@ -196,6 +222,38 @@ const statements = [
     cantidad INTEGER NOT NULL DEFAULT 1,
     precio_unit REAL NOT NULL DEFAULT 0
   )`,
+  `CREATE TABLE IF NOT EXISTS stock_sucursal (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    producto_id INTEGER NOT NULL REFERENCES productos(id),
+    sucursal_id INTEGER NOT NULL REFERENCES sucursales(id),
+    cantidad INTEGER NOT NULL DEFAULT 0
+  )`,
+  `CREATE TABLE IF NOT EXISTS stock_movimientos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    origen_id INTEGER NOT NULL REFERENCES sucursales(id),
+    destino_id INTEGER NOT NULL REFERENCES sucursales(id),
+    usuario_id INTEGER REFERENCES usuarios(id),
+    usuario_nombre TEXT NOT NULL DEFAULT '',
+    nota TEXT NOT NULL DEFAULT '',
+    unidades INTEGER NOT NULL DEFAULT 0,
+    creado_en INTEGER DEFAULT (strftime('%s','now'))
+  )`,
+  `CREATE TABLE IF NOT EXISTS stock_movimiento_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    movimiento_id INTEGER NOT NULL REFERENCES stock_movimientos(id),
+    producto_id INTEGER NOT NULL REFERENCES productos(id),
+    descripcion TEXT NOT NULL DEFAULT '',
+    cantidad INTEGER NOT NULL DEFAULT 1
+  )`,
+  `CREATE TABLE IF NOT EXISTS gastos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sucursal_id INTEGER REFERENCES sucursales(id),
+    movimiento_id INTEGER REFERENCES stock_movimientos(id),
+    concepto TEXT NOT NULL DEFAULT '',
+    categoria TEXT NOT NULL DEFAULT 'otros',
+    monto REAL NOT NULL DEFAULT 0,
+    fecha INTEGER DEFAULT (strftime('%s','now'))
+  )`,
 ];
 
 // ALTER idempotentes para DBs ya existentes (SQLite no soporta ADD COLUMN IF
@@ -211,6 +269,8 @@ const alters = [
   `ALTER TABLE ventas ADD COLUMN referencia TEXT NOT NULL DEFAULT ''`,
   `ALTER TABLE compras ADD COLUMN imagen TEXT NOT NULL DEFAULT ''`,
   `ALTER TABLE compras ADD COLUMN detalle TEXT NOT NULL DEFAULT ''`,
+  `ALTER TABLE ventas ADD COLUMN sucursal_id INTEGER REFERENCES sucursales(id)`,
+  `ALTER TABLE compras ADD COLUMN sucursal_id INTEGER REFERENCES sucursales(id)`,
 ];
 
 // Índices que importan para las listas más consultadas
@@ -218,8 +278,17 @@ const indices = [
   `CREATE INDEX IF NOT EXISTS idx_ia_mensajes_conv ON ia_mensajes(conversacion_id)`,
   `CREATE INDEX IF NOT EXISTS idx_ia_conv_usuario ON ia_conversaciones(usuario_id)`,
   `CREATE INDEX IF NOT EXISTS idx_compra_hist_compra ON compra_historial(compra_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_compra_lineas_compra ON compra_lineas(compra_id)`,
   `CREATE INDEX IF NOT EXISTS idx_tienda_pedidos_estado ON tienda_pedidos(estado_entrega)`,
   `CREATE INDEX IF NOT EXISTS idx_tienda_meta_oferta ON tienda_producto_meta(oferta_del_dia)`,
+  // Un producto tiene una sola fila por sucursal: el UNIQUE es lo que hace
+  // seguro el upsert de src/lib/stock.ts.
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_stock_sucursal_par ON stock_sucursal(producto_id, sucursal_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_stock_sucursal_suc ON stock_sucursal(sucursal_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_mov_items_mov ON stock_movimiento_items(movimiento_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_gastos_sucursal ON gastos(sucursal_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_ventas_sucursal ON ventas(sucursal_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_compras_sucursal ON compras(sucursal_id)`,
 ];
 
 // Etapas por defecto del kanban (se siembran solo si la tabla está vacía)
@@ -274,6 +343,41 @@ async function migrate() {
   await client.execute(
     "UPDATE wa_contactos SET numero_lead = 'L-' || printf('%04d', id) WHERE numero_lead IS NULL OR numero_lead = ''"
   );
+
+  // Primera sucursal: hasta ahora todo el stock era de un solo local, así que
+  // se crea "Casa Central" y se le adjudica lo que ya había cargado.
+  const { rows: sucs } = await client.execute("SELECT COUNT(*) AS n FROM sucursales");
+  if (Number(sucs[0]?.n ?? 0) === 0) {
+    console.log("Sembrando sucursal inicial…");
+    await client.execute({
+      sql: "INSERT INTO sucursales (nombre, direccion, activo, orden) VALUES (?, '', 1, 0)",
+      args: [process.env.SUCURSAL_INICIAL || "Casa Central"],
+    });
+  }
+
+  // La sucursal más vieja es la que absorbe los datos previos a esta migración.
+  const { rows: base } = await client.execute(
+    "SELECT id FROM sucursales ORDER BY orden, id LIMIT 1"
+  );
+  const sucursalBase = Number(base[0]?.id ?? 0);
+  if (sucursalBase) {
+    // Backfill del desglose: todo producto sin filas por sucursal arranca con
+    // su stock total en la sucursal base.
+    await client.execute({
+      sql: `INSERT INTO stock_sucursal (producto_id, sucursal_id, cantidad)
+            SELECT p.id, ?, p.stock FROM productos p
+            WHERE NOT EXISTS (SELECT 1 FROM stock_sucursal s WHERE s.producto_id = p.id)`,
+      args: [sucursalBase],
+    });
+    await client.execute({
+      sql: "UPDATE ventas SET sucursal_id = ? WHERE sucursal_id IS NULL AND canal <> 'online'",
+      args: [sucursalBase],
+    });
+    await client.execute({
+      sql: "UPDATE compras SET sucursal_id = ? WHERE sucursal_id IS NULL",
+      args: [sucursalBase],
+    });
+  }
 
   // Sembrar usuario admin si la tabla está vacía (login DB desde el arranque;
   // el admin por env sigue funcionando como respaldo)

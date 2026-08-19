@@ -1,6 +1,6 @@
-# Deploy de GestorIA en el VPS (PM2)
+# Deploy de Almack en el VPS (PM2)
 
-App Next.js 15 con WhatsApp (Baileys) embebido en el mismo proceso y base de
+Almack es una app Next.js 15 con WhatsApp (Baileys) embebido en el mismo proceso y base de
 datos libsql en archivo local. Por eso: **un solo proceso, fork, y tres rutas que
 deben persistir**:
 
@@ -8,7 +8,7 @@ deben persistir**:
 |---|---|
 | `gestoria.db` | La base entera |
 | `.wa-auth/` | La sesión de WhatsApp (si no, hay que reescanear el QR) |
-| `uploads/` | Las fotos de los remitos de Compras |
+| `uploads/` | Las fotos de los remitos de Compras y las imágenes de los productos |
 
 Las tres están en `.gitignore`, así que `git pull` no las toca. Si algún día
 movés la app de servidor, copiá esas tres cosas.
@@ -16,7 +16,7 @@ movés la app de servidor, copiá esas tres cosas.
 ## Requisitos en el VPS (una vez)
 
 ```bash
-# Node 20 LTS
+# Node 20 o superior
 curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
 apt-get install -y nodejs
 
@@ -27,8 +27,10 @@ npm i -g pnpm pm2
 ## Primer deploy
 
 ```bash
-cd /opt/gestoria
-git clone <URL_DEL_REPO> .
+mkdir -p /var/www
+cd /var/www
+git clone <URL_DEL_REPO> almack
+cd almack
 
 # Dependencias (incluye binario nativo de libsql, prebuilt para linux-x64)
 pnpm install --frozen-lockfile
@@ -37,10 +39,15 @@ pnpm install --frozen-lockfile
 cp .env.example .env
 nano .env
 
-# En producción, el bloque de IA debe contener:
+# Para habilitar IA, el bloque debe contener:
 # DEEPSEEK_API_KEY=tu_clave_deepseek
 # DEEPSEEK_MODEL=deepseek-v4-flash
-# No hace falta instalar otro SDK ni configurar MongoDB/PostgreSQL para GestorIA.
+# Para que Compras lea la foto del remito hace falta un modelo con visión. Si el
+# de DeepSeek no la tiene, se agrega solo para ese paso:
+# VISION_API_KEY=...
+# VISION_BASE_URL=...
+# VISION_MODEL=...
+# No hace falta instalar otro SDK ni configurar MongoDB/PostgreSQL.
 
 # Crear el schema y sembrar datos iniciales (usuarios, etapas, etc.)
 pnpm db:setup
@@ -54,20 +61,20 @@ pm2 save                 # guarda la lista de procesos
 pm2 startup              # imprime un comando -> ejecutalo para arrancar al bootear
 ```
 
-La app queda en `http://127.0.0.1:3300` (el puerto lo fija `ecosystem.config.cjs`).
+La app queda en `http://IP_DEL_VPS:3400` (el puerto lo fija `ecosystem.config.cjs`).
 
 ## Redeploys (cuando hacés cambios)
 
 ```bash
-cd /opt/gestoria
-pm2 stop gestoria
+cd /var/www/almack
+pm2 stop almack
 cp gestoria.db "gestoria.db.backup-$(date +%Y%m%d-%H%M%S)"
 cp .env ".env.backup-$(date +%Y%m%d-%H%M%S)"
 git pull
 pnpm install --frozen-lockfile
 pnpm db:push        # solo si cambió el schema (es idempotente: no rompe nada)
 pnpm build
-pm2 start ecosystem.config.cjs --only gestoria
+pm2 start ecosystem.config.cjs --only almack
 ```
 
 > `db:push` solo crea lo que falta (`CREATE TABLE IF NOT EXISTS` + `ALTER`
@@ -75,10 +82,13 @@ pm2 start ecosystem.config.cjs --only gestoria
 
 ## La cámara necesita HTTPS
 
-El escáner de código de barras de la Caja usa `getUserMedia`, que los navegadores
-solo habilitan en contexto seguro. Desde el celular hay que entrar por el dominio
-con HTTPS (ver la sección de nginx + certbot); por IP y `http://` el navegador no
-va a pedir permiso de cámara.
+El escáner de código de barras usa `getUserMedia`, que los navegadores solo
+habilitan en contexto seguro. Lo usan dos pantallas: la Caja (para cobrar) y el
+campo SKU de Stock (para dar de alta un producto leyendo el código del envase).
+
+Desde el celular hay que entrar por el dominio con HTTPS (ver "Cómo llega el
+tráfico"); por IP y `http://` el navegador ni siquiera pide permiso de cámara.
+La única excepción es `localhost`, que el navegador considera seguro igual.
 
 ## Cómo llega el tráfico (importante)
 
@@ -88,7 +98,7 @@ En este VPS conviven varios sitios y **el HTTPS no lo maneja nginx**:
 |---|---|
 | 443 | **Traefik**, en el contenedor `n8n-traefik-1` |
 | 80 | nginx (solo redirige a https) |
-| 3300 | GestorIA, en el host vía PM2 |
+| 3400 | Almack, en el host vía PM2 |
 
 Traefik termina el TLS y emite/renueva los certificados solo, con el resolver
 `mytlschallenge` (desafío TLS-ALPN sobre el 443; no usa el puerto 80). Lee
@@ -100,37 +110,49 @@ nginx que nunca va a poder tomar (el puerto es de Traefik), lo que hace fallar e
 
 ### Publicar el sitio en Traefik
 
-`/docker/n8n/dynamic/gestoria.yml` (el `172.18.0.1` es la IP del host vista desde
+`/docker/n8n/dynamic/almack.yml` (el `172.18.0.1` es la IP del host vista desde
 el contenedor: `docker inspect n8n-traefik-1 --format '{{range .NetworkSettings.Networks}}{{.Gateway}}{{end}}'`):
 
 ```yaml
 http:
   routers:
-    gestoria:
-      rule: "Host(`gestoria.consultoriadigital.io`)"
+    almack:
+      rule: "Host(`almack.consultoriadigital.io`)"
       entryPoints:
         - websecure
-      service: gestoria
+      service: almack
       tls:
         certResolver: mytlschallenge
   services:
-    gestoria:
+    almack:
       loadBalancer:
         servers:
-          - url: "http://172.18.0.1:3300"
+          - url: "http://172.18.0.1:3400"
 ```
 
 Traefik lo toma solo; no hay que reiniciar nada. Se verifica con
-`curl -sSI https://gestoria.consultoriadigital.io/login | head -3` → `HTTP/2 200`.
+`curl -sSI https://almack.consultoriadigital.io/ | head -3` → `HTTP/2 200`.
+
+**Antes que nada tiene que existir el DNS.** Traefik valida el certificado por
+TLS-ALPN contra el dominio real, así que si `almack.consultoriadigital.io` no
+resuelve a `72.60.15.125` la emisión falla y Let's Encrypt empieza a limitar los
+reintentos. En el VPS quedó preparado:
+
+```bash
+/root/almack.yml.pendiente        # el archivo de arriba, listo para copiar
+/root/activar-almack-https.sh     # verifica el DNS, lo copia y espera el cert
+```
+
+Con el registro A ya creado, alcanza con `bash /root/activar-almack-https.sh`.
 
 ### nginx: solo el redirect del puerto 80
 
-`/etc/nginx/sites-available/gestoria`:
+`/etc/nginx/sites-available/almack`:
 
 ```nginx
 server {
     listen 80;
-    server_name gestoria.consultoriadigital.io;
+    server_name almack.consultoriadigital.io;
     return 301 https://$host$request_uri;
 }
 ```
@@ -148,10 +170,10 @@ El proxy de Traefik hoy no fija `client_max_body_size` ni desactiva el buffering
 ## Comandos útiles de PM2
 
 ```bash
-pm2 logs gestoria        # ver logs (incluye [whatsapp] conectado, mensajes, etc.)
+pm2 logs almack          # ver logs (incluye [whatsapp] conectado, mensajes, etc.)
 pm2 status
-pm2 reload gestoria      # reinicio sin downtime tras un build
-pm2 restart gestoria
+pm2 reload almack        # reinicio sin downtime tras un build
+pm2 restart almack
 ```
 
 ## Por qué NO cluster / NO varias instancias

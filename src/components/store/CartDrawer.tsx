@@ -13,6 +13,7 @@ import {
 import { useCart } from "@/store/cart";
 import { useUI } from "@/store/ui";
 import { formatARS } from "@/lib/format";
+import { createClientId } from "@/lib/client-id";
 import type { CouponQuote } from "@/lib/types";
 
 const CHECKOUT_ATTEMPT_KEY = "gestoria-checkout-attempt";
@@ -128,7 +129,7 @@ export function CartDrawer() {
         checkoutAttempt.current =
           stored?.fingerprint === fingerprint && /^[0-9a-f-]{36}$/i.test(stored.id)
             ? stored
-            : { fingerprint, id: crypto.randomUUID() };
+            : { fingerprint, id: createClientId() };
         sessionStorage.setItem(CHECKOUT_ATTEMPT_KEY, JSON.stringify(checkoutAttempt.current));
       }
       const res = await fetch("/api/mp/preference", {

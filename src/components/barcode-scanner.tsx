@@ -6,6 +6,7 @@
 // (iOS Safari, Firefox). ZXing solo se descarga si hace falta.
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { X, Zap, ZapOff, Loader2, CameraOff } from "lucide-react";
 
 const FORMATOS = ["ean_13", "ean_8", "upc_a", "upc_e", "code_128", "code_39", "itf", "qr_code"];
@@ -38,10 +39,12 @@ export function BarcodeScanner({
   onDetect,
   onClose,
   titulo = "Escanear código",
+  ayuda = "Apuntá al código de barras del producto. Se agrega solo al carrito.",
 }: {
   onDetect: (codigo: string) => void;
   onClose: () => void;
   titulo?: string;
+  ayuda?: string;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [estado, setEstado] = useState<"iniciando" | "listo" | "error">("iniciando");
@@ -188,7 +191,12 @@ export function BarcodeScanner({
     }
   }
 
-  return (
+  // Los modales de la app usan backdrop-blur, que los vuelve bloque contenedor
+  // de sus descendientes `fixed`. Montamos el escáner en el body para que
+  // siempre ocupe la pantalla completa, se abra desde donde se abra.
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
     <div className="fixed inset-0 z-[70] flex flex-col bg-navy-deep" role="dialog" aria-modal="true" aria-label={titulo}>
       <div className="flex items-center justify-between px-4 py-3 text-white">
         <span className="text-sm font-semibold">{titulo}</span>
@@ -241,9 +249,8 @@ export function BarcodeScanner({
         )}
       </div>
 
-      <p className="safe-b px-6 py-4 text-center text-xs text-slate-400">
-        Apuntá al código de barras del producto. Se agrega solo al carrito.
-      </p>
-    </div>
+      <p className="safe-b px-6 py-4 text-center text-xs text-slate-400">{ayuda}</p>
+    </div>,
+    document.body
   );
 }

@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { useTiendaCart } from "@/store/tienda-cart";
 import { useTiendaUI } from "@/store/tienda-ui";
+import { createClientId } from "@/lib/client-id";
 import type { TiendaProducto } from "@/lib/tienda";
 import { money } from "@/lib/format";
 
@@ -175,7 +176,7 @@ function TiendaCartDrawer({ onClose }: { onClose: () => void }) {
     setLoading(true);
     setError("");
     try {
-      const attemptId = checkoutId || crypto.randomUUID();
+      const attemptId = checkoutId || createClientId();
       setCheckoutId(attemptId);
       const response = await fetch("/api/mp/preference", {
         method: "POST",

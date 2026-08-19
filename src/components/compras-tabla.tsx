@@ -10,14 +10,25 @@ import { FilterableTable, Col } from "@/components/filterable-table";
 import { Estado } from "@/components/ui";
 import { money, fecha, fechaHora } from "@/lib/format";
 import { ESTADOS_COMPRA, ETIQUETA_ESTADO } from "@/lib/compras";
+import { CompraRecepcion } from "@/components/compra-recepcion";
 import type { Compra, CompraHistorial } from "@/db/schema";
 import { crearCompra } from "@/app/actions";
+import type { Sucursal } from "@/db/schema";
 import {
   subirImagenCompra, transcribirImagenCompra, editarCompra, cambiarEstadoCompra,
   eliminarCompra, historialCompra,
 } from "@/app/admin/(protected)/compras/actions";
 
-export function ComprasTabla({ compras }: { compras: Compra[] }) {
+export function ComprasTabla({
+  compras,
+  sucursales,
+  sucursalActivaId,
+}: {
+  compras: Compra[];
+  sucursales: Sucursal[];
+  /** null = el panel está en "Todas": hay que preguntar qué local recibe. */
+  sucursalActivaId: number | null;
+}) {
   const [nueva, setNueva] = useState(false);
   const [detalle, setDetalle] = useState<Compra | null>(null);
   const router = useRouter();
@@ -59,7 +70,13 @@ export function ComprasTabla({ compras }: { compras: Compra[] }) {
         </button>
       </div>
 
-      {nueva && <NuevaCompra onDone={() => setNueva(false)} />}
+      {nueva && (
+        <NuevaCompra
+          sucursales={sucursales}
+          sucursalActivaId={sucursalActivaId}
+          onDone={() => setNueva(false)}
+        />
+      )}
 
       <FilterableTable
         rows={compras}
@@ -94,7 +111,18 @@ export function ComprasTabla({ compras }: { compras: Compra[] }) {
   );
 }
 
-function NuevaCompra({ onDone }: { onDone: () => void }) {
+function NuevaCompra({
+  sucursales,
+  sucursalActivaId,
+  onDone,
+}: {
+  sucursales: Sucursal[];
+  sucursalActivaId: number | null;
+  onDone: () => void;
+}) {
+  // Estando dentro de un local no se pregunta: la mercadería entra ahí.
+  const preguntar = sucursalActivaId === null && sucursales.length > 1;
+
   return (
     <form action={async (fd) => { await crearCompra(fd); onDone(); }} className="card mb-6 p-5">
       <div className="grid gap-4 md:grid-cols-3">
@@ -115,6 +143,17 @@ function NuevaCompra({ onDone }: { onDone: () => void }) {
           </select>
         </div>
       </div>
+      {preguntar && (
+        <div className="mt-4 md:max-w-xs">
+          <label className="label">Sucursal que recibe</label>
+          <select name="sucursalId" className="input" defaultValue={sucursales[0]?.id}>
+            {sucursales.map((s) => (
+              <option key={s.id} value={s.id}>{s.nombre}</option>
+            ))}
+          </select>
+        </div>
+      )}
+
       <div className="mt-4">
         <label className="label">Detalle (opcional)</label>
         <textarea name="detalle" rows={2} className="input resize-y" placeholder="Ítems, número de remito, observaciones…" />
@@ -357,6 +396,9 @@ function DetalleCompra({
               )}
             </section>
           )}
+
+          {/* Lo que se va a cargar al stock (borrador editable) */}
+          <CompraRecepcion compra={compra} onCambio={refrescar} />
 
           {/* Auditoría */}
           <section>

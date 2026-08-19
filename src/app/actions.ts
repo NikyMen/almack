@@ -1,9 +1,19 @@
 "use server";
 
-import { db, productos, clientes, compras, ventas, ventaItems, tiendaProductoMeta } from "@/db";
+import { db, productos, clientes, compras, ventas, ventaItems, tiendaProductoMeta, sucursales, stockSucursal } from "@/db";
 import { eq, sql, inArray } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
-import { descontarStock } from "@/lib/stock";
+import { cookies } from "next/headers";
+import {
+  ajustarStockEnSucursal,
+  borrarStockDeProducto,
+  descontarStock,
+  fijarStockEnSucursal,
+  stockDeSucursal,
+} from "@/lib/stock";
+import { COOKIE_SUCURSAL, TODAS, getSucursales, sucursalOperativaId } from "@/lib/sucursal";
+import { getUsuarioActual } from "@/lib/auth";
+import { esSuperAdmin } from "@/lib/permisos";
 import { MEDIOS_PAGO, type MedioPago } from "@/lib/medios-pago";
 import { esEstadoCompra } from "@/lib/compras";
 import {
@@ -12,6 +22,110 @@ import {
   consultaNegocio,
 } from "@/lib/ai";
 import { getContextoNegocio } from "@/lib/queries";
+import { borrarImagenProducto, guardarImagenProducto } from "@/lib/imagenes-producto";
+
+// --- Sucursales --------------------------------------------------------------
+// Alta, renombrado y cambio de local. Todo esto cuelga del logo de Almack en el
+// panel y es exclusivo del superadmin (ver esSuperAdmin en src/lib/permisos.ts).
+
+async function requireSuperAdmin() {
+  const u = await getUsuarioActual();
+  if (!esSuperAdmin(u)) return null;
+  return u;
+}
+
+/** Cambia el local en el que está parado el panel. `null` = todas. */
+export async function seleccionarSucursal(id: number | null) {
+  if (!(await requireSuperAdmin())) {
+    return { ok: false as const, error: "Solo el administrador puede cambiar de sucursal." };
+  }
+  const store = await cookies();
+  store.set(COOKIE_SUCURSAL, id ? String(id) : TODAS, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.COOKIE_SECURE === "true",
+    path: "/",
+    maxAge: 60 * 60 * 24 * 365,
+  });
+  // El stock, las métricas y las listas cambian según el local elegido.
+  revalidatePath("/", "layout");
+  return { ok: true as const };
+}
+
+export async function crearSucursal(nombre: string, direccion = "") {
+  if (!(await requireSuperAdmin())) {
+    return { ok: false as const, error: "Solo el administrador puede crear sucursales." };
+  }
+  const limpio = nombre.trim();
+  if (!limpio) return { ok: false as const, error: "Poné un nombre para la sucursal." };
+
+  const lista = await getSucursales();
+  if (lista.some((s) => s.nombre.toLowerCase() === limpio.toLowerCase())) {
+    return { ok: false as const, error: "Ya tenés una sucursal con ese nombre." };
+  }
+
+  const [creada] = await db
+    .insert(sucursales)
+    .values({ nombre: limpio, direccion: direccion.trim(), orden: lista.length })
+    .returning({ id: sucursales.id });
+
+  revalidatePath("/", "layout");
+  return { ok: true as const, id: creada.id };
+}
+
+export async function renombrarSucursal(id: number, nombre: string) {
+  if (!(await requireSuperAdmin())) {
+    return { ok: false as const, error: "Solo el administrador puede editar sucursales." };
+  }
+  const limpio = nombre.trim();
+  if (!limpio) return { ok: false as const, error: "El nombre no puede quedar vacío." };
+
+  const lista = await getSucursales();
+  if (lista.some((s) => s.id !== id && s.nombre.toLowerCase() === limpio.toLowerCase())) {
+    return { ok: false as const, error: "Ya tenés una sucursal con ese nombre." };
+  }
+
+  await db.update(sucursales).set({ nombre: limpio }).where(eq(sucursales.id, id));
+  revalidatePath("/", "layout");
+  return { ok: true as const };
+}
+
+/**
+ * Da de baja una sucursal. No se borra la fila: las ventas y los traslados
+ * históricos la siguen referenciando. Tampoco se permite si todavía tiene
+ * mercadería, porque el stock se evaporaría del total: primero hay que
+ * trasladarla desde "Mover stock".
+ */
+export async function archivarSucursal(id: number) {
+  if (!(await requireSuperAdmin())) {
+    return { ok: false as const, error: "Solo el administrador puede dar de baja sucursales." };
+  }
+  const lista = await getSucursales();
+  if (lista.length <= 1) {
+    return { ok: false as const, error: "Tiene que quedar al menos una sucursal activa." };
+  }
+
+  const [conStock] = await db
+    .select({ unidades: sql<number>`coalesce(sum(${stockSucursal.cantidad}),0)` })
+    .from(stockSucursal)
+    .where(eq(stockSucursal.sucursalId, id));
+  if (Number(conStock?.unidades ?? 0) > 0) {
+    return {
+      ok: false as const,
+      error: "Esa sucursal todavía tiene mercadería. Movela a otro local antes de darla de baja.",
+    };
+  }
+
+  await db.update(sucursales).set({ activo: false }).where(eq(sucursales.id, id));
+
+  // Si el panel estaba parado ahí, vuelve a la vista consolidada.
+  const store = await cookies();
+  if (store.get(COOKIE_SUCURSAL)?.value === String(id)) {
+    store.set(COOKIE_SUCURSAL, TODAS, { path: "/", sameSite: "lax", maxAge: 60 * 60 * 24 * 365 });
+  }
+  revalidatePath("/", "layout");
+  return { ok: true as const };
+}
 
 // --- Productos ---------------------------------------------------------------
 // Campos comunes a los formularios de alta y edición de producto.
@@ -24,45 +138,135 @@ function datosProducto(fd: FormData) {
     precioCompra: Number(fd.get("precioCompra") || 0),
     stock: Number(fd.get("stock") || 0),
     stockMinimo: Number(fd.get("stockMinimo") || 5),
-    imagen: String(fd.get("imagen") || "").trim(),
   };
+}
+
+/**
+ * Resuelve la imagen del producto a partir del formulario.
+ *
+ * El campo `imagen` es un hidden con la ruta que ya estaba guardada (vacío si
+ * el usuario la quitó) y `imagenArchivo` es el archivo recién elegido/arrastrado
+ * o sacado con la cámara del celular. Si llega un archivo nuevo, se guarda en
+ * disco y la imagen anterior se borra para no dejar huérfanos.
+ */
+async function resolverImagen(
+  fd: FormData,
+  anterior: string
+): Promise<{ ok: true; imagen: string } | { ok: false; error: string }> {
+  const conservada = String(fd.get("imagen") || "").trim();
+  const archivo = fd.get("imagenArchivo");
+
+  if (archivo instanceof File && archivo.size > 0) {
+    const r = await guardarImagenProducto(archivo);
+    if (!r.ok) return r;
+    if (anterior && anterior !== r.ruta) await borrarImagenProducto(anterior);
+    return { ok: true, imagen: r.ruta };
+  }
+
+  if (anterior && anterior !== conservada) await borrarImagenProducto(anterior);
+  return { ok: true, imagen: conservada };
+}
+
+/**
+ * A qué local se le imputa el stock del formulario.
+ *
+ * Si el panel está parado dentro de una sucursal, el formulario ni pregunta y
+ * el campo no viene: se usa la activa. Si está en "Todas", el formulario manda
+ * el `sucursalId` que eligió el usuario. Se valida siempre contra la lista real
+ * para que nadie mande un id de otra empresa.
+ */
+async function sucursalDelForm(fd: FormData): Promise<number | null> {
+  const pedida = Number(fd.get("sucursalId") || 0);
+  if (pedida) {
+    const lista = await getSucursales();
+    if (lista.some((x) => x.id === pedida)) return pedida;
+  }
+  return sucursalOperativaId();
 }
 
 export async function crearProducto(formData: FormData) {
   const d = datosProducto(formData);
-  if (!d.nombre) return;
-  await db.insert(productos).values({
-    ...d,
-    sku: d.sku || `SKU-${Date.now()}`,
-    descripcion: String(formData.get("descripcion") || ""),
-  });
-  revalidatePath("/stock");
-  revalidatePath("/");
-}
+  if (!d.nombre) return { ok: false as const, error: "El nombre es obligatorio." };
 
-export async function editarProducto(id: number, formData: FormData) {
-  const d = datosProducto(formData);
-  if (!d.nombre) return;
-  await db.update(productos).set(d).where(eq(productos.id, id));
+  const img = await resolverImagen(formData, "");
+  if (!img.ok) return img;
+
+  const [creado] = await db
+    .insert(productos)
+    .values({
+      ...d,
+      imagen: img.imagen,
+      sku: d.sku || `SKU-${Date.now()}`,
+      descripcion: String(formData.get("descripcion") || ""),
+    })
+    .returning({ id: productos.id });
+
+  // El stock inicial entra en un local concreto, no "en el aire".
+  const sucursalId = await sucursalDelForm(formData);
+  if (sucursalId) await fijarStockEnSucursal(creado.id, sucursalId, d.stock);
+
   revalidatePath("/stock");
   revalidatePath("/");
   revalidatePath("/tienda");
   revalidatePath("/tienda/productos");
+  return { ok: true as const };
+}
+
+export async function editarProducto(id: number, formData: FormData) {
+  const d = datosProducto(formData);
+  if (!d.nombre) return { ok: false as const, error: "El nombre es obligatorio." };
+
+  const [previo] = await db.select().from(productos).where(eq(productos.id, id)).limit(1);
+  if (!previo) return { ok: false as const, error: "El producto no existe." };
+
+  const img = await resolverImagen(formData, previo.imagen ?? "");
+  if (!img.ok) return img;
+
+  // El campo "Stock" del formulario es el de UNA sucursal, no el total: el
+  // total lo recalcula fijarStockEnSucursal sumando todos los locales.
+  const sucursalId = await sucursalDelForm(formData);
+  const { stock, ...resto } = d;
+  await db
+    .update(productos)
+    .set({ ...resto, imagen: img.imagen, ...(sucursalId ? {} : { stock }) })
+    .where(eq(productos.id, id));
+  if (sucursalId) await fijarStockEnSucursal(id, sucursalId, stock);
+
+  revalidatePath("/stock");
+  revalidatePath("/");
+  revalidatePath("/tienda");
+  revalidatePath("/tienda/productos");
+  return { ok: true as const };
 }
 
 export async function eliminarProducto(id: number) {
+  const [previo] = await db.select().from(productos).where(eq(productos.id, id)).limit(1);
+  if (previo?.imagen) await borrarImagenProducto(previo.imagen);
+  await borrarStockDeProducto(id);
   await db.delete(productos).where(eq(productos.id, id));
   revalidatePath("/stock");
   revalidatePath("/");
 }
 
-export async function ajustarStock(id: number, delta: number) {
-  // Update atómico: no lee antes de escribir, así dos ajustes concurrentes no se pisan.
-  await db
-    .update(productos)
-    .set({ stock: sql`max(0, ${productos.stock} + ${delta})` })
-    .where(eq(productos.id, id));
+/**
+ * Suma o resta unidades de un producto en un local. Desde Stock: si estás
+ * dentro de una sucursal se usa esa sin preguntar; si estás en "Todas", la
+ * tabla pide primero en cuál.
+ */
+export async function ajustarStock(id: number, delta: number, sucursalId?: number | null) {
+  const destino = sucursalId ?? (await sucursalOperativaId());
+  if (destino) {
+    await ajustarStockEnSucursal(id, destino, delta);
+  } else {
+    // Base sin sucursales todavía (previa a la migración): ajuste directo sobre
+    // el total, como antes.
+    await db
+      .update(productos)
+      .set({ stock: sql`max(0, ${productos.stock} + ${delta})` })
+      .where(eq(productos.id, id));
+  }
   revalidatePath("/stock");
+  revalidatePath("/");
 }
 
 export async function togglePublicado(id: number) {
@@ -124,11 +328,19 @@ export async function cobrarVenta(
   const prods = await db.select().from(productos).where(inArray(productos.id, ids));
   const byId = new Map(prods.map((p) => [p.id, p]));
 
+  // La venta sale del local en el que está parado el panel (o del principal si
+  // está en "Todas"), y el stock se descuenta de ese mismo local.
+  const sucursalId = await sucursalOperativaId();
+  const enLocal = sucursalId ? await stockDeSucursal(sucursalId) : null;
+  const disponible = (p: typeof productos.$inferSelect) =>
+    enLocal ? enLocal.get(p.id) ?? 0 : p.stock;
+
   for (const it of limpios) {
     const p = byId.get(it.productoId);
     if (!p) return { ok: false as const, error: "Hay un producto que ya no existe." };
-    if (p.stock < it.cantidad)
-      return { ok: false as const, error: `Sin stock suficiente de "${p.nombre}" (quedan ${p.stock}).` };
+    const hay = disponible(p);
+    if (hay < it.cantidad)
+      return { ok: false as const, error: `Sin stock suficiente de "${p.nombre}" (quedan ${hay}).` };
   }
 
   const total = limpios.reduce((a, it) => a + (byId.get(it.productoId)!.precioVenta * it.cantidad), 0);
@@ -143,6 +355,7 @@ export async function cobrarVenta(
       canal: opts?.canal === "online" ? "online" : "local",
       medioPago: medio,
       clienteId: opts?.clienteId ?? null,
+      sucursalId,
     })
     .returning({ id: ventas.id });
 
@@ -154,7 +367,7 @@ export async function cobrarVenta(
       precioUnit: byId.get(it.productoId)!.precioVenta,
     }))
   );
-  await descontarStock(limpios);
+  await descontarStock(limpios, sucursalId);
 
   revalidatePath("/caja");
   revalidatePath("/ventas");
@@ -173,6 +386,8 @@ export async function crearCompra(formData: FormData) {
     total: Number(formData.get("total") || 0),
     estado: esEstadoCompra(estado) ? estado : "pedido",
     detalle: String(formData.get("detalle") || ""),
+    // Local que va a recibir la mercadería cuando se controle el remito.
+    sucursalId: await sucursalDelForm(formData),
   });
   revalidatePath("/compras");
   revalidatePath("/");

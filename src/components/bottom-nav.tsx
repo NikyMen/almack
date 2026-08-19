@@ -14,19 +14,21 @@ import {
   TrendingUp,
   Truck,
   Boxes,
+  ArrowLeftRight,
   Users,
   UserCog,
   ReceiptText,
   Sparkles,
   type LucideIcon,
 } from "lucide-react";
-import { tieneAcceso, MODULOS_VISIBLES, type ModuloKey, type UsuarioActual } from "@/lib/permisos";
+import { tieneAcceso, moduloActivo, MODULOS_VISIBLES, type ModuloKey, type UsuarioActual } from "@/lib/permisos";
 import { BarcodeScanner } from "@/components/barcode-scanner";
 
 const ICONOS: Record<ModuloKey, LucideIcon> = {
   panel: LayoutDashboard,
   caja: ScanLine,
   stock: Boxes,
+  movimientos: ArrowLeftRight,
   ventas: TrendingUp,
   compras: Truck,
   clientes: Users,
@@ -118,7 +120,7 @@ function ItemNav({ modulo, path }: { modulo: ModuloKey; path: string }) {
   const info = MODULOS_VISIBLES.find((m) => m.key === modulo);
   if (!info) return null;
   const Icon = ICONOS[modulo];
-  const activo = info.href === "/" ? path === "/" : path.startsWith(info.href);
+  const activo = moduloActivo(path) === modulo;
 
   return (
     <Link

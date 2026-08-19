@@ -1,18 +1,20 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";
 import { logout } from "@/app/admin/login/actions";
-import { tieneAcceso, MODULOS_VISIBLES, type ModuloKey, type UsuarioActual } from "@/lib/permisos";
+import { tieneAcceso, moduloActivo, esSuperAdmin, MODULOS_VISIBLES, type ModuloKey, type UsuarioActual } from "@/lib/permisos";
 import { useNav } from "@/components/nav-context";
+import { SucursalSwitcher } from "@/components/sucursal-switcher";
+import type { Sucursal } from "@/db/schema";
 import {
   LayoutDashboard,
   ScanLine,
   TrendingUp,
   Truck,
   Boxes,
+  ArrowLeftRight,
   Users,
   UserCog,
   ReceiptText,
@@ -32,6 +34,7 @@ const ICONOS: Record<ModuloKey, LucideIcon> = {
   panel: LayoutDashboard,
   caja: ScanLine,
   stock: Boxes,
+  movimientos: ArrowLeftRight,
   ventas: TrendingUp,
   compras: Truck,
   clientes: Users,
@@ -46,26 +49,35 @@ function SidebarContent({
   usuario,
   visibles,
   path,
+  sucursales,
+  sucursalActivaId,
   onNavigate,
   onConfig,
 }: {
   usuario: UsuarioActual;
   visibles: typeof MODULOS_VISIBLES;
   path: string;
+  sucursales: Sucursal[];
+  sucursalActivaId: number | null;
   onNavigate?: () => void;
   onConfig: () => void;
 }) {
+  const activo = moduloActivo(path);
+
   return (
     <>
+      {/* El logo abre el selector de sucursal (solo para el superadmin) */}
       <div className="mb-8 px-2">
-        <Image src="/brand/logo-almack-horizontal.png" alt="Almack" width={720} height={360} className="h-auto w-40" priority />
-        <p className="mt-3 text-xs font-semibold tracking-wide text-lime">Almack</p>
-        <p className="text-[11px] text-slate-500">Tu kiosco amigo</p>
+        <SucursalSwitcher
+          sucursales={sucursales}
+          activaId={sucursalActivaId}
+          puedeAdministrar={esSuperAdmin(usuario)}
+        />
       </div>
 
       <nav className="flex flex-col gap-1">
         {visibles.map((item) => {
-          const active = item.href === "/" ? path === "/" : path.startsWith(item.href);
+          const active = item.key === activo;
           const Icon = ICONOS[item.key];
           return (
             <Link
@@ -124,7 +136,15 @@ function SidebarContent({
   );
 }
 
-export function Sidebar({ usuario }: { usuario: UsuarioActual }) {
+export function Sidebar({
+  usuario,
+  sucursales,
+  sucursalActivaId,
+}: {
+  usuario: UsuarioActual;
+  sucursales: Sucursal[];
+  sucursalActivaId: number | null;
+}) {
   const path = usePathname();
   const { menuAbierto, setMenuAbierto, setConfigAbierta } = useNav();
   const visibles = MODULOS_VISIBLES.filter((item) => tieneAcceso(usuario, item.key));
@@ -146,15 +166,26 @@ export function Sidebar({ usuario }: { usuario: UsuarioActual }) {
         >
           <Menu className="h-5 w-5" />
         </button>
-        <Image src="/brand/logo-almack-horizontal.png" alt="" width={720} height={360} className="h-6 w-auto" priority />
-        <span className="text-sm font-semibold tracking-wide text-lime">Almack</span>
+        <SucursalSwitcher
+          sucursales={sucursales}
+          activaId={sucursalActivaId}
+          puedeAdministrar={esSuperAdmin(usuario)}
+          compacto
+        />
       </header>
 
       {/* Sidebar fijo en escritorio, con los rayos de luz de fondo */}
       <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col overflow-hidden bg-navy px-4 py-6 text-slate-300 md:flex">
         <LightRays className="absolute inset-0 -z-0 h-full w-full opacity-70" />
         <div className="relative z-10 flex h-full flex-col">
-          <SidebarContent usuario={usuario} visibles={visibles} path={path} onConfig={abrirConfig} />
+          <SidebarContent
+            usuario={usuario}
+            visibles={visibles}
+            path={path}
+            sucursales={sucursales}
+            sucursalActivaId={sucursalActivaId}
+            onConfig={abrirConfig}
+          />
         </div>
       </aside>
 
@@ -182,6 +213,8 @@ export function Sidebar({ usuario }: { usuario: UsuarioActual }) {
           usuario={usuario}
           visibles={visibles}
           path={path}
+          sucursales={sucursales}
+          sucursalActivaId={sucursalActivaId}
           onNavigate={() => setMenuAbierto(false)}
           onConfig={abrirConfig}
         />
