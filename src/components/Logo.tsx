@@ -1,18 +1,31 @@
 import Image from "next/image";
 import { cn } from "@/lib/cn";
 
-/** Logo de Almack, recortado visualmente sin duplicar el asset. */
-export function Logo({ className }: { className?: string; dark?: boolean }) {
-  return (
-    <div className={cn("relative h-10 w-[212px] overflow-hidden rounded-lg bg-brand-ink", className)}>
+/** Logo horizontal de Almack para encabezados y navegación. */
+export function Logo({ className, variant = "horizontal" }: { className?: string; dark?: boolean; variant?: "horizontal" | "compact" }) {
+  if (variant === "compact") {
+    return (
       <Image
-        src="/brand/logo-cd.webp"
+        src="/brand/almack-mascot-hd.png"
         alt="Almack"
-        width={600}
-        height={400}
+        width={1254}
+        height={1254}
+        priority
+        className={cn("h-11 w-11 rounded-full object-cover", className)}
+      />
+    );
+  }
+
+  return (
+    <div className={cn("relative h-14 w-[190px] overflow-hidden rounded-lg bg-brand-red", className)}>
+      <Image
+        src="/brand/logo-almack-horizontal.png"
+        alt="Almack"
+        width={720}
+        height={360}
         priority
         unoptimized
-        className="absolute left-2 top-1/2 h-auto w-[calc(100%-1rem)] -translate-y-1/2"
+        className="h-full w-full object-contain"
       />
     </div>
   );

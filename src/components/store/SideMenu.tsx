@@ -29,7 +29,7 @@ export function SideMenu() {
         }`}
       >
         <div className="flex items-center justify-between border-b border-black/5 px-4 py-3">
-          <Logo />
+          <Logo variant="compact" />
           <button onClick={close} aria-label="Cerrar" className="rounded-lg p-1 hover:bg-black/5">
             <X size={22} />
           </button>

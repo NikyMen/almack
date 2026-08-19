@@ -15,7 +15,7 @@ export default function StoreLayout({ children }: { children: React.ReactNode })
         <div className="mx-auto flex max-w-5xl items-center gap-3 px-4 py-4">
           <Link href="/store" className="flex items-center gap-2">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/brand/logo-cd.webp" alt="" className="h-9 w-auto rounded-lg" />
+            <img src="/brand/logo-almack-horizontal.png" alt="Almack" className="h-12 w-auto rounded-lg object-contain" />
             <span className="font-display text-lg font-bold text-navy">Tienda online</span>
           </Link>
         </div>

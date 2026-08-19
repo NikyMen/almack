@@ -7,7 +7,7 @@ export function Footer() {
     <footer className="mt-8 hidden border-t border-white/10 bg-brand-ink text-white/80 md:block">
       <div className="mx-auto grid max-w-6xl gap-10 px-6 py-10 md:grid-cols-3">
         <div>
-          <Logo />
+          <Logo variant="compact" />
           <p className="mt-4 max-w-sm text-sm leading-relaxed text-white/60">
             Catálogo online con precios y disponibilidad actualizados desde Almack.
           </p>

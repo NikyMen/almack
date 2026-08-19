@@ -27,11 +27,11 @@ export function middleware(req: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  if (hasCookie && isLogin) {
-    const url = req.nextUrl.clone();
-    url.pathname = "/admin";
-    return NextResponse.redirect(url);
-  }
+  // El caso inverso (con cookie, en /admin/login -> /admin) NO se resuelve acá:
+  // desde el Edge no se puede verificar la firma, y una cookie vencida o firmada
+  // con otro AUTH_SECRET rebotaba entre /admin y /admin/login hasta que el
+  // navegador cortaba con la pantalla en blanco de ERR_TOO_MANY_REDIRECTS.
+  // La redirección la hace /admin/login, que sí valida el token.
 
   return NextResponse.next();
 }

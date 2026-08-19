@@ -92,5 +92,5 @@ export function tiendaToStoreProduct(product: TiendaProducto): Product {
 }
 
 export function tiendaToSuperOferta(product: TiendaProducto): SuperOferta {
-  return { id: `tienda-${product.id}`, title: product.name, subtitle: product.description || "Oferta publicada desde Almack", price: product.price, oldPrice: product.oldPrice, image: product.image || "/brand/logo-cd.webp", cartProductId: product.id, cartQuantity: 1, link: "/tienda/ofertas", active: true };
+  return { id: `tienda-${product.id}`, title: product.name, subtitle: product.description || "Oferta publicada desde Almack", price: product.price, oldPrice: product.oldPrice, image: product.image || "/brand/logo-almack-horizontal.png", cartProductId: product.id, cartQuantity: 1, link: "/tienda/ofertas", active: true };
 }

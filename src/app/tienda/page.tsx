@@ -66,6 +66,8 @@ export default async function TiendaHomePage() {
 function HeroClasico({ productCount }: { productCount: number }) {
   return (
     <section className="relative mx-4 mt-3 overflow-hidden rounded-3xl bg-brand-ink shadow-card md:mx-6 md:mt-6">
+      <div className="absolute inset-0 bg-[url('/brand/almack-portada.png')] bg-cover bg-center bg-no-repeat" />
+      <div className="absolute inset-0 bg-brand-ink/70" />
       <div className="absolute -right-20 -top-28 h-80 w-80 rounded-full bg-brand-gold/20 blur-3xl" />
       <div className="absolute -bottom-40 right-20 h-80 w-80 rounded-full border-[42px] border-brand-gold/10" />
       <div className="relative flex min-h-[340px] flex-col justify-end p-6 sm:min-h-[390px] md:min-h-[460px] md:max-w-3xl md:justify-center md:p-12">

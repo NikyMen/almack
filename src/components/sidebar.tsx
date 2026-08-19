@@ -58,7 +58,7 @@ function SidebarContent({
   return (
     <>
       <div className="mb-8 px-2">
-        <Image src="/brand/logo-cd.webp" alt="Almack" width={180} height={120} className="h-auto w-40" priority />
+        <Image src="/brand/logo-almack-horizontal.png" alt="Almack" width={720} height={360} className="h-auto w-40" priority />
         <p className="mt-3 text-xs font-semibold tracking-wide text-lime">Almack</p>
         <p className="text-[11px] text-slate-500">Tu kiosco amigo</p>
       </div>
@@ -146,7 +146,7 @@ export function Sidebar({ usuario }: { usuario: UsuarioActual }) {
         >
           <Menu className="h-5 w-5" />
         </button>
-        <Image src="/brand/logo-cd.webp" alt="" width={90} height={60} className="h-6 w-auto" priority />
+        <Image src="/brand/logo-almack-horizontal.png" alt="" width={720} height={360} className="h-6 w-auto" priority />
         <span className="text-sm font-semibold tracking-wide text-lime">Almack</span>
       </header>
 

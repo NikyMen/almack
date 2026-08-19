@@ -65,7 +65,14 @@ export function credencialesConfiguradas(): boolean {
 
 // Verifica primero contra la tabla usuarios; cae al admin por env como respaldo.
 export async function checkCredentials(user: string, pass: string): Promise<boolean> {
-  const [u] = await db.select().from(usuarios).where(eq(usuarios.usuario, user));
+  // La base puede estar pendiente de migración; en ese caso todavía debe
+  // funcionar el usuario bootstrap configurado por entorno.
+  let u: typeof usuarios.$inferSelect | undefined;
+  try {
+    [u] = await db.select().from(usuarios).where(eq(usuarios.usuario, user));
+  } catch {
+    u = undefined;
+  }
   if (u && u.activo && verifyPassword(pass, u.passwordHash)) return true;
   // Respaldo: admin por entorno (sólo si no hay un usuario DB con ese handle)
   if (!u && user === USER && pass === PASS) return true;
@@ -101,7 +108,12 @@ export async function getUser(): Promise<string | null> {
 export async function getUsuarioActual(): Promise<UsuarioActual | null> {
   const handle = await getUser();
   if (!handle) return null;
-  const [u] = await db.select().from(usuarios).where(eq(usuarios.usuario, handle));
+  let u: typeof usuarios.$inferSelect | undefined;
+  try {
+    [u] = await db.select().from(usuarios).where(eq(usuarios.usuario, handle));
+  } catch {
+    u = undefined;
+  }
   if (u) {
     if (!u.activo) return null;
     return {

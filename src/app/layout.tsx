@@ -17,7 +17,10 @@ export const metadata: Metadata = {
   title: "Almack — Tu kiosco amigo",
   description:
     "Gestioná ventas, compras, stock, clientes y facturación. La IA transforma tus productos en contenido listo para vender.",
-  icons: { icon: "/brand/favicon.png" },
+  icons: {
+    icon: "/brand/almack-mascot.jpeg",
+    apple: "/brand/almack-mascot.jpeg",
+  },
 };
 
 // viewportFit: "cover" habilita env(safe-area-inset-*) → necesario para que la
