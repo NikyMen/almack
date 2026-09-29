@@ -23,8 +23,8 @@
   --shadow-card: 0 14px 32px rgb(0 63 49 / 0.14);
   --radius-xl2: 1.25rem;
 
-  --font-sans: var(--font-inter), system-ui, "Segoe UI", Arial, sans-serif;
-  --font-display: var(--font-poppins), system-ui, sans-serif;
+  --font-sans: "Inter", system-ui, "Segoe UI", Arial, sans-serif;
+  --font-display: "Poppins", system-ui, sans-serif;
 }
 
 :root {
