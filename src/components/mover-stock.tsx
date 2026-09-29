@@ -2,16 +2,16 @@
 
 // Mover stock = el remito interno del negocio.
 //
-// Se arma una lista de productos, se elige de qué local salen y a cuál entran,
-// y opcionalmente se anota lo que costó llevarlos (la nafta, el flete). El
-// stock se mueve en el momento de confirmar: no hay estado "en camino".
+// Un envío sale del stock disponible y queda en tránsito hasta que el destino
+// verifica las cantidades y decide si lo acepta o rechaza.
 
 import { useMemo, useState, useTransition } from "react";
-import { ArrowRight, Fuel, Loader2, Plus, Search, Trash2, Truck } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { ArrowRight, CircleCheck, Fuel, Loader2, PackageCheck, Plus, Search, Trash2, Truck } from "lucide-react";
 import type { Sucursal } from "@/db/schema";
 import { money, fechaHora } from "@/lib/format";
 import { CATEGORIAS_GASTO, ETIQUETA_GASTO, type CategoriaGasto } from "@/lib/gastos";
-import { registrarTraslado, registrarGasto, eliminarGasto } from "@/app/admin/(protected)/movimientos/actions";
+import { registrarTraslado, resolverTraslado, confirmarDevolucion, registrarGasto, eliminarGasto } from "@/app/admin/(protected)/movimientos/actions";
 
 export type ProductoTraslado = {
   id: number;
@@ -28,7 +28,12 @@ export type TrasladoVista = {
   unidades: number;
   nota: string;
   usuario: string;
-  items: string[];
+  estado: string;
+  origenId: number;
+  destinoId: number;
+  recibidoPor: string;
+  recepcionNota: string;
+  items: { id: number; nombre: string; enviado: number; verificado: number | null; ingresado: number }[];
   gasto: { concepto: string; categoria: string; monto: number } | null;
 };
 
@@ -57,6 +62,7 @@ export function MoverStock({
   historial: TrasladoVista[];
   gastos: GastoVista[];
 }) {
+  const router = useRouter();
   // Estando dentro de una sucursal, lo natural es que la mercadería salga de
   // acá: se propone como origen y el destino queda en el primer otro local.
   const origenInicial = sucursalActivaId ?? sucursales[0]?.id ?? 0;
@@ -142,7 +148,8 @@ export function MoverStock({
       setNota("");
       setGastoMonto("");
       setConGasto(false);
-      setAviso(`Se movieron ${r.unidades} unidades.`);
+      setAviso(`Traslado #${r.id} enviado: ${r.unidades} unidades en Tránsito — ${nombreDe(destinoId)}.`);
+      router.refresh();
     });
   }
 
@@ -158,12 +165,13 @@ export function MoverStock({
   const nombreDe = (id: number) => sucursales.find((s) => s.id === id)?.nombre ?? "";
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,24rem)]">
+    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(21rem,28rem)]">
       {/* ---------------------------------------------------- Remito interno */}
       <div className="card p-5">
         <h2 className="flex items-center gap-2 text-base font-semibold">
           <Truck className="h-4 w-4 text-navy" /> Nuevo traslado
         </h2>
+        <p className="mt-2 rounded-xl bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900">Al enviar, las unidades salen del origen y quedan en <strong>Tránsito — sucursal destino</strong>. El destino las incorpora recién después de verificarlas.</p>
 
         <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto_1fr] sm:items-end">
           <div>
@@ -176,7 +184,7 @@ export function MoverStock({
           </div>
           <ArrowRight className="mx-auto hidden h-4 w-4 shrink-0 text-slate-300 sm:mb-3 sm:block" />
           <div>
-            <label className="label">Entra en</label>
+            <label className="label">Destino</label>
             <select className="input" value={destinoId} onChange={(e) => setDestinoId(Number(e.target.value))}>
               {sucursales
                 .filter((s) => s.id !== origenId)
@@ -348,7 +356,7 @@ export function MoverStock({
             {totalUnidades} unidad(es) · {nombreDe(origenId)} → {nombreDe(destinoId)}
           </p>
           <button className="btn-primary" disabled={pendiente || lineas.length === 0} onClick={confirmar}>
-            {pendiente ? <><Loader2 className="h-4 w-4 animate-spin" /> Moviendo…</> : "Confirmar traslado"}
+            {pendiente ? <><Loader2 className="h-4 w-4 animate-spin" /> Enviando…</> : "Enviar a tránsito"}
           </button>
         </div>
       </div>
@@ -356,20 +364,26 @@ export function MoverStock({
       {/* --------------------------------------------------------- Historial */}
       <div className="space-y-6">
         <div className="card p-5">
-          <h2 className="text-base font-semibold">Últimos traslados</h2>
+          <h2 className="text-base font-semibold">Traslados y recepciones</h2>
           <div className="mt-3 space-y-3">
             {historial.length === 0 && (
               <p className="py-6 text-center text-sm text-slate-400">Todavía no moviste mercadería.</p>
             )}
             {historial.map((m) => (
               <div key={m.id} className="rounded-xl border border-slate-200 p-3">
-                <div className="flex items-baseline justify-between gap-2">
-                  <p className="text-sm font-medium">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm font-semibold">
+                    <span className="mr-1 text-slate-400">#{m.id}</span>
                     {m.origen} <ArrowRight className="inline h-3 w-3 text-slate-400" /> {m.destino}
                   </p>
-                  <span className="shrink-0 text-xs text-slate-400">{fechaHora(m.fecha)}</span>
+                  <span className={`rounded-full px-2 py-1 text-[11px] font-bold ${m.estado === "en_transito" ? "bg-amber-100 text-amber-800" : m.estado === "rechazado" ? "bg-rose-100 text-rose-700" : "bg-emerald-100 text-emerald-800"}`}>
+                    {m.estado === "en_transito" ? "En tránsito" : m.estado === "rechazado" ? "Rechazado" : m.estado === "devuelto" ? "Devuelto" : "Recibido"}
+                  </span>
                 </div>
-                <p className="mt-1 text-xs text-slate-500">{m.items.join(" · ")}</p>
+                <p className="mt-1 text-[11px] text-slate-400">{fechaHora(m.fecha)}</p>
+                <div className="mt-3 space-y-1.5">
+                  {m.items.map((item) => <div key={item.id} className="flex flex-wrap justify-between gap-1 rounded-lg bg-slate-50 px-2 py-1.5 text-xs"><span>{item.nombre}</span><span className="font-semibold tabular-nums">Enviado {item.enviado}{item.verificado !== null && ` · Verificado ${item.verificado}`}{m.estado === "recibido" && ` · Ingresado ${item.ingresado}`}</span></div>)}
+                </div>
                 <p className="mt-1 text-[11px] text-slate-400">
                   {m.unidades} unidades{m.usuario && ` · ${m.usuario}`}
                   {m.nota && ` · ${m.nota}`}
@@ -379,6 +393,9 @@ export function MoverStock({
                     <Fuel className="h-3.5 w-3.5" /> {m.gasto.concepto} · {money(m.gasto.monto)}
                   </p>
                 )}
+                {m.recepcionNota && <p className="mt-2 rounded-lg bg-slate-50 px-2 py-1.5 text-xs text-slate-600">{m.recepcionNota}{m.recibidoPor && ` · ${m.recibidoPor}`}</p>}
+                {m.estado === "en_transito" && (sucursalActivaId === null || sucursalActivaId === m.destinoId) && <RecepcionTraslado traslado={m} modo="recepcion" />}
+                {m.estado === "rechazado" && (sucursalActivaId === null || sucursalActivaId === m.origenId) && <RecepcionTraslado traslado={m} modo="devolucion" />}
               </div>
             ))}
           </div>
@@ -386,6 +403,59 @@ export function MoverStock({
 
         <GastosSueltos sucursales={sucursales} sucursalActivaId={sucursalActivaId} gastos={gastos} />
       </div>
+    </div>
+  );
+}
+
+function RecepcionTraslado({ traslado, modo }: { traslado: TrasladoVista; modo: "recepcion" | "devolucion" }) {
+  const router = useRouter();
+  const [abierto, setAbierto] = useState(false);
+  const [cantidades, setCantidades] = useState<Record<number, number>>(() => Object.fromEntries(traslado.items.map((item) => [item.id, item.enviado])));
+  const [nota, setNota] = useState("");
+  const [error, setError] = useState("");
+  const [pendiente, startTransition] = useTransition();
+  const hayDiferencia = traslado.items.some((item) => cantidades[item.id] !== item.enviado);
+
+  function enviar(decision: "aceptar" | "rechazar") {
+    setError("");
+    const lineas = traslado.items.map((item) => ({ itemId: item.id, cantidad: cantidades[item.id] }));
+    if (lineas.some((item) => !Number.isSafeInteger(item.cantidad) || item.cantidad < 0)) return setError("Ingresá una cantidad válida en todas las líneas.");
+    if ((hayDiferencia || decision === "rechazar") && !nota.trim()) return setError("Explicá la diferencia o el motivo del rechazo.");
+    startTransition(async () => {
+      const resultado = modo === "devolucion"
+        ? await confirmarDevolucion({ id: traslado.id, cantidades: lineas, nota })
+        : await resolverTraslado({ id: traslado.id, cantidades: lineas, nota, decision });
+      if (!resultado.ok) return setError(resultado.error);
+      setAbierto(false);
+      router.refresh();
+    });
+  }
+
+  return (
+    <div className="mt-3 border-t border-slate-100 pt-3">
+      <button className="inline-flex items-center gap-2 rounded-lg bg-navy px-3 py-2 text-xs font-semibold text-white transition hover:opacity-90" onClick={() => setAbierto((v) => !v)}>
+        {modo === "recepcion" ? <PackageCheck className="h-4 w-4" /> : <ArrowRight className="h-4 w-4" />}
+        {modo === "recepcion" ? "Verificar llegada" : "Confirmar devolución al origen"}
+      </button>
+      {abierto && <div className="mt-3 space-y-3 rounded-xl border border-amber-200 bg-amber-50/60 p-3">
+        <p className="text-xs leading-relaxed text-slate-600">{modo === "recepcion" ? "Contá lo que llegó. Podés aceptar una cantidad menor o mayor que la enviada; la diferencia queda registrada." : "Contá lo que volvió al local de origen. Hasta confirmar, sigue en tránsito."}</p>
+        {traslado.items.map((item) => {
+          const actual = cantidades[item.id] ?? 0;
+          const diferencia = actual - item.enviado;
+          return <label key={item.id} className="grid grid-cols-[minmax(0,1fr)_4.5rem] items-center gap-2 rounded-lg bg-white p-2 text-xs sm:grid-cols-[minmax(0,1fr)_5.5rem]">
+            <span className="min-w-0"><strong className="block truncate text-slate-700">{item.nombre}</strong><small className="text-slate-500">Enviado: {item.enviado}{diferencia !== 0 && <span className={diferencia < 0 ? "text-rose-700" : "text-amber-700"}> · {diferencia > 0 ? `Sobran ${diferencia}` : `Faltan ${Math.abs(diferencia)}`}</span>}</small></span>
+            <input type="number" min="0" step="1" className="input px-2 py-1 text-center" aria-label={`${modo === "recepcion" ? "Recibidas" : "Devueltas"} de ${item.nombre}`} value={actual} onChange={(e) => setCantidades((prev) => ({ ...prev, [item.id]: Number(e.target.value) }))} />
+          </label>;
+        })}
+        <textarea className="input min-h-20" placeholder={modo === "recepcion" ? "Observaciones o motivo de la diferencia" : "Observaciones de la devolución"} value={nota} onChange={(e) => setNota(e.target.value)} />
+        {error && <p role="alert" className="text-xs font-medium text-rose-700">{error}</p>}
+        <div className="flex flex-wrap gap-2">
+          {modo === "recepcion" ? <>
+            <button className="btn-primary text-xs" disabled={pendiente} onClick={() => enviar("aceptar")}><CircleCheck className="h-4 w-4" /> Aceptar ingreso</button>
+            <button className="rounded-lg border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-50" disabled={pendiente} onClick={() => enviar("rechazar")}>Rechazar, dejar en tránsito</button>
+          </> : <button className="btn-primary text-xs" disabled={pendiente} onClick={() => enviar("aceptar")}>Confirmar lo devuelto</button>}
+        </div>
+      </div>}
     </div>
   );
 }

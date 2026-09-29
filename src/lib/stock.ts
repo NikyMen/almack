@@ -1,11 +1,12 @@
-import { db, productos, stockSucursal } from "@/db";
+import { db, productos, stockSucursal, stockTransito } from "@/db";
 import { and, asc, eq, sql, inArray, desc } from "drizzle-orm";
 
-// El stock vive en dos lugares a la vez y hay que escribirlos juntos:
+// El stock disponible vive en dos lugares y hay que escribirlos juntos:
 //
-//   productos.stock   → TOTAL de la empresa. Lo leen la caja, la tienda online,
+//   productos.stock   → TOTAL DISPONIBLE de la empresa. Lo leen la caja, la tienda online,
 //                       el checkout de MercadoPago y las métricas históricas.
 //   stock_sucursal    → cuánto de ese total está en cada local.
+//   stock_transito    → mercadería despachada pendiente de recepción; no se vende.
 //
 // Todo lo que mueva stock pasa por acá. La regla es siempre la misma: se toca
 // la fila de la sucursal y después se recalcula el total desde el desglose, así
@@ -123,36 +124,6 @@ export async function descontarStock(
   });
 }
 
-/**
- * Traslado entre locales: descuenta en el origen y suma en el destino, todo o
- * nada. Devuelve las unidades movidas.
- */
-export async function moverStockEntreSucursales(
-  origenId: number,
-  destinoId: number,
-  items: { productoId: number; cantidad: number }[]
-) {
-  await db.transaction(async (tx) => {
-    for (const it of items) {
-      const r = await tx
-        .update(stockSucursal)
-        .set({ cantidad: sql`${stockSucursal.cantidad} - ${it.cantidad}` })
-        .where(
-          and(
-            eq(stockSucursal.productoId, it.productoId),
-            eq(stockSucursal.sucursalId, origenId),
-            sql`${stockSucursal.cantidad} >= ${it.cantidad}`
-          )
-        );
-      if (!r.rowsAffected) {
-        throw new Error(`No hay ${it.cantidad} unidades del producto ${it.productoId} en el origen.`);
-      }
-      await sumarStockEnTx(tx, it.productoId, destinoId, it.cantidad);
-    }
-  });
-  return items.reduce((a, i) => a + i.cantidad, 0);
-}
-
 // --- Lecturas ----------------------------------------------------------------
 
 export type StockDeProducto = { sucursalId: number; cantidad: number };
@@ -188,4 +159,16 @@ export async function stockDeSucursal(sucursalId: number): Promise<Map<number, n
     .from(stockSucursal)
     .where(eq(stockSucursal.sucursalId, sucursalId));
   return new Map(filas.map((f) => [f.productoId, f.cantidad]));
+}
+
+/** Unidades enviadas pendientes de resolución, agrupadas por destino y producto. */
+export async function desgloseTransito(): Promise<Map<number, StockDeProducto[]>> {
+  const filas = await db.select().from(stockTransito).orderBy(asc(stockTransito.sucursalId));
+  const mapa = new Map<number, StockDeProducto[]>();
+  for (const fila of filas) {
+    const lista = mapa.get(fila.productoId) ?? [];
+    lista.push({ sucursalId: fila.sucursalId, cantidad: fila.cantidad });
+    mapa.set(fila.productoId, lista);
+  }
+  return mapa;
 }

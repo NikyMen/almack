@@ -1,6 +1,6 @@
 "use server";
 
-import { db, productos, clientes, compras, ventas, ventaItems, tiendaProductoMeta, sucursales, stockSucursal } from "@/db";
+import { db, productos, clientes, compras, ventas, ventaItems, tiendaProductoMeta, sucursales, stockSucursal, stockTransito, stockMovimientos } from "@/db";
 import { eq, sql, inArray } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
@@ -12,7 +12,7 @@ import {
   stockDeSucursal,
 } from "@/lib/stock";
 import { COOKIE_SUCURSAL, TODAS, getSucursales, sucursalOperativaId } from "@/lib/sucursal";
-import { getUsuarioActual } from "@/lib/auth";
+import { getUsuarioActual, requireAcceso } from "@/lib/auth";
 import { esSuperAdmin } from "@/lib/permisos";
 import { MEDIOS_PAGO, type MedioPago } from "@/lib/medios-pago";
 import { esEstadoCompra } from "@/lib/compras";
@@ -115,6 +115,13 @@ export async function archivarSucursal(id: number) {
       error: "Esa sucursal todavía tiene mercadería. Movela a otro local antes de darla de baja.",
     };
   }
+  const [pendiente] = await db.select({ unidades: sql<number>`coalesce(sum(${stockTransito.cantidad}),0)` })
+    .from(stockTransito).where(eq(stockTransito.sucursalId, id));
+  const [salientes] = await db.select({ id: stockMovimientos.id }).from(stockMovimientos)
+    .where(sql`${stockMovimientos.origenId} = ${id} and ${stockMovimientos.estado} in ('en_transito','rechazado')`).limit(1);
+  if (Number(pendiente?.unidades ?? 0) > 0 || salientes) {
+    return { ok: false as const, error: "Esa sucursal tiene traslados pendientes. Resolvelos antes de darla de baja." };
+  }
 
   await db.update(sucursales).set({ activo: false }).where(eq(sucursales.id, id));
 
@@ -176,8 +183,9 @@ async function resolverImagen(
  * para que nadie mande un id de otra empresa.
  */
 async function sucursalDelForm(fd: FormData): Promise<number | null> {
+  const usuario = await getUsuarioActual();
   const pedida = Number(fd.get("sucursalId") || 0);
-  if (pedida) {
+  if (pedida && esSuperAdmin(usuario)) {
     const lista = await getSucursales();
     if (lista.some((x) => x.id === pedida)) return pedida;
   }
@@ -185,6 +193,7 @@ async function sucursalDelForm(fd: FormData): Promise<number | null> {
 }
 
 export async function crearProducto(formData: FormData) {
+  await requireAcceso("stock");
   const d = datosProducto(formData);
   if (!d.nombre) return { ok: false as const, error: "El nombre es obligatorio." };
 
@@ -205,7 +214,7 @@ export async function crearProducto(formData: FormData) {
   const sucursalId = await sucursalDelForm(formData);
   if (sucursalId) await fijarStockEnSucursal(creado.id, sucursalId, d.stock);
 
-  revalidatePath("/stock");
+  revalidatePath("/admin/stock");
   revalidatePath("/");
   revalidatePath("/tienda");
   revalidatePath("/tienda/productos");
@@ -213,6 +222,7 @@ export async function crearProducto(formData: FormData) {
 }
 
 export async function editarProducto(id: number, formData: FormData) {
+  await requireAcceso("stock");
   const d = datosProducto(formData);
   if (!d.nombre) return { ok: false as const, error: "El nombre es obligatorio." };
 
@@ -232,7 +242,7 @@ export async function editarProducto(id: number, formData: FormData) {
     .where(eq(productos.id, id));
   if (sucursalId) await fijarStockEnSucursal(id, sucursalId, stock);
 
-  revalidatePath("/stock");
+  revalidatePath("/admin/stock");
   revalidatePath("/");
   revalidatePath("/tienda");
   revalidatePath("/tienda/productos");
@@ -240,11 +250,15 @@ export async function editarProducto(id: number, formData: FormData) {
 }
 
 export async function eliminarProducto(id: number) {
+  await requireAcceso("stock");
+  const [enTransito] = await db.select({ n: sql<number>`coalesce(sum(${stockTransito.cantidad}),0)` })
+    .from(stockTransito).where(eq(stockTransito.productoId, id));
+  if (Number(enTransito?.n ?? 0) > 0) return { ok: false as const, error: "No se puede eliminar un producto con stock en tránsito." };
   const [previo] = await db.select().from(productos).where(eq(productos.id, id)).limit(1);
   if (previo?.imagen) await borrarImagenProducto(previo.imagen);
   await borrarStockDeProducto(id);
   await db.delete(productos).where(eq(productos.id, id));
-  revalidatePath("/stock");
+  revalidatePath("/admin/stock");
   revalidatePath("/");
 }
 
@@ -254,7 +268,10 @@ export async function eliminarProducto(id: number) {
  * tabla pide primero en cuál.
  */
 export async function ajustarStock(id: number, delta: number, sucursalId?: number | null) {
-  const destino = sucursalId ?? (await sucursalOperativaId());
+  const usuario = await requireAcceso("stock");
+  const lista = await getSucursales();
+  const solicitada = lista.find((s) => s.id === sucursalId)?.id;
+  const destino = esSuperAdmin(usuario) && solicitada ? solicitada : await sucursalOperativaId();
   if (destino) {
     await ajustarStockEnSucursal(id, destino, delta);
   } else {
@@ -265,20 +282,22 @@ export async function ajustarStock(id: number, delta: number, sucursalId?: numbe
       .set({ stock: sql`max(0, ${productos.stock} + ${delta})` })
       .where(eq(productos.id, id));
   }
-  revalidatePath("/stock");
+  revalidatePath("/admin/stock");
   revalidatePath("/");
 }
 
 export async function togglePublicado(id: number) {
+  await requireAcceso("stock");
   await db
     .update(productos)
     .set({ publicado: sql`not ${productos.publicado}` })
     .where(eq(productos.id, id));
   revalidatePath("/tienda");
-  revalidatePath("/stock");
+  revalidatePath("/admin/stock");
 }
 
 export async function toggleOfertaTienda(id: number) {
+  await requireAcceso("stock");
   const [meta] = await db.select().from(tiendaProductoMeta).where(eq(tiendaProductoMeta.productoId, id)).limit(1);
   if (meta) {
     await db.update(tiendaProductoMeta).set({ ofertaDelDia: !meta.ofertaDelDia }).where(eq(tiendaProductoMeta.productoId, id));
@@ -287,7 +306,7 @@ export async function toggleOfertaTienda(id: number) {
   }
   revalidatePath("/tienda");
   revalidatePath("/tienda/ofertas");
-  revalidatePath("/stock");
+  revalidatePath("/admin/stock");
 }
 
 export async function guardarDescripcionWeb(id: number, texto: string) {

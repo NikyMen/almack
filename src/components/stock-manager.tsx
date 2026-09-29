@@ -17,7 +17,9 @@ import { ajustarStock, crearProducto, editarProducto, eliminarProducto, accionDe
  */
 export type ProductoConStock = Producto & {
   stockLocal: number;
+  transitoLocal: number;
   porSucursal: Record<number, number>;
+  transitoPorSucursal: Record<number, number>;
 };
 
 type Contexto = {
@@ -32,6 +34,7 @@ export function StockManager({
   sucursalActivaId,
 }: { items: ProductoConStock[] } & Contexto) {
   const [open, setOpen] = useState(false);
+  const [error, setError] = useState("");
   const [editando, setEditando] = useState<ProductoConStock | null>(null);
   const [ocultos, setOcultos] = useState<Set<number>>(new Set());
   // Ajuste (+1/−1) pendiente de que el usuario diga en qué sucursal aplicarlo.
@@ -62,6 +65,15 @@ export function StockManager({
     }
   }
 
+  function borrar(p: ProductoConStock) {
+    if (!confirm(`¿Eliminar "${p.nombre}"?`)) return;
+    setError("");
+    startTransition(async () => {
+      const resultado = await eliminarProducto(p.id);
+      if (resultado && !resultado.ok) setError(resultado.error);
+    });
+  }
+
   const cols: Col<ProductoConStock>[] = [
     { key: "sku", head: "SKU", cell: (p) => <span className="font-mono text-xs text-slate-500">{p.sku}</span>, value: (p) => p.sku },
     { key: "nombre", head: "Producto", cell: (p) => <span className="font-medium">{p.nombre}</span>, value: (p) => p.nombre },
@@ -78,6 +90,8 @@ export function StockManager({
         );
       },
     },
+    { key: "transito", head: "En tránsito", value: (p) => p.transitoLocal, sort: true,
+      cell: (p) => <span className={p.transitoLocal ? "rounded-lg bg-amber-50 px-2 py-1 font-semibold text-amber-800" : "text-slate-400"}>{p.transitoLocal}</span> },
     ...(mostrarDesglose
       ? [
           {
@@ -98,7 +112,7 @@ export function StockManager({
           <button className="btn-ghost px-2 py-1" title="Editar" onClick={() => setEditando(p)}><Pencil className="h-3.5 w-3.5" /></button>
           <button className="btn-ghost px-2 py-1 text-xs" title={p.publicado ? "Ocultar de la tienda" : "Publicar en la tienda"} onClick={() => startTransition(() => togglePublicado(p.id))}>{p.publicado ? "Ocultar" : "Publicar"}</button>
           <button className="btn-ghost px-2 py-1 text-xs" title="Alternar oferta" onClick={() => startTransition(() => toggleOfertaTienda(p.id))}>Oferta</button>
-          <button className="btn-ghost px-2 py-1 text-rose-600" title="Eliminar" onClick={() => { if (confirm(`¿Eliminar "${p.nombre}"?`)) startTransition(() => eliminarProducto(p.id)); }}><Trash2 className="h-3.5 w-3.5" /></button>
+          <button className="btn-ghost px-2 py-1 text-rose-600" title="Eliminar" onClick={() => borrar(p)}><Trash2 className="h-3.5 w-3.5" /></button>
         </div>
       ),
     },
@@ -128,6 +142,7 @@ export function StockManager({
       </div>
 
       {open && <NuevoProducto ctx={ctx} onDone={() => setOpen(false)} />}
+      {error && <p role="alert" className="mb-3 rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
 
       <FilterableTable
         rows={items}
@@ -160,6 +175,7 @@ export function StockManager({
                 <span className={`text-xs ${bajo ? "font-semibold text-rose-600" : "text-slate-500"}`}>
                   stock {p.stockLocal}
                   {bajo && " · bajo"}
+                  {p.transitoLocal > 0 && ` · tránsito ${p.transitoLocal}`}
                 </span>
                 <div className="flex items-center gap-1">
                   <button className="btn-ghost px-2.5 py-1.5" aria-label="Quitar una unidad" onClick={() => ajustar(p, -1)}>−</button>
@@ -171,7 +187,7 @@ export function StockManager({
                   <button
                     className="btn-ghost px-2.5 py-1.5 text-rose-600"
                     aria-label="Eliminar producto"
-                    onClick={() => { if (confirm(`¿Eliminar "${p.nombre}"?`)) startTransition(() => eliminarProducto(p.id)); }}
+                    onClick={() => borrar(p)}
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>

@@ -51,10 +51,10 @@ export function BottomNav({ usuario }: { usuario: UsuarioActual }) {
 
   function elegir(prefs: ModuloKey[], usados: Set<ModuloKey>, cantidad: number) {
     const out: ModuloKey[] = [];
-    const candidatos = [...prefs, ...MODULOS_VISIBLES.map((m) => m.key)];
+    const candidatos = [...prefs, ...MODULOS_VISIBLES.filter((m) => m.key !== "movimientos").map((m) => m.key)];
     for (const k of candidatos) {
       if (out.length === cantidad) break;
-      if (usados.has(k) || !tieneAcceso(usuario, k)) continue;
+      if (k === "movimientos" || usados.has(k) || !tieneAcceso(usuario, k)) continue;
       usados.add(k);
       out.push(k);
     }

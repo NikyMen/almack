@@ -39,6 +39,17 @@ catálogo con ofertas y stock, clientes, ventas, facturas, compras en distintos 
 pedidos online, gastos, traslados, leads de WhatsApp y una conversación de IA. Se puede
 repetir sin duplicar la demo. Si la base ya tiene productos, conserva todos los datos.
 
+En **Stock**, el administrador puede elegir una sucursal o ver el total. La columna
+**Tránsito — sucursal** muestra mercadería enviada que aún no se puede vender.
+**Stock → Mover stock** permite crear un traslado con número, origen, destino y
+cantidades. El envío descuenta del origen y suma al tránsito del destino. En
+**Verificar llegada** se cargan las cantidades reales de cada artículo, incluso
+si faltan o sobran unidades. La sucursal puede aceptar y acreditar esas
+cantidades, o rechazar el traslado con una nota; en ese caso queda en tránsito
+hasta confirmar la devolución al origen. La demo nueva trae un traslado pendiente
+para probar la recepción. `pnpm test:transfers` prueba estos estados sin tocar
+la base local.
+
 - Tienda pública: http://localhost:3000/tienda
 - Panel: http://localhost:3000/admin (usuario y contraseña de `.env.local`)
 - La base local y `.env.local` están excluidos de Git.

@@ -1,4 +1,5 @@
 import { client } from "./index";
+import { enviarTransferencia } from "../lib/transferencias";
 
 // Datos locales para recorrer la aplicación. Nunca borra información existente.
 async function run() {
@@ -95,6 +96,7 @@ async function run() {
   await insert("INSERT INTO stock_movimiento_items (movimiento_id,producto_id,descripcion,cantidad) VALUES (?,?,?,?)", [move, productIds[0], catalogo[0][1], 8]);
   await insert("INSERT INTO gastos (sucursal_id,movimiento_id,concepto,categoria,monto,fecha) VALUES (?,?,?,?,?,?)", [norte, move, "Flete de reposición", "flete", 8500, now - 3 * day]);
   await insert("INSERT INTO gastos (sucursal_id,concepto,categoria,monto,fecha) VALUES (?,?,?,?,?)", [central, "Servicios del local", "servicios", 24000, now - 7 * day]);
+  await enviarTransferencia({ origenId: central, destinoId: norte, nota: "Demo: recepción pendiente", items: [{ productoId: productIds[0], cantidad: 4 }], usuario: { id: admin, nombre: "Administrador" } });
 
   const stages = (await client.execute("SELECT id,nombre FROM wa_etapas")).rows;
   const stageId = (name: string) => Number(stages.find((row) => row.nombre === name)?.id);
