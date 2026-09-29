@@ -49,6 +49,9 @@ cantidades, o rechazar el traslado con una nota; en ese caso queda en tránsito
 hasta confirmar la devolución al origen. La demo nueva trae un traslado pendiente
 para probar la recepción. `pnpm test:transfers` prueba estos estados sin tocar
 la base local.
+La pestaña **Tránsito** de Stock muestra cada envío pendiente con producto,
+cantidad, número de traslado, origen, estado y destino; también permite filtrar
+por la sucursal que lo recibirá.
 
 - Tienda pública: http://localhost:3000/tienda
 - Panel: http://localhost:3000/admin (usuario y contraseña de `.env.local`)
