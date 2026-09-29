@@ -77,11 +77,12 @@ function SidebarContent({
 
       <nav className="flex flex-col gap-1">
         {visibles.map((item) => {
-          const active = item.key === activo;
+          if (item.key === "movimientos") return null;
+          const active = item.key === activo || (item.key === "stock" && activo === "movimientos");
           const Icon = ICONOS[item.key];
           return (
+            <div key={item.href}>
             <Link
-              key={item.href}
               href={item.href}
               onClick={onNavigate}
               aria-current={active ? "page" : undefined}
@@ -92,6 +93,13 @@ function SidebarContent({
               <Icon className="h-4 w-4 shrink-0" strokeWidth={2} />
               {item.label}
             </Link>
+            {item.key === "stock" && tieneAcceso(usuario, "movimientos") && (
+              <Link href="/admin/stock/mover" onClick={onNavigate} aria-current={activo === "movimientos" ? "page" : undefined}
+                className={`ml-4 mt-1 flex items-center gap-2 rounded-xl border-l-2 px-3 py-2 text-xs font-semibold transition ${activo === "movimientos" ? "border-l-lime bg-white/10 text-lime" : "border-l-white/15 text-slate-400 hover:bg-white/5 hover:text-white"}`}>
+                <ArrowLeftRight className="h-3.5 w-3.5" /> Mover stock
+              </Link>
+            )}
+            </div>
           );
         })}
       </nav>
@@ -175,7 +183,7 @@ export function Sidebar({
       </header>
 
       {/* Sidebar fijo en escritorio, con los rayos de luz de fondo */}
-      <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col overflow-hidden bg-navy px-4 py-6 text-slate-300 md:flex">
+      <aside className="sticky top-0 z-30 hidden h-screen w-64 shrink-0 flex-col overflow-visible bg-navy px-4 py-6 text-slate-300 md:flex">
         <LightRays className="absolute inset-0 -z-0 h-full w-full opacity-70" />
         <div className="relative z-10 flex h-full flex-col">
           <SidebarContent

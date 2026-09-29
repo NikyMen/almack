@@ -48,8 +48,8 @@ export const tiendaProductoMeta = sqliteTable("tienda_producto_meta", {
   ofertaDelDia: integer("oferta_del_dia", { mode: "boolean" }).notNull().default(false),
 });
 
-// Desglose del stock por local. `productos.stock` sigue siendo el TOTAL de la
-// empresa (lo usan la caja, la tienda y las métricas históricas) y esta tabla
+// Desglose del stock disponible por local. `productos.stock` es la suma
+// disponible de la empresa (lo usan la caja y la tienda) y esta tabla
 // dice cuánto de ese total está en cada sucursal. Las dos se escriben juntas
 // desde src/lib/stock.ts: nunca tocar una sin la otra.
 export const stockSucursal = sqliteTable("stock_sucursal", {
@@ -59,8 +59,17 @@ export const stockSucursal = sqliteTable("stock_sucursal", {
   cantidad: integer("cantidad").notNull().default(0),
 });
 
-// Remito interno: mercadería que se va de una sucursal a otra. Se aplica al
-// stock en el momento de crearse (no hay estado "en tránsito").
+// Mercadería enviada y todavía no aceptada por la sucursal de destino.
+// Se muestra como "Tránsito — <sucursal>" y no está disponible para vender.
+export const stockTransito = sqliteTable("stock_transito", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  productoId: integer("producto_id").notNull().references(() => productos.id),
+  sucursalId: integer("sucursal_id").notNull().references(() => sucursales.id),
+  cantidad: integer("cantidad").notNull().default(0),
+});
+
+// Remito interno: al despachar se descuenta del origen y queda en tránsito
+// del destino. La recepción acredita lo verificado o registra un rechazo.
 export const stockMovimientos = sqliteTable("stock_movimientos", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   origenId: integer("origen_id").notNull().references(() => sucursales.id),
@@ -71,6 +80,10 @@ export const stockMovimientos = sqliteTable("stock_movimientos", {
   usuarioNombre: text("usuario_nombre").notNull().default(""),
   nota: text("nota").notNull().default(""),
   unidades: integer("unidades").notNull().default(0),
+  estado: text("estado").notNull().default("recibido"), // en_transito | rechazado | recibido | devuelto
+  recibidoPor: text("recibido_por").notNull().default(""),
+  recepcionNota: text("recepcion_nota").notNull().default(""),
+  recibidoEn: integer("recibido_en", { mode: "timestamp" }),
   creadoEn: integer("creado_en", { mode: "timestamp" }).default(now),
 });
 
@@ -80,6 +93,8 @@ export const stockMovimientoItems = sqliteTable("stock_movimiento_items", {
   productoId: integer("producto_id").notNull().references(() => productos.id),
   descripcion: text("descripcion").notNull().default(""), // snapshot del nombre
   cantidad: integer("cantidad").notNull().default(1),
+  cantidadVerificada: integer("cantidad_verificada"),
+  cantidadRecibida: integer("cantidad_recibida").notNull().default(0),
 });
 
 // Gastos operativos. Nacieron para el flete de un traslado (nafta, peaje, changa)
@@ -352,6 +367,7 @@ export const iaMensajes = sqliteTable("ia_mensajes", {
 
 export type Sucursal = typeof sucursales.$inferSelect;
 export type StockSucursal = typeof stockSucursal.$inferSelect;
+export type StockTransito = typeof stockTransito.$inferSelect;
 export type StockMovimiento = typeof stockMovimientos.$inferSelect;
 export type StockMovimientoItem = typeof stockMovimientoItems.$inferSelect;
 export type Gasto = typeof gastos.$inferSelect;

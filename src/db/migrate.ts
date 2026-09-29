@@ -228,6 +228,12 @@ const statements = [
     sucursal_id INTEGER NOT NULL REFERENCES sucursales(id),
     cantidad INTEGER NOT NULL DEFAULT 0
   )`,
+  `CREATE TABLE IF NOT EXISTS stock_transito (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    producto_id INTEGER NOT NULL REFERENCES productos(id),
+    sucursal_id INTEGER NOT NULL REFERENCES sucursales(id),
+    cantidad INTEGER NOT NULL DEFAULT 0
+  )`,
   `CREATE TABLE IF NOT EXISTS stock_movimientos (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     origen_id INTEGER NOT NULL REFERENCES sucursales(id),
@@ -236,6 +242,10 @@ const statements = [
     usuario_nombre TEXT NOT NULL DEFAULT '',
     nota TEXT NOT NULL DEFAULT '',
     unidades INTEGER NOT NULL DEFAULT 0,
+    estado TEXT NOT NULL DEFAULT 'recibido',
+    recibido_por TEXT NOT NULL DEFAULT '',
+    recepcion_nota TEXT NOT NULL DEFAULT '',
+    recibido_en INTEGER,
     creado_en INTEGER DEFAULT (strftime('%s','now'))
   )`,
   `CREATE TABLE IF NOT EXISTS stock_movimiento_items (
@@ -243,7 +253,9 @@ const statements = [
     movimiento_id INTEGER NOT NULL REFERENCES stock_movimientos(id),
     producto_id INTEGER NOT NULL REFERENCES productos(id),
     descripcion TEXT NOT NULL DEFAULT '',
-    cantidad INTEGER NOT NULL DEFAULT 1
+    cantidad INTEGER NOT NULL DEFAULT 1,
+    cantidad_verificada INTEGER,
+    cantidad_recibida INTEGER NOT NULL DEFAULT 0
   )`,
   `CREATE TABLE IF NOT EXISTS gastos (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -271,6 +283,12 @@ const alters = [
   `ALTER TABLE compras ADD COLUMN detalle TEXT NOT NULL DEFAULT ''`,
   `ALTER TABLE ventas ADD COLUMN sucursal_id INTEGER REFERENCES sucursales(id)`,
   `ALTER TABLE compras ADD COLUMN sucursal_id INTEGER REFERENCES sucursales(id)`,
+  `ALTER TABLE stock_movimientos ADD COLUMN estado TEXT NOT NULL DEFAULT 'recibido'`,
+  `ALTER TABLE stock_movimientos ADD COLUMN recibido_por TEXT NOT NULL DEFAULT ''`,
+  `ALTER TABLE stock_movimientos ADD COLUMN recepcion_nota TEXT NOT NULL DEFAULT ''`,
+  `ALTER TABLE stock_movimientos ADD COLUMN recibido_en INTEGER`,
+  `ALTER TABLE stock_movimiento_items ADD COLUMN cantidad_recibida INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE stock_movimiento_items ADD COLUMN cantidad_verificada INTEGER`,
 ];
 
 // Índices que importan para las listas más consultadas
@@ -284,6 +302,9 @@ const indices = [
   // Un producto tiene una sola fila por sucursal: el UNIQUE es lo que hace
   // seguro el upsert de src/lib/stock.ts.
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_stock_sucursal_par ON stock_sucursal(producto_id, sucursal_id)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_stock_transito_par ON stock_transito(producto_id, sucursal_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_stock_transito_suc ON stock_transito(sucursal_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_mov_estado_destino ON stock_movimientos(estado, destino_id)`,
   `CREATE INDEX IF NOT EXISTS idx_stock_sucursal_suc ON stock_sucursal(sucursal_id)`,
   `CREATE INDEX IF NOT EXISTS idx_mov_items_mov ON stock_movimiento_items(movimiento_id)`,
   `CREATE INDEX IF NOT EXISTS idx_gastos_sucursal ON gastos(sucursal_id)`,
@@ -307,13 +328,19 @@ async function migrate() {
   }
 
   // Migración de columnas para DBs ya creadas (idempotente)
+  let nuevaColumnaRecibida = false;
   for (const sql of alters) {
     try {
       await client.execute(sql);
+      if (sql.includes("stock_movimiento_items ADD COLUMN cantidad_recibida")) nuevaColumnaRecibida = true;
     } catch {
       /* la columna ya existe → ignorar */
     }
   }
+  if (nuevaColumnaRecibida) {
+    await client.execute("UPDATE stock_movimiento_items SET cantidad_recibida = cantidad");
+  }
+  await client.execute("UPDATE stock_movimiento_items SET cantidad_verificada = cantidad WHERE cantidad_verificada IS NULL AND movimiento_id IN (SELECT id FROM stock_movimientos WHERE estado = 'recibido')");
 
   for (const sql of indices) {
     await client.execute(sql);

@@ -24,7 +24,7 @@ export const MODULOS: Modulo[] = [
   { key: "panel", label: "Panel", href: "/admin" },
   { key: "caja", label: "Caja", href: "/admin/caja" },
   { key: "stock", label: "Stock", href: "/admin/stock" },
-  { key: "movimientos", label: "Mover stock", href: "/admin/movimientos" },
+  { key: "movimientos", label: "Mover stock", href: "/admin/stock/mover" },
   { key: "ventas", label: "Ventas", href: "/admin/ventas" },
   { key: "compras", label: "Compras", href: "/admin/compras" },
   { key: "clientes", label: "Clientes", href: "/admin/clientes" },
@@ -73,6 +73,7 @@ export function esSuperAdmin(u: UsuarioActual | null): boolean {
 export function tieneAcceso(u: UsuarioActual | null, modulo: ModuloKey): boolean {
   if (!u) return false;
   if (u.rol === "admin") return true;
+  if (modulo === "stock" && u.permisos.includes("movimientos")) return true;
   return u.permisos.includes(modulo);
 }
 
