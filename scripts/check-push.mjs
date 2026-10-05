@@ -10,7 +10,7 @@ const patterns = [
   /\bsk-(?:proj-|live-|test-)?[A-Za-z0-9_-]{20,}\b/,
   /\b(?:APP_USR|TEST)-[A-Za-z0-9-]{25,}\b/,
 ];
-const assignments = /\b(AUTH_SECRET|AUTH_PASSWORD|DEEPSEEK_API_KEY|VISION_API_KEY|TURSO_AUTH_TOKEN|MP_ACCESS_TOKEN)\s*=\s*([^\s#]+)/g;
+const assignments = /\b(AUTH_SECRET|AUTH_PASSWORD|DEEPSEEK_API_KEY|GOOGLE_VISION_API_KEY|GEMINI_API_KEY|VISION_API_KEY|TURSO_AUTH_TOKEN|MP_ACCESS_TOKEN)\s*=\s*([^\s#]+)/g;
 
 function git(...args) {
   const result = spawnSync("git", args, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });

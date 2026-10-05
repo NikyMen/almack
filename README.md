@@ -68,8 +68,8 @@ bloquea el push si no puede completarse.
 Para empezar con una demo nueva, detené el servidor, respaldá o renombrá
 `gestoria-local.db` y ejecutá `pnpm dev:setup` de nuevo.
 
-Las funciones de IA y lectura de imágenes necesitan `DEEPSEEK_API_KEY` y, si corresponde,
-las variables `VISION_*`. El pago real o sandbox de Mercado Pago necesita un
+Las funciones de IA y lectura de imágenes necesitan `DEEPSEEK_API_KEY` y, para imágenes,
+`GEMINI_API_KEY`. El pago real o sandbox de Mercado Pago necesita un
 `MP_ACCESS_TOKEN` propio y una URL pública para recibir webhooks. El CRM de WhatsApp
 permite recorrer leads y presupuestos de prueba; enviar y recibir mensajes requiere
 vincular una cuenta desde el panel. No se incluyen credenciales de terceros en la demo.
@@ -85,10 +85,13 @@ pnpm dev                    # http://localhost:3000
 ```
 
 > La app funciona sin clave de API: solo las funciones de IA requieren `DEEPSEEK_API_KEY`.
-> Para leer la **foto del remito** en Compras hace falta un modelo con visión. Por defecto se usa el
-> mismo de DeepSeek; si ese modelo no acepta imágenes, se configuran `VISION_API_KEY`, `VISION_BASE_URL`
-> y `VISION_MODEL` con cualquier proveedor compatible con OpenAI (ver `.env.example`). Sin eso, Compras
-> igual carga el stock: se pega el detalle y se usa "Analizar detalle", que corre con DeepSeek texto.
+> Las fotos de remitos y la carga masiva usan **Gemini → DeepSeek**.
+> Google extrae el texto y DeepSeek lo convierte en productos, cantidades y precios.
+> Configurá `GEMINI_API_KEY` y `DEEPSEEK_API_KEY` en `.env.local` (desarrollo)
+> o en el entorno del servidor. Creá la clave en Google AI Studio
+> y reiniciá la app después de configurar las variables. El nivel gratuito tiene cuotas limitadas.
+> No requiere n8n. El stock se carga recién al revisar y confirmar los productos.
+> Sin Gemini podés pegar el detalle y analizarlo con DeepSeek.
 
 ## Login
 
@@ -110,9 +113,7 @@ Variables de entorno (ver `.env.example`):
 | ------------------- | ---------------------------------------------- |
 | `DEEPSEEK_API_KEY`  | Funciones de IA (descripciones, redes, consultas) |
 | `DEEPSEEK_MODEL`    | Modelo: `deepseek-v4-flash` (por defecto) o `deepseek-v4-pro` |
-| `VISION_API_KEY`    | Opcional: leer fotos de remitos si el modelo de DeepSeek no tiene visión |
-| `VISION_BASE_URL`   | Opcional: base URL del proveedor de visión (formato OpenAI) |
-| `VISION_MODEL`      | Opcional: modelo de visión a usar |
+| `GEMINI_API_KEY` | Gemini para fotos de remitos y carga masiva |
 | `AUTH_USER`         | Usuario del panel                              |
 | `AUTH_PASSWORD`     | Contraseña del panel (obligatoria en producción) |
 | `AUTH_SECRET`       | Firma de la cookie de sesión (obligatoria en producción) |
@@ -133,3 +134,36 @@ La interfaz respeta la identidad de **Consultoría Digital**: paleta navy `#0c10
 | `pnpm db:push`  | Crea las tablas en la base SQLite            |
 | `pnpm db:seed`  | Carga datos de ejemplo                       |
 | `pnpm db:setup` | Tablas + datos de ejemplo en un solo paso    |
+
+
+## Carga de stock y diferencias de precios
+
+Entrar a **Compras → Carga de stock** (`/admin/compras/carga`), elegir proveedor y sucursal,
+subir el comprobante y revisar el borrador. Se pueden corregir código, nombre, cantidad y costo,
+vincular productos existentes o confirmar productos nuevos. La confirmación muestra stock del
+local antes/después y permite revalorizar individualmente. La carga de stock, los precios y el
+historial se guardan en una sola transacción; una carga aplicada no puede volver a sumarse.
+
+- Fotos JPG/PNG/WEBP/GIF: usan Gemini (`GEMINI_API_KEY`) y DeepSeek (`DEEPSEEK_API_KEY`).
+- Excel XLSX y CSV/TSV: lectura directa, sin IA ni n8n. Primera hoja con datos, encabezados
+  `Nombre,Código,Cantidad,Costo unitario`; cantidades enteras positivas y costo por unidad.
+  Códigos con ceros iniciales deben estar guardados como texto en Excel.
+- Word DOCX y TXT: extracción de texto y análisis con la IA de texto existente (`DEEPSEEK_API_KEY`).
+  Hasta 12.000 caracteres para evitar recortes silenciosos.
+- Hasta 8 MB y 500 productos por archivo. Convertir los formatos antiguos XLS/DOC a XLSX/DOCX.
+  Cada archivo agrega renglones; unificar líneas del mismo producto antes de confirmar.
+
+**Diferencias de precios** (`/admin/compras/diferencias-precios`) registra subas y bajas contra el
+último costo positivo recibido; si no hay compras anteriores, usa el costo del catálogo.
+Venta sugerida = venta actual × costo nuevo / costo anterior (dos decimales), conservando el
+margen porcentual. Sin costo o venta anterior no se propone revalorización. El historial conserva
+los nombres y códigos aunque se elimine la compra o el producto. No registra ediciones manuales
+del catálogo ni se reconstruye retroactivamente.
+
+Ejecutar `pnpm db:push` para crear la tabla de diferencias antes de usar la nueva sección.
+Las importaciones de documentos no guardan el archivo original: conservan los renglones extraídos
+y una entrada de auditoría con el nombre del archivo. Las fotos adjuntas desde Compras mantienen
+el almacenamiento existente. Para un flujo de varios proveedores o OCR externo, se puede añadir
+n8n más adelante sin cambiar la revisión y confirmación.
+
+Si Gemini falla por conexión o devuelve 500/502/503/504, la imagen se transcribe con DeepSeek (`deepseek-flash`) como respaldo. Esta lectura consume saldo de DeepSeek. Opcional: `DEEPSEEK_VISION_MODEL` para cambiar el modelo de respaldo.

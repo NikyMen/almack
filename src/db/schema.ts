@@ -239,6 +239,24 @@ export const compraLineas = sqliteTable("compra_lineas", {
   creadoEn: integer("creado_en", { mode: "timestamp" }).default(now),
 });
 
+export const diferenciasPrecios = sqliteTable("diferencias_precios", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  compraId: integer("compra_id").notNull(),
+  productoId: integer("producto_id").notNull(),
+  sucursalId: integer("sucursal_id"),
+  nombre: text("nombre").notNull(),
+  codigo: text("codigo").notNull(),
+  costoAnterior: real("costo_anterior").notNull(),
+  costoNuevo: real("costo_nuevo").notNull(),
+  porcentaje: real("porcentaje").notNull(),
+  ventaAnterior: real("venta_anterior").notNull(),
+  ventaSugerida: real("venta_sugerida"),
+  ventaNueva: real("venta_nueva").notNull(),
+  revalorizado: integer("revalorizado", { mode: "boolean" }).notNull().default(false),
+  usuarioNombre: text("usuario_nombre").notNull(),
+  creadoEn: integer("creado_en", { mode: "timestamp" }).default(now),
+});
+
 export const compraItems = sqliteTable("compra_items", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   compraId: integer("compra_id").notNull().references(() => compras.id),

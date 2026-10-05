@@ -15,6 +15,16 @@ const MODULOS = [
 ];
 
 const statements = [
+  `CREATE TABLE IF NOT EXISTS diferencias_precios (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, compra_id INTEGER NOT NULL,
+    producto_id INTEGER NOT NULL, sucursal_id INTEGER,
+    nombre TEXT NOT NULL, codigo TEXT NOT NULL,
+    costo_anterior REAL NOT NULL, costo_nuevo REAL NOT NULL,
+    porcentaje REAL NOT NULL, venta_anterior REAL NOT NULL,
+    venta_sugerida REAL, venta_nueva REAL NOT NULL,
+    revalorizado INTEGER NOT NULL DEFAULT 0, usuario_nombre TEXT NOT NULL,
+    creado_en INTEGER DEFAULT (strftime('%s','now'))
+  )`,
   `CREATE TABLE IF NOT EXISTS sucursales (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     nombre TEXT NOT NULL,

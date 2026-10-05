@@ -187,11 +187,11 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
   );
 
   return (
-    <div className="grid gap-5 lg:grid-cols-[1fr_380px]">
+    <div className="grid min-w-0 items-start gap-5 lg:grid-cols-[minmax(0,1fr)_340px] xl:grid-cols-[minmax(0,1fr)_380px]">
       {/* Catálogo + buscador */}
-      <div className="card flex flex-col p-3 sm:p-4">
+      <div className="card flex min-w-0 flex-col p-3 sm:p-4">
         <div className="mb-4 flex gap-2">
-          <div className="relative flex-1">
+          <div className="relative min-w-0 flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input
               ref={inputRef}
@@ -236,9 +236,9 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
           </div>
         </div>
 
-        {/* auto-rows-fr + mt-auto en el pie: el precio queda SIEMPRE abajo a la
-            derecha, sin importar si el nombre ocupa una o dos líneas. */}
-        <div className="grid max-h-[58vh] auto-rows-fr grid-cols-1 gap-2 overflow-y-auto sm:grid-cols-3 xl:grid-cols-4">
+        {/* Las filas conservan su altura natural: el scroll limita el catálogo,
+            sin comprimir los nombres para hacer entrar todos los productos. */}
+        <div className="grid max-h-[58vh] min-w-0 grid-cols-[repeat(auto-fill,minmax(min(100%,13rem),1fr))] content-start gap-2 overflow-y-auto p-0.5">
           {filtrados.map((p) => {
             const usado = enCarrito.get(p.id) ?? 0;
             const restante = p.stock - usado;
@@ -248,11 +248,11 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
                 key={p.id}
                 onClick={() => { setTicket(null); agregar(p); }}
                 disabled={agotado}
-                className="flex h-full min-w-0 flex-col rounded-xl border border-slate-200 bg-white/70 p-3 text-left transition hover:border-lime hover:bg-lime/5 disabled:cursor-not-allowed disabled:opacity-40"
+                className="flex h-full min-h-32 min-w-0 flex-col rounded-xl border border-slate-200 bg-white/70 p-3 text-left transition hover:border-lime hover:bg-lime/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lime disabled:cursor-not-allowed disabled:opacity-40"
               >
-                <span className="line-clamp-2 text-sm font-medium leading-tight">{p.nombre}</span>
-                <span className="mt-1 font-mono text-[11px] text-slate-400">{p.sku}</span>
-                <div className="mt-auto flex items-end justify-between gap-2 pt-3">
+                <span className="min-h-10 shrink-0 break-words text-sm font-medium leading-5">{p.nombre}</span>
+                <span className="mt-1 shrink-0 break-all font-mono text-[11px] leading-4 text-slate-400">{p.sku}</span>
+                <div className="mt-auto flex shrink-0 flex-wrap items-end justify-between gap-2 pt-3">
                   <span className={`text-[11px] leading-tight ${agotado ? "text-rose-500" : "text-slate-400"}`}>
                     {agotado ? "sin stock" : `stock ${restante}`}
                   </span>
@@ -272,7 +272,7 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
       </div>
 
       {/* Pedido: columna fija en escritorio */}
-      <div className="card hidden h-fit flex-col p-4 lg:sticky lg:top-4 lg:flex">{panelPedido}</div>
+      <div className="card hidden h-fit min-w-0 flex-col p-4 lg:sticky lg:top-4 lg:flex">{panelPedido}</div>
 
       {/* Pedido en mobile: barra resumen + hoja deslizante */}
       {carrito.length > 0 && !pedidoAbierto && (

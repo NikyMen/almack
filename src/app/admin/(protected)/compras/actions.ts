@@ -1,15 +1,19 @@
 "use server";
 
+import { unificarBorrador } from "@/lib/unificar-borrador";
+import { confirmarStockEnTransaccion } from "@/lib/confirmar-stock";
+import { extraerDocumentoStock } from "@/lib/documento-stock";
 import { randomBytes } from "node:crypto";
 import { mkdir, writeFile, readFile, unlink } from "node:fs/promises";
 import path from "node:path";
-import { and, asc, desc, eq, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
 import {
   compras,
   compraHistorial,
   compraItems,
+  stockSucursal,
   compraLineas,
   productos,
   type Compra,
@@ -23,8 +27,8 @@ import {
   type ImagenEntrada,
 } from "@/lib/ai";
 import { esEstadoCompra } from "@/lib/compras";
-import { sumarStockEnTx } from "@/lib/stock";
-import { sucursalOperativaId } from "@/lib/sucursal";
+import { getContextoSucursal, sucursalOperativaId } from "@/lib/sucursal";
+import { diferenciaCosto, type ImpactoLinea } from "@/lib/precios-stock";
 import type { ResumenRecepcion } from "@/lib/recepcion";
 import {
   buscarProductos,
@@ -134,7 +138,7 @@ export async function editarCompra(compraId: number, formData: FormData) {
 
   await db.update(compras).set(despues).where(eq(compras.id, compraId));
   await registrarCambios(compraId, antes, despues, usuario);
-  revalidatePath("/compras");
+  revalidatePath("/admin/compras");
   revalidatePath("/");
   return { ok: true as const };
 }
@@ -148,7 +152,7 @@ export async function cambiarEstadoCompra(compraId: number, estado: string) {
 
   await db.update(compras).set({ estado }).where(eq(compras.id, compraId));
   await registrarCambios(compraId, antes, { estado }, usuario);
-  revalidatePath("/compras");
+  revalidatePath("/admin/compras");
   return { ok: true as const };
 }
 
@@ -163,7 +167,7 @@ export async function eliminarCompra(compraId: number) {
   await db.delete(compraItems).where(eq(compraItems.compraId, compraId));
   await db.delete(compraHistorial).where(eq(compraHistorial.compraId, compraId));
   await db.delete(compras).where(eq(compras.id, compraId));
-  revalidatePath("/compras");
+  revalidatePath("/admin/compras");
   revalidatePath("/");
   return { ok: true as const };
 }
@@ -214,7 +218,7 @@ export async function subirImagenCompra(compraId: number, formData: FormData) {
   // La imagen anterior queda huérfana si no la borramos.
   if (antes.imagen) await borrarArchivo(antes.imagen);
 
-  revalidatePath("/compras");
+  revalidatePath("/admin/compras");
   return { ok: true as const, imagen: ruta };
 }
 
@@ -241,7 +245,7 @@ export async function transcribirImagenCompra(compraId: number, reemplazar = fal
 
   await db.update(compras).set({ detalle: texto }).where(eq(compras.id, compraId));
   await registrarCambios(compraId, antes, { detalle: texto }, usuario);
-  revalidatePath("/compras");
+  revalidatePath("/admin/compras");
   return { ok: true as const, detalle: texto };
 }
 
@@ -311,7 +315,7 @@ async function pendientesDe(compraId: number) {
   return db
     .select()
     .from(compraLineas)
-    .where(and(eq(compraLineas.compraId, compraId), eq(compraLineas.aplicado, false)));
+    .where(and(eq(compraLineas.compraId, compraId), eq(compraLineas.aplicado, false))).orderBy(asc(compraLineas.id));
 }
 
 // Guarda la lectura en el borrador. `agregar` mantiene lo que ya había (sirve
@@ -325,7 +329,7 @@ async function guardarLectura(
     // Solo lo pendiente: lo ya aplicado al stock es historia y no se borra.
     await db
       .delete(compraLineas)
-      .where(and(eq(compraLineas.compraId, compraId), eq(compraLineas.aplicado, false)));
+      .where(and(eq(compraLineas.compraId, compraId), eq(compraLineas.aplicado, false))).orderBy(asc(compraLineas.id));
   }
   if (items.length === 0) return;
   await db.insert(compraLineas).values(
@@ -335,6 +339,7 @@ async function guardarLectura(
       codigo: it.codigo,
       cantidad: it.cantidad,
       precioUnit: it.precioUnit,
+      precioVenta: it.estado === "nuevo" ? Math.round(it.precioUnit * 2 * 100) / 100 : 0,
       productoId: it.productoId,
       estado: it.estado,
       candidatos: JSON.stringify(it.candidatos),
@@ -385,7 +390,7 @@ export async function leerRemitoCompra(compraId: number, modo?: "reemplazar" | "
   const items = await clasificarItems(lectura.items);
   await guardarLectura(compraId, items, modo);
   await anotar(compraId, usuario, "Lectura del remito", resumenLectura(items));
-  revalidatePath("/compras");
+  revalidatePath("/admin/compras");
   return {
     ok: true as const,
     lineas: items.length,
@@ -438,7 +443,7 @@ export async function analizarDetalleCompra(
   const items = await clasificarItems(lectura.items);
   await guardarLectura(compraId, items, modo);
   await anotar(compraId, usuario, "Lectura del detalle", resumenLectura(items));
-  revalidatePath("/compras");
+  revalidatePath("/admin/compras");
   return {
     ok: true as const,
     lineas: items.length,
@@ -452,6 +457,8 @@ export async function agregarLineaCompra(compraId: number, datos: DatosLinea) {
   const compra = await getCompra(compraId);
   if (!compra) return { ok: false as const, error: "La compra no existe." };
 
+  if (datos.cantidad !== undefined && (!Number.isSafeInteger(datos.cantidad) || datos.cantidad <= 0)) return { ok: false as const, error: "La cantidad debe ser un entero mayor a cero." };
+  if ([datos.precioUnit, datos.precioVenta].some(v => v !== undefined && (!Number.isFinite(v) || v < 0))) return { ok: false as const, error: "Los precios deben ser números positivos o cero." };
   const descripcion = String(datos.descripcion || "").trim();
   if (!descripcion) return { ok: false as const, error: "Escribí qué producto es." };
 
@@ -487,6 +494,8 @@ export async function actualizarLineaCompra(lineaId: number, datos: DatosLinea) 
   if (!linea) return { ok: false as const, error: "El renglón no existe." };
   if (linea.aplicado) return { ok: false as const, error: "Ese renglón ya se cargó al stock." };
 
+  if (datos.cantidad !== undefined && (!Number.isSafeInteger(datos.cantidad) || datos.cantidad <= 0)) return { ok: false as const, error: "La cantidad debe ser un entero mayor a cero." };
+  if ([datos.precioUnit, datos.precioVenta].some(v => v !== undefined && (!Number.isFinite(v) || v < 0))) return { ok: false as const, error: "Los precios deben ser números positivos o cero." };
   const descripcion = datos.descripcion !== undefined ? String(datos.descripcion).trim() : linea.descripcion;
   if (!descripcion) return { ok: false as const, error: "La descripción no puede quedar vacía." };
   const codigo = datos.codigo !== undefined ? String(datos.codigo).trim() : linea.codigo;
@@ -608,6 +617,12 @@ function armarResumen(pendientes: CompraLinea[]): ResumenRecepcion {
   };
 }
 
+export async function unificarLineasCompra(compraId: number) {
+  await requireAcceso("compras");
+  if (!await getCompra(compraId)) throw new Error("La compra no existe.");
+  return unificarBorrador(compraId);
+}
+
 /** Qué pasaría si se confirma. Es lo que se muestra en el cartel de confirmación. */
 export async function resumenRecepcion(compraId: number): Promise<ResumenRecepcion> {
   await requireAcceso("compras");
@@ -617,14 +632,14 @@ export async function resumenRecepcion(compraId: number): Promise<ResumenRecepci
 /**
  * Único punto donde la compra toca el stock.
  *
- * A los productos que ya existen les suma unidades y nada más: no se toca
- * `publicado`, ni el precio de venta, ni la descripción web. Los productos
+ * Suma unidades y actualiza costos si se eligió. La revalorización de venta
+ * requiere selección individual; no toca publicación ni descripción web. Los productos
  * nuevos se crean sin publicar, para que aparecer en la tienda siga siendo una
  * decisión aparte.
  */
 export async function aplicarRecepcion(
   compraId: number,
-  opciones: { confirmado: boolean; actualizarCosto?: boolean }
+  opciones: { confirmado: boolean; actualizarCosto?: boolean; revalorizar?: number[]; impactos?: ImpactoLinea[] }
 ) {
   const usuario = await requireAcceso("compras");
   const compra = await getCompra(compraId);
@@ -654,93 +669,29 @@ export async function aplicarRecepcion(
       error: `Hay ${resumen.sinConfirmar} productos nuevos sin confirmar. Revisá que no sean un producto que ya tenés escrito distinto.`,
     };
   }
-  const invalidas = pendientes.filter((l) => l.cantidad <= 0 || !l.descripcion.trim());
+  const invalidas = pendientes.filter((l) =>  !Number.isSafeInteger(l.cantidad) || l.cantidad <= 0 || !Number.isFinite(l.precioUnit) || l.precioUnit < 0 || !l.descripcion.trim());
   if (invalidas.length > 0) {
     return { ok: false as const, error: "Hay renglones sin descripción o con cantidad en cero." };
   }
 
   const creados: string[] = [];
-  const ahora = new Date();
 
   // La mercadería entra al local que recibe el remito: el de la compra, o el que
   // esté abierto en el panel si la compra es anterior a las sucursales.
   const sucursalId = compra.sucursalId ?? (await sucursalOperativaId());
 
   try {
-    await db.transaction(async (tx) => {
-      for (const linea of pendientes) {
-        let productoId = linea.productoId;
-
-        if (productoId === null) {
-          const [nuevo] = await tx
-            .insert(productos)
-            .values({
-              nombre: linea.descripcion,
-              sku: linea.codigo || `SKU-${Date.now()}-${linea.id}`,
-              categoria: "General",
-              stock: linea.cantidad,
-              precioCompra: linea.precioUnit,
-              precioVenta: linea.precioVenta,
-              // publicado queda en false por defecto: entra al stock, no a la tienda.
-            })
-            .returning({ id: productos.id });
-          productoId = nuevo.id;
-          creados.push(`${linea.descripcion} (#${productoId}) +${linea.cantidad}`);
-          if (sucursalId) await sumarStockEnTx(tx, productoId, sucursalId, linea.cantidad);
-        } else {
-          const set: { stock?: SQL; precioCompra?: number } = {};
-          // Sin sucursales (base previa a la migración) se suma al total, como antes.
-          if (!sucursalId) set.stock = sql`${productos.stock} + ${linea.cantidad}`;
-          // El costo solo se pisa si se pidió y si el remito trae precio.
-          if (opciones.actualizarCosto && linea.precioUnit > 0) set.precioCompra = linea.precioUnit;
-
-          if (Object.keys(set).length > 0) {
-            const r = await tx.update(productos).set(set).where(eq(productos.id, productoId));
-            if (!r.rowsAffected) {
-              throw new Error(`El producto de "${linea.descripcion}" ya no existe en el stock.`);
-            }
-          } else {
-            // Sin campos que pisar igual hay que confirmar que el producto sigue
-            // existiendo: si no, la línea sumaría stock a un id fantasma.
-            const [existe] = await tx
-              .select({ id: productos.id })
-              .from(productos)
-              .where(eq(productos.id, productoId));
-            if (!existe) {
-              throw new Error(`El producto de "${linea.descripcion}" ya no existe en el stock.`);
-            }
-          }
-          if (sucursalId) await sumarStockEnTx(tx, productoId, sucursalId, linea.cantidad);
-        }
-
-        await tx.insert(compraItems).values({
-          compraId,
-          productoId,
-          cantidad: linea.cantidad,
-          precioUnit: linea.precioUnit,
-        });
-
-        await tx
-          .update(compraLineas)
-          .set({ productoId, aplicado: true, aplicadoEn: ahora })
-          .where(eq(compraLineas.id, linea.id));
-      }
-    });
+    creados.push(...await confirmarStockEnTransaccion({ compraId, pendientes, sucursalId, usuario, opciones }));
   } catch (e) {
     return { ok: false as const, error: `No se cargó nada al stock: ${(e as Error).message}` };
   }
 
   const unidades = resumen.existentes.unidades + resumen.nuevos.unidades;
-  await anotar(
-    compraId,
-    usuario,
-    "Carga al stock",
-    `${resumen.pendientes} renglones · ${unidades} unidades · ${creados.length} productos nuevos`
-  );
-  for (const c of creados) await anotar(compraId, usuario, "Producto creado", c);
 
-  revalidatePath("/compras");
-  revalidatePath("/stock");
+  revalidatePath("/admin/compras");
+  revalidatePath("/admin/stock");
+  revalidatePath("/admin/compras/diferencias-precios");
+  revalidatePath("/tienda");
   revalidatePath("/");
   return {
     ok: true as const,
@@ -759,4 +710,53 @@ function enteroPositivo(v: unknown, porDefecto: number): number {
 function montoPositivo(v: unknown): number {
   const n = Number(v);
   return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+
+export async function impactosRecepcion(compraId: number): Promise<ImpactoLinea[]> {
+  await requireAcceso("compras");
+  const compra = await getCompra(compraId);
+  if (!compra) throw new Error("La compra no existe.");
+  const sucursalId = compra.sucursalId ?? await sucursalOperativaId();
+  const pendientes = await pendientesDe(compraId);
+  const resultado: ImpactoLinea[] = [];
+  for (const linea of pendientes) {
+    const [p] = linea.productoId === null ? [] : await db.select().from(productos).where(eq(productos.id, linea.productoId));
+    const [ultima] = p ? await db.select().from(compraItems).where(and(eq(compraItems.productoId, p.id), sql`${compraItems.precioUnit} > 0`)).orderBy(desc(compraItems.id)).limit(1) : [];
+    const [local] = p && sucursalId ? await db.select().from(stockSucursal).where(and(eq(stockSucursal.productoId, p.id), eq(stockSucursal.sucursalId, sucursalId))) : [];
+    const anterior = sucursalId ? (local?.cantidad ?? 0) : (p?.stock ?? 0);
+    const costoAnterior = ultima?.precioUnit ?? p?.precioCompra ?? 0;
+    resultado.push({ lineaId: linea.id, nombre: p?.nombre ?? linea.descripcion, codigo: p?.sku ?? linea.codigo,
+      stockAnterior: anterior, stockNuevo: anterior + linea.cantidad, costoAnterior,
+      costoNuevo: linea.precioUnit, ventaAnterior: p?.precioVenta ?? 0,
+      ...diferenciaCosto(costoAnterior, linea.precioUnit, p?.precioVenta ?? 0) });
+  }
+  return resultado;
+}
+
+export async function importarArchivoCompra(compraId: number, formData: FormData) {
+  const usuario = await requireAcceso("compras");
+  if (!await getCompra(compraId)) return { ok: false as const, error: "La compra no existe." };
+  const archivo = formData.get("archivo");
+  if (!(archivo instanceof File)) return { ok: false as const, error: "Elegí un archivo." };
+  try {
+    const lectura = await extraerDocumentoStock(archivo);
+    if (!lectura.items.length || lectura.items.length > 500) throw new Error("Se permiten entre 1 y 500 productos por archivo.");
+    await guardarLectura(compraId, await clasificarItems(lectura.items), "agregar");
+    await anotar(compraId, usuario, "Archivo importado", `${archivo.name}: ${lectura.items.length} renglones`);
+    revalidatePath("/admin/compras");
+    return { ok: true as const, lineas: lectura.items.length };
+  } catch (e) { return { ok: false as const, error: (e as Error).message }; }
+}
+
+export async function crearCargaStock(formData: FormData) {
+  await requireAcceso("compras");
+  const { lista, activaId } = await getContextoSucursal();
+  const sucursalId = activaId ?? Number(formData.get("sucursalId"));
+  if (!lista.some(s => s.id === sucursalId)) return { ok: false as const, error: "Elegí una sucursal de destino activa." };
+  const proveedor = String(formData.get("proveedor") ?? "").trim();
+  if (!proveedor) return { ok: false as const, error: "Escribí el proveedor." };
+  const [compra] = await db.insert(compras).values({ proveedor, sucursalId, estado: "falta_controlar" }).returning();
+  revalidatePath("/admin/compras");
+  return { ok: true as const, compra };
 }

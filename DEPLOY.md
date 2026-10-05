@@ -42,11 +42,9 @@ nano .env
 # Para habilitar IA, el bloque debe contener:
 # DEEPSEEK_API_KEY=tu_clave_deepseek
 # DEEPSEEK_MODEL=deepseek-v4-flash
-# Para que Compras lea la foto del remito hace falta un modelo con visión. Si el
-# de DeepSeek no la tiene, se agrega solo para ese paso:
-# VISION_API_KEY=...
-# VISION_BASE_URL=...
-# VISION_MODEL=...
+# Para fotos de Compras y carga masiva: Gemini -> DeepSeek.
+# Creá una clave de Gemini API en Google AI Studio.
+# GEMINI_API_KEY=tu_clave_google
 # No hace falta instalar otro SDK ni configurar MongoDB/PostgreSQL.
 
 # Crear el schema y sembrar datos iniciales (usuarios, etapas, etc.)
@@ -183,3 +181,17 @@ singleton en `globalThis` (`src/lib/whatsapp/manager.ts`). Las server actions y
 la ruta SSE comparten ese proceso. Dos instancias = dos sesiones de WhatsApp
 compitiendo = QR inestable y mensajes duplicados/perdidos. Siempre `instances: 1`,
 `exec_mode: "fork"`.
+
+## Actualizar la instalación de Vercel
+
+1. En el proyecto conectado a `NikyMen/almack`, abrir Settings → Environment Variables.
+2. Agregar `GEMINI_API_KEY` y `DEEPSEEK_API_KEY` para Production (también Preview si se quiere probar una rama). No subir `.env.local` ni copiar sus variables de autenticación/base local sobre producción.
+3. Opcionales: `GEMINI_MODEL=gemini-3.8-flash` y `DEEPSEEK_VISION_MODEL=deepseek-flash`.
+4. Conservar `TURSO_DATABASE_URL` remoto y `TURSO_AUTH_TOKEN`, las credenciales de login y `NEXT_PUBLIC_BASE_URL` con el dominio de producción.
+5. Verificar en Settings → Git la rama de producción y el repositorio. Publicar los cambios en esa rama solo después de cargar las claves.
+6. Mantener el Build Command `pnpm vercel-build`: ejecuta la migración de tablas faltantes y luego compila. No ejecutar `db:seed` ni `dev:setup` sobre producción.
+7. Revisar que el deployment termine en Ready y probar Caja, carga de un comprobante, guardado de registros y revisión del impacto. Confirmar stock únicamente con un ingreso real o en una base de pruebas separada.
+
+Las páginas de Compras declaran `maxDuration = 180` para las llamadas de IA en serie. El proyecto debe permitir esa duración (Fluid Compute). Los archivos grandes pueden encontrar el límite de tamaño de petición de Vercel: para la prueba inicial usar una imagen pequeña.
+
+Las claves se configuran antes del nuevo deployment: cambiar una variable no modifica un deployment existente. El entorno local nunca se publica en Git.

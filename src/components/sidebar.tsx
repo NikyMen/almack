@@ -93,6 +93,10 @@ function SidebarContent({
               <Icon className="h-4 w-4 shrink-0" strokeWidth={2} />
               {item.label}
             </Link>
+            {item.key === "compras" && <div className="ml-4 mt-1 flex flex-col gap-1 border-l-2 border-white/15 pl-2">
+              <Link href="/admin/compras/carga" onClick={onNavigate} className={`rounded-lg px-3 py-2 text-xs ${path === "/admin/compras/carga" ? "bg-white/10 text-lime" : "text-slate-400 hover:text-white"}`}>Carga de stock</Link>
+              <Link href="/admin/compras/diferencias-precios" onClick={onNavigate} className={`rounded-lg px-3 py-2 text-xs ${path === "/admin/compras/diferencias-precios" ? "bg-white/10 text-lime" : "text-slate-400 hover:text-white"}`}>Diferencias de precios</Link>
+            </div>}
             {item.key === "stock" && tieneAcceso(usuario, "movimientos") && (
               <Link href="/admin/stock/mover" onClick={onNavigate} aria-current={activo === "movimientos" ? "page" : undefined}
                 className={`ml-4 mt-1 flex items-center gap-2 rounded-xl border-l-2 px-3 py-2 text-xs font-semibold transition ${activo === "movimientos" ? "border-l-lime bg-white/10 text-lime" : "border-l-white/15 text-slate-400 hover:bg-white/5 hover:text-white"}`}>
