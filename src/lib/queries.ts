@@ -1,4 +1,4 @@
-import { db, productos, ventas, compras, clientes, facturas, gastos, stockSucursal, sucursales } from "@/db";
+import { db, productos, ventas, compras, clientes, facturas, gastos, stockSucursal, sucursales, stockReglas } from "@/db";
 import { sql, desc, eq, and, lt } from "drizzle-orm";
 import { getSucursalActivaId } from "@/lib/sucursal";
 
@@ -39,11 +39,13 @@ export async function getResumen(sucursalId: number | null) {
           stockSucursal,
           and(eq(stockSucursal.productoId, productos.id), eq(stockSucursal.sucursalId, sucursalId))
         )
-        .where(lt(cantidadLocal, productos.stockMinimo))
+        .leftJoin(stockReglas, eq(stockReglas.productoId, productos.id))
+        .where(and(lt(cantidadLocal, productos.stockMinimo), sql`coalesce(${stockReglas.alertaActiva},1) = 1`))
     : await db
         .select({ id: productos.id, nombre: productos.nombre, stock: productos.stock })
         .from(productos)
-        .where(lt(productos.stock, productos.stockMinimo));
+        .leftJoin(stockReglas, eq(stockReglas.productoId, productos.id))
+        .where(and(lt(productos.stock, productos.stockMinimo), sql`coalesce(${stockReglas.alertaActiva},1) = 1`));
 
   const [valorStock] = sucursalId
     ? await db

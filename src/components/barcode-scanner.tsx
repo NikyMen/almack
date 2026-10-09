@@ -197,7 +197,7 @@ export function BarcodeScanner({
   if (typeof document === "undefined") return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[70] flex flex-col bg-navy-deep" role="dialog" aria-modal="true" aria-label={titulo}>
+    <div className="fixed inset-0 z-[150] flex flex-col bg-navy-deep" role="dialog" aria-modal="true" aria-label={titulo}>
       <div className="flex items-center justify-between px-4 py-3 text-white">
         <span className="text-sm font-semibold">{titulo}</span>
         <div className="flex items-center gap-1">

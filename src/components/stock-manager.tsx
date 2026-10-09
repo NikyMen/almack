@@ -1,5 +1,7 @@
 "use client";
+import { Overlay } from "@/components/overlay";
 
+import { ConfigProductoStock } from "@/components/stock-configuracion";
 import { useId, useState, useTransition } from "react";
 import { Sparkles, Loader2, Plus, Pencil, Trash2, Eye, EyeOff, ScanLine, Store } from "lucide-react";
 import type { Producto, Sucursal } from "@/db/schema";
@@ -16,6 +18,7 @@ import { ajustarStock, crearProducto, editarProducto, eliminarProducto, accionDe
  *   porSucursal  → desglose completo, para el detalle y para los formularios.
  */
 export type ProductoConStock = Producto & {
+  alertaActiva: boolean; multiplicadorCosto: number | null;
   stockLocal: number;
   transitoLocal: number;
   porSucursal: Record<number, number>;
@@ -23,6 +26,7 @@ export type ProductoConStock = Producto & {
 };
 
 type Contexto = {
+  administrador: boolean; multiplicadorGeneral: number | null;
   sucursales: Sucursal[];
   /** null = el panel está en "Todas": hay que preguntar a qué local va cada carga. */
   sucursalActivaId: number | null;
@@ -31,8 +35,9 @@ type Contexto = {
 export function StockManager({
   items,
   sucursales,
-  sucursalActivaId,
+  sucursalActivaId, administrador, multiplicadorGeneral,
 }: { items: ProductoConStock[] } & Contexto) {
+  const [configurando, setConfigurando] = useState<ProductoConStock | null>(null);
   const [open, setOpen] = useState(false);
   const [error, setError] = useState("");
   const [editando, setEditando] = useState<ProductoConStock | null>(null);
@@ -41,7 +46,7 @@ export function StockManager({
   const [ajuste, setAjuste] = useState<{ producto: ProductoConStock; delta: number } | null>(null);
   const [, startTransition] = useTransition();
 
-  const ctx: Contexto = { sucursales, sucursalActivaId };
+  const ctx: Contexto = { sucursales, sucursalActivaId, administrador, multiplicadorGeneral };
   // El desglose por local solo aporta cuando estás mirando todo junto y hay
   // más de un local.
   const mostrarDesglose = sucursalActivaId === null && sucursales.length > 1;
@@ -82,7 +87,7 @@ export function StockManager({
     {
       key: "stock", head: sucursalActivaId ? "Stock acá" : "Stock total", value: (p) => p.stockLocal, sort: true,
       cell: (p) => {
-        const bajo = p.stockLocal < p.stockMinimo;
+        const bajo = p.alertaActiva && p.stockLocal < p.stockMinimo;
         return (
           <span className={bajo ? "font-semibold text-rose-600" : "font-medium"}>
             {p.stockLocal}{bajo && <span className="ml-2 text-xs text-rose-500">bajo</span>}
@@ -106,9 +111,10 @@ export function StockManager({
     {
       key: "acciones", head: "Acciones",
       cell: (p) => (
-        <div className="flex items-center gap-1">
+        <div className="flex flex-wrap items-center gap-1">
           <button className="btn-ghost px-2 py-1" title="Quitar 1" onClick={() => ajustar(p, -1)}>−</button>
           <button className="btn-ghost px-2 py-1" title="Sumar 1" onClick={() => ajustar(p, 1)}>+</button>
+          {administrador && <button className="btn-ghost px-2 py-1 text-xs" onClick={() => setConfigurando(p)}>Precio y alertas</button>}
           <button className="btn-ghost px-2 py-1" title="Editar" onClick={() => setEditando(p)}><Pencil className="h-3.5 w-3.5" /></button>
           <button className="btn-ghost px-2 py-1 text-xs" title={p.publicado ? "Ocultar de la tienda" : "Publicar en la tienda"} onClick={() => startTransition(() => togglePublicado(p.id))}>{p.publicado ? "Ocultar" : "Publicar"}</button>
           <button className="btn-ghost px-2 py-1 text-xs" title="Alternar oferta" onClick={() => startTransition(() => toggleOfertaTienda(p.id))}>Oferta</button>
@@ -152,7 +158,7 @@ export function StockManager({
         search={(p) => `${p.sku} ${p.nombre} ${p.categoria} ${p.precioVenta}`}
         searchPlaceholder="Buscar producto por nombre, SKU, categoría…"
         mobileCard={(p) => {
-          const bajo = p.stockLocal < p.stockMinimo;
+          const bajo = p.alertaActiva && p.stockLocal < p.stockMinimo;
           return (
             <div>
               <div className="flex items-start gap-3">
@@ -171,15 +177,16 @@ export function StockManager({
                     .join(" · ")}
                 </p>
               )}
-              <div className="mt-2 flex items-center justify-between gap-2">
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
                 <span className={`text-xs ${bajo ? "font-semibold text-rose-600" : "text-slate-500"}`}>
                   stock {p.stockLocal}
                   {bajo && " · bajo"}
                   {p.transitoLocal > 0 && ` · tránsito ${p.transitoLocal}`}
                 </span>
-                <div className="flex items-center gap-1">
+                <div className="flex flex-wrap items-center gap-1">
                   <button className="btn-ghost px-2.5 py-1.5" aria-label="Quitar una unidad" onClick={() => ajustar(p, -1)}>−</button>
                   <button className="btn-ghost px-2.5 py-1.5" aria-label="Sumar una unidad" onClick={() => ajustar(p, 1)}>+</button>
+                  {administrador && <button className="btn-ghost px-2 py-1 text-xs" onClick={() => setConfigurando(p)}>Precio y alertas</button>}
                   <button className="btn-ghost px-2.5 py-1.5" aria-label="Editar producto" onClick={() => setEditando(p)}>
                     <Pencil className="h-3.5 w-3.5" />
                   </button>
@@ -198,6 +205,7 @@ export function StockManager({
         }}
       />
 
+      {configurando && <ConfigProductoStock producto={configurando} global={multiplicadorGeneral} cerrar={() => setConfigurando(null)} />}
       {editando && <EditarProducto producto={editando} ctx={ctx} onDone={() => setEditando(null)} />}
 
       {ajuste && (
@@ -253,7 +261,7 @@ function ElegirSucursal({
   onCerrar: () => void;
 }) {
   return (
-    <div className="overlay" onClick={onCerrar}>
+    <Overlay className="overlay" onClick={onCerrar}>
       <div className="sheet p-6 sm:max-w-sm" onClick={(e) => e.stopPropagation()}>
         <h3 className="text-lg font-semibold">{titulo}</h3>
         <p className="mt-1 text-sm text-slate-500">{ayuda}</p>
@@ -273,7 +281,7 @@ function ElegirSucursal({
         </div>
         <button className="btn-ghost mt-4 w-full" onClick={onCerrar}>Cancelar</button>
       </div>
-    </div>
+    </Overlay>
   );
 }
 
@@ -352,7 +360,7 @@ function CampoStock({ p, ctx }: { p?: ProductoConStock; ctx: Contexto }) {
       </div>
       <div>
         <label className="label">Mínimo</label>
-        <input name="stockMinimo" type="number" className="input" defaultValue={p?.stockMinimo ?? 5} />
+        <input name="stockMinimo" disabled={!ctx.administrador} min="0" step="1" type="number" className="input" defaultValue={p?.stockMinimo ?? 5} />
       </div>
       {preguntar ? (
         <div className="col-span-2">
@@ -393,7 +401,7 @@ function CamposProducto({
       <div><label className="label">Nombre *</label><input name="nombre" className="input" defaultValue={p?.nombre} required /></div>
       <CampoSku p={p} />
       <div><label className="label">Categoría</label><input name="categoria" className="input" defaultValue={p?.categoria ?? ""} /></div>
-      <div><label className="label">Precio venta</label><input name="precioVenta" type="number" step="0.01" className="input" defaultValue={p?.precioVenta ?? 0} /></div>
+      <div><label className="label">Precio venta</label><input name="precioVenta" disabled={!ctx.administrador} type="number" step="0.01" className="input" defaultValue={p?.precioVenta ?? 0} /></div>
       <div><label className="label">Precio compra</label><input name="precioCompra" type="number" step="0.01" className="input" defaultValue={p?.precioCompra ?? 0} /></div>
       <CampoStock p={p} ctx={ctx} />
       <div className="md:col-span-3"><CampoImagenProducto valorInicial={p?.imagen ?? ""} onArchivo={onArchivo} /></div>
@@ -416,7 +424,7 @@ function EditarProducto({
   const [error, setError] = useState("");
 
   return (
-    <div className="overlay" onClick={onDone}>
+    <Overlay className="overlay" onClick={onDone}>
       <form
         onClick={(e) => e.stopPropagation()}
         action={async (fd) => {
@@ -435,7 +443,7 @@ function EditarProducto({
           <button type="button" className="btn-ghost" onClick={onDone}>Cancelar</button>
         </div>
       </form>
-    </div>
+    </Overlay>
   );
 }
 

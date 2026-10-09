@@ -138,7 +138,7 @@ La interfaz respeta la identidad de **Consultoría Digital**: paleta navy `#0c10
 
 ## Carga de stock y diferencias de precios
 
-Entrar a **Compras → Carga de stock** (`/admin/compras/carga`), elegir proveedor y sucursal,
+Entrar a **Stock → Cargar stock** (`/admin/stock/carga`), elegir proveedor y sucursal,
 subir el comprobante y revisar el borrador. Se pueden corregir código, nombre, cantidad y costo,
 vincular productos existentes o confirmar productos nuevos. La confirmación muestra stock del
 local antes/después y permite revalorizar individualmente. La carga de stock, los precios y el
@@ -167,3 +167,105 @@ el almacenamiento existente. Para un flujo de varios proveedores o OCR externo, 
 n8n más adelante sin cambiar la revisión y confirmación.
 
 Si Gemini falla por conexión o devuelve 500/502/503/504, la imagen se transcribe con DeepSeek (`deepseek-flash`) como respaldo. Esta lectura consume saldo de DeepSeek. Opcional: `DEEPSEEK_VISION_MODEL` para cambiar el modelo de respaldo.
+
+## Apertura, cierre y arqueo de caja
+
+En **Caja**, cada sucursal tiene como máximo un turno abierto. Abrir con el fondo
+inicial antes de cobrar, registrar ingresos o retiros con motivo y elegir
+**Arquear y cerrar** para cargar el efectivo contado. Si hay diferencia se exige
+una observación. El historial conserva responsable de apertura/cierre, importes,
+diferencia, observaciones y resumen por medio de pago (últimos 20 cierres).
+
+Efectivo esperado = fondo inicial + ventas en efectivo + ingresos − retiros.
+QR y tarjeta se muestran separados. Las ventas previas y el checkout público no
+se incorporan al turno; las ventas manuales desde Caja o Ventas requieren caja
+abierta. Venta, artículos y descuento de stock se confirman en una transacción.
+En la vista Todas, Caja identifica y opera en la primera sucursal activa.
+
+Ejecutar `pnpm db:push` antes de usar esta versión. La migración conserva las
+ventas anteriores sin asignarles un turno retroactivamente. `pnpm test:caja`
+verifica los flujos en una base temporal, sin tocar datos del negocio.
+Los gastos operativos existentes no generan retiros automáticamente: si salen
+del cajón hay que registrar el retiro correspondiente en Caja.
+
+### Saldo anterior y extracciones autorizadas
+
+La apertura permite usar el efectivo contado en el último cierre de la misma
+sucursal, menos las extracciones efectuadas mientras estuvo cerrada. El saldo
+se vuelve a calcular en el servidor al abrir; también se puede ingresar un
+fondo inicial manualmente.
+
+El botón **Extracción** está disponible con la caja abierta o cerrada y siempre
+exige una **Clave de administrador**, configurable únicamente por administradores
+en **Equipo** (6 a 64 caracteres, con confirmación). Se almacena un hash con salt,
+nunca la clave en texto. Cinco errores bloquean nuevos intentos del usuario por
+15 minutos. El permiso de Caja más una clave válida autoriza la operación.
+
+Los retiros de efectivo pasan exclusivamente por Extracción, con importe y
+motivo. Se conserva quién realizó la operación, fecha, sucursal y estado de caja.
+Con caja abierta se descuenta del arqueo; con caja cerrada se conserva intacto
+el cierre y se descuenta del saldo para la próxima apertura. No se puede retirar
+más dinero que el disponible. Los reintentos de la misma solicitud no duplican
+la extracción.
+
+## Alertas de stock y reglas de precio
+
+**Stock → Alertas de stock** muestra una tarjeta por producto, con disponible y
+mínimo, respetando la sucursal elegida. El administrador puede mostrar todos los
+productos para activar/desactivar alertas y configurar el mínimo de cada uno.
+Las alertas se muestran cuando el disponible es menor al mínimo; el tránsito no
+se cuenta como stock vendible. El Panel conserva el indicador numérico.
+
+En **Stock → Ver stock → Precio y alertas**, el administrador puede editar el
+precio de venta actual o calcularlo desde el costo, además de definir un
+multiplicador específico. La regla general se configura desde Stock activando
+**Usar multiplicador general**. El precio en la recepción será el costo nuevo
+por el multiplicador del producto, o por el general si no tiene uno propio,
+redondeado a dos decimales. Cambiar la regla no modifica todo el catálogo de
+inmediato: se aplica en la siguiente carga, y el producto permite aplicarla ahora.
+
+Los productos con regla automática actualizan costo y venta al confirmar la
+carga. La vista previa muestra el cálculo y el servidor vuelve a verificar la
+regla: si cambió, exige revisar nuevamente. Con costo cero la carga automática
+se bloquea para evitar publicar un precio gratuito. Sin regla configurada se
+conserva el comportamiento anterior (revisión manual y recomendación costo × 2
+para productos nuevos). Las ediciones de mínimos, reglas y precios manuales
+están protegidas por rol administrador en el servidor.
+
+Ejecutar `pnpm db:push` para crear las tablas. `pnpm test:stock-import` prueba
+reglas generales y por producto, prioridad, cambios de regla, productos nuevos,
+costos inválidos y alertas desactivadas en una base temporal.
+
+## Carga de stock y uso en dispositivos táctiles
+
+**Stock → Cargar stock** es la entrada principal de recepción. La dirección
+anterior `/admin/compras/carga` redirige a `/admin/stock/carga`. Pueden cargar
+usuarios con permiso explícito de Stock o de Compras; los permisos de traslado
+por sí solos no habilitan esta operación. Los enlaces al historial de compras
+solo se muestran a quienes tienen acceso a ese módulo.
+
+En celulares y tablets, el panel usa navegación compacta hasta 1280 px y las
+listas ofrecen tarjetas y filtros táctiles en vez de tablas anchas. Los diálogos
+se montan en el cuerpo de la página para evitar el recorte por tarjetas con
+`backdrop-filter`, bloquean el desplazamiento de fondo, mantienen el foco dentro
+y ajustan su altura al espacio visible cuando aparece el teclado. Los controles
+compartidos tienen una altura táctil mínima y los campos mantienen 16 px en
+pantallas pequeñas para evitar el zoom automático al enfocar en iOS.
+
+## Publicación en Vercel
+
+El despliegue de producción sigue la rama `main`. `vercel.json` ejecuta
+`pnpm vercel-build`: primero aplica `pnpm db:push` a la base configurada en
+Vercel y después compila la aplicación. Las nuevas tablas de caja y reglas de
+stock se crean sin borrar ventas, productos ni existencias. No ejecutar
+`db:seed` ni `dev:setup` en producción. Las migraciones detienen el despliegue
+si una modificación falla por una causa distinta de una columna ya existente.
+
+Tras publicar, un administrador debe configurar la Clave de administrador en
+Equipo, revisar las reglas de precios y alertas en Stock y abrir la caja de
+cada sucursal antes de cobrar. Las cajas locales de prueba no se copian a
+producción; el saldo inicial real se carga en la primera apertura.
+
+Los traslados de la barra lateral se consultan con Ver movimiento. El detalle
+muestra origen, destino, fecha y hora, usuario y código, nombre y cantidades
+de cada producto. La recepción y devolución se resuelven desde ese detalle.

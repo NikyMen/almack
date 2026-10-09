@@ -1,4 +1,5 @@
 "use client";
+import { Overlay } from "@/components/overlay";
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import Image from "next/image";
@@ -251,7 +252,7 @@ function DetalleCompra({
   }
 
   return (
-    <div className="overlay" onClick={onClose}>
+    <Overlay className="overlay" onClick={onClose}>
       <div className="sheet sm:max-w-2xl" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
         <div className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-slate-100 bg-white px-5 py-4">
           <div className="min-w-0">
@@ -435,6 +436,6 @@ function DetalleCompra({
           </button>
         </div>
       </div>
-    </div>
+    </Overlay>
   );
 }

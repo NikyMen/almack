@@ -17,10 +17,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <NavProvider>
       <FondoApp />
-      <div className="flex min-h-screen flex-col md:flex-row">
+      <div className="flex min-h-dvh flex-col xl:flex-row">
         <Sidebar usuario={usuario} sucursales={lista} sucursalActivaId={activaId} />
         {/* pb-24 deja lugar a la barra inferior de móvil (h-16 + el FAB elevado) */}
-        <main className="min-w-0 flex-1 overflow-x-hidden p-4 pb-24 md:p-6 md:pb-6 lg:p-8">{children}</main>
+        <main className="admin-content min-w-0 flex-1 overflow-x-hidden p-4 pb-24 sm:p-6 xl:pb-6 xl:p-8">{children}</main>
       </div>
       <BottomNav usuario={usuario} />
       <ConfigModal />

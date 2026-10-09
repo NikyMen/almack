@@ -89,6 +89,7 @@ export function primerModuloPermitido(u: UsuarioActual): string {
 // porque "/admin" (Panel) es prefijo de todas las rutas del panel: con un
 // startsWith suelto, Panel quedaba marcado como activo en todas las secciones.
 export function moduloActivo(path: string): ModuloKey | null {
+  if (path === "/admin/compras/carga") return "stock";
   let mejor: Modulo | null = null;
   for (const m of MODULOS) {
     const base = m.href.endsWith("/") ? m.href : `${m.href}/`;

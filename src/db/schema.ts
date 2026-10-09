@@ -1,3 +1,5 @@
+export { stockConfiguracion, stockReglas } from "./stock-config-schema";
+export { cajaTurnos, cajaMovimientos, cajaSeguridad, cajaIntentos, cajaExtracciones } from "./caja-schema";
 import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
 
@@ -128,6 +130,8 @@ export const clientes = sqliteTable("clientes", {
 // Ventas
 // ---------------------------------------------------------------------------
 export const ventas = sqliteTable("ventas", {
+  cajaTurnoId: integer("caja_turno_id"),
+  cajero: text("cajero").notNull().default(""),
   id: integer("id").primaryKey({ autoIncrement: true }),
   clienteId: integer("cliente_id").references(() => clientes.id),
   // Local donde se hizo la venta. Null = anterior a las sucursales (o venta

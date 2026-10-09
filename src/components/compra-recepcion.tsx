@@ -1,4 +1,5 @@
 "use client";
+import { Overlay } from "@/components/overlay";
 
 import { createPortal } from "react-dom";
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
@@ -19,6 +20,7 @@ import {
   eliminarLineaCompra, buscarProductosCompra, resumenRecepcion, aplicarRecepcion,
 } from "@/app/admin/(protected)/compras/actions";
 
+type LineaVista = CompraLinea & { multiplicador?: number | null; permitePrecioManual?: boolean };
 type Modo = "reemplazar" | "agregar";
 
 /**
@@ -27,7 +29,7 @@ type Modo = "reemplazar" | "agregar";
  * es está detrás del botón "Cargar al stock", que siempre pide confirmación.
  */
 export function CompraRecepcion({ compra, onCambio }: { compra: Compra; onCambio: () => void }) {
-  const [lineas, setLineas] = useState<CompraLinea[] | null>(null);
+  const [lineas, setLineas] = useState<LineaVista[] | null>(null);
   const [error, setError] = useState("");
   const [aviso, setAviso] = useState("");
   const [leyendo, setLeyendo] = useState(false);
@@ -236,7 +238,7 @@ export function CompraRecepcion({ compra, onCambio }: { compra: Compra; onCambio
       )}
 
       {resumen && createPortal(
-        <ConfirmarCarga impactos={impactos} resumen={resumen} onCancelar={() => setResumen(null)} onConfirmar={aplicar} />, document.body
+        <ConfirmarCarga permitePrecioManual={Boolean(lineas?.some(l => l.permitePrecioManual))} impactos={impactos} resumen={resumen} onCancelar={() => setResumen(null)} onConfirmar={aplicar} />, document.body
       )}
     </section>
   );
@@ -293,7 +295,7 @@ function Fila({
   bloqueado,
   repetidas,
 }: {
-  linea: CompraLinea;
+  linea: LineaVista;
   onCambio: () => Promise<void>;
   onError: (e: string) => void;
   startTransition: (fn: () => void) => void;
@@ -307,9 +309,9 @@ function Fila({
   const [descripcion, setDescripcion] = useState(linea.descripcion);
   const [cantidad, setCantidad] = useState(String(linea.cantidad));
   const [precioUnit, setPrecioUnit] = useState(String(linea.precioUnit || ""));
-  const recomendado = Math.round(Number(precioUnit || 0) * 2 * 100) / 100;
-  const [ventaManual, setVentaManual] = useState(linea.precioVenta > 0 && linea.precioVenta !== Math.round(linea.precioUnit * 2 * 100) / 100);
-  const [precioVenta, setPrecioVenta] = useState(String(linea.precioVenta || (linea.estado === "nuevo" ? linea.precioUnit * 2 : "")));
+  const recomendado = Math.round(Number(precioUnit || 0) * (linea.multiplicador ?? 2) * 100) / 100;
+  const [ventaManual, setVentaManual] = useState(linea.precioVenta > 0 && linea.precioVenta !== Math.round(linea.precioUnit * (linea.multiplicador ?? 2) * 100) / 100);
+  const [precioVenta, setPrecioVenta] = useState(String(linea.precioVenta || (linea.estado === "nuevo" ? linea.precioUnit * (linea.multiplicador ?? 2) : "")));
   const [buscando, setBuscando] = useState(false);
   const estado = linea.estado as EstadoLinea;
   const candidatos = parseCandidatos(linea.candidatos);
@@ -343,7 +345,7 @@ function Fila({
         codigo,
         cantidad: Number(cantidad),
         precioUnit: Number(precioUnit),
-        precioVenta: Number(precioVenta),
+        precioVenta: linea.multiplicador != null ? recomendado : Number(precioVenta),
       });
       if (!r.ok) { onError(r.error); return false; }
       ultimoGuardado.current = snapshot;
@@ -481,17 +483,17 @@ function Fila({
         <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
           <span>Se va a crear sin publicar. Precio de venta ($):</span>
           <input
-            className="input w-28 py-1" disabled={bloqueado || guardando}
+            className="input w-28 py-1" disabled={bloqueado || guardando || linea.multiplicador != null || !linea.permitePrecioManual}
             type="number"
             step="0.01"
             inputMode="decimal"
-            value={precioVenta}
+            value={linea.multiplicador != null ? recomendado : precioVenta}
             onChange={(e) => { setVentaManual(true); setPrecioVenta(e.target.value); }}
 
             placeholder="0"
             aria-label="Precio de venta del producto nuevo"
           />
-          <button type="button" className="btn-ghost px-2 py-1 text-xs" disabled={bloqueado || guardando} onClick={() => { setVentaManual(false); setPrecioVenta(String(recomendado)); }}>Usar recomendado: {money(recomendado)} (costo × 2)</button>
+          <button type="button" className="btn-ghost px-2 py-1 text-xs" disabled={bloqueado || guardando} onClick={() => { setVentaManual(false); setPrecioVenta(String(recomendado)); }}>Usar recomendado: {money(recomendado)} (costo × {linea.multiplicador ?? 2})</button>
         </div>
       )}
 
@@ -572,11 +574,12 @@ function BuscadorProducto({
 // ---------------------------------------------------------------------------
 
 function ConfirmarCarga({
-  impactos,
+  permitePrecioManual, impactos,
   resumen,
   onCancelar,
   onConfirmar,
 }: {
+  permitePrecioManual: boolean;
   impactos: ImpactoLinea[];
   resumen: ResumenRecepcion;
   onCancelar: () => void;
@@ -588,7 +591,7 @@ function ConfirmarCarga({
   const bloqueado = resumen.dudas > 0 || resumen.sinConfirmar > 0;
 
   return (
-    <div className="overlay" onClick={() => !aplicando && onCancelar()}>
+    <Overlay className="overlay" onClick={() => !aplicando && onCancelar()}>
       <div className="sheet sm:max-w-2xl" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
         <div className="border-b border-slate-100 px-5 py-4">
           <h3 className="text-lg font-semibold">Confirmá antes de cargar</h3>
@@ -620,12 +623,14 @@ function ConfirmarCarga({
             {impactos.map(i => <div key={i.lineaId} className="rounded-xl border border-slate-200 p-3">
               <p className="font-semibold">{i.nombre} <span className="font-mono text-xs text-slate-400">{i.codigo}</span></p>
               <p className="mt-1 text-xs text-slate-500">Stock en destino: {i.stockAnterior} → {i.stockNuevo} unidades · Costo: {money(i.costoAnterior)} → {money(i.costoNuevo)}</p>
-              {i.porcentaje !== null && Math.abs(i.porcentaje) > 0.000001 && <>
+              {i.multiplicador != null && <p className="mt-2 rounded-lg bg-lime/15 p-2 text-sm font-medium text-navy">Precio automático: {money(i.costoNuevo)} × {i.multiplicador} = {money(i.ventaNueva ?? 0)}. Se aplicará al cargar.</p>}
+              {i.multiplicador == null && i.ventaAnterior === 0 && i.ventaNueva !== undefined && <p className="mt-2 text-sm">Precio de venta al crear: {money(i.ventaNueva)}</p>}
+              {i.multiplicador == null && i.porcentaje !== null && Math.abs(i.porcentaje) > 0.000001 && <>
                 <p className={`mt-2 text-sm ${i.porcentaje > 0 ? "text-amber-700" : "text-emerald-700"}`}>
                   {i.porcentaje > 0 ? "Aumentó" : "Bajó"} un {Math.abs(i.porcentaje).toFixed(2)} % respecto de la anterior carga.
                   {i.sugerido !== null ? ` Para mantener el margen porcentual, el precio de venta sería ${money(i.sugerido)}.` : " Sin precio anterior de venta no se puede calcular un margen."}
                 </p>
-                {i.sugerido !== null && <label className="mt-2 flex items-center gap-2 text-xs">
+                {permitePrecioManual && i.sugerido !== null && <label className="mt-2 flex items-center gap-2 text-xs">
                   <input type="checkbox" checked={revalorizar.includes(i.lineaId)} onChange={e => setRevalorizar(prev => e.target.checked ? [...prev, i.lineaId] : prev.filter(id => id !== i.lineaId))} />
                   Revalorizar de {money(i.ventaAnterior)} a {money(i.sugerido)}
                 </label>}
@@ -664,7 +669,7 @@ function ConfirmarCarga({
             <span>
               Actualizar también el precio de compra de los productos que ya existen.
               <span className="block text-xs text-slate-400">
-                La revalorización de venta se elige individualmente arriba.
+                Los productos con multiplicador actualizan su costo y venta automáticamente. Los demás permiten elegir la revalorización arriba.
               </span>
             </span>
           </label>
@@ -684,6 +689,6 @@ function ConfirmarCarga({
           </button>
         </div>
       </div>
-    </div>
+    </Overlay>
   );
 }

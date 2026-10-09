@@ -1,4 +1,5 @@
 "use client";
+import { Overlay } from "@/components/overlay";
 
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { useSearchParams } from "next/navigation";
@@ -37,7 +38,7 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
   useEffect(() => {
     // El foco automático es útil con teclado/lector USB, pero abre el teclado
     // virtual al entrar a Caja desde un celular.
-    if (window.matchMedia("(min-width: 768px)").matches) inputRef.current?.focus();
+    if (window.matchMedia("(hover: hover) and (pointer: fine)").matches) inputRef.current?.focus();
   }, []);
 
   const porCodigo = useCallback(
@@ -65,7 +66,7 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
     scanUsado.current = scanParam;
     porCodigo(scanParam);
     // Limpiamos la URL para que un refresh no vuelva a cargar el producto.
-    window.history.replaceState(null, "", "/caja");
+    window.history.replaceState(null, "", "/admin/caja");
   }, [scanParam, porCodigo]);
 
   function cobrar() {
@@ -102,7 +103,7 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
       setBusqueda("");
       setEligiendoPago(false);
       setPedidoAbierto(false);
-      if (window.matchMedia("(min-width: 768px)").matches) inputRef.current?.focus();
+      if (window.matchMedia("(hover: hover) and (pointer: fine)").matches) inputRef.current?.focus();
     });
   }
 
@@ -292,7 +293,7 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
       )}
 
       {pedidoAbierto && (
-        <div className="overlay lg:hidden" onClick={() => setPedidoAbierto(false)}>
+        <Overlay className="overlay" onClick={() => setPedidoAbierto(false)}>
           <div className="sheet p-4" onClick={(e) => e.stopPropagation()}>
             <button
               className="btn-ghost absolute right-4 top-4 px-2 py-1.5"
@@ -303,7 +304,7 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
             </button>
             {panelPedido}
           </div>
-        </div>
+        </Overlay>
       )}
 
       {/* El ticket recién cobrado también se avisa en mobile */}

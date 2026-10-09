@@ -14,7 +14,7 @@ export function StatCard({ label, value, hint, accent }: { label: string; value:
   return (
     <div className={`card p-5 ${accent ? "border-transparent bg-navy text-white" : ""}`}>
       <p className={`text-xs font-medium ${accent ? "text-lime" : "text-slate-500"}`}>{label}</p>
-      <p className="mt-2 text-2xl font-bold">{value}</p>
+      <p className="mt-2 break-words text-xl font-bold tabular-nums sm:text-2xl">{value}</p>
       {hint && <p className={`mt-1 text-xs ${accent ? "text-slate-400" : "text-slate-400"}`}>{hint}</p>}
     </div>
   );

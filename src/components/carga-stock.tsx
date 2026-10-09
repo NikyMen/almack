@@ -7,14 +7,14 @@ import type { Compra, Sucursal } from "@/db/schema";
 import { crearCargaStock } from "@/app/admin/(protected)/compras/actions";
 import { CompraRecepcion } from "@/components/compra-recepcion";
 
-export function CargaStock({ sucursales, activaId, borradores }: { sucursales: Sucursal[]; activaId: number | null; borradores: Compra[] }) {
+export function CargaStock({ sucursales, activaId, borradores, permiteCompras = false }: { permiteCompras?: boolean; sucursales: Sucursal[]; activaId: number | null; borradores: Compra[] }) {
   const [compra, setCompra] = useState<Compra | null>(null);
   const [error, setError] = useState("");
   const [creando, setCreando] = useState(false);
   return <div className="space-y-5">
     <div className="flex flex-wrap items-center gap-3 text-sm">
-      <Link className="btn-ghost" href="/admin/compras/diferencias-precios">Diferencias de precios</Link>
-      <Link className="btn-ghost" href="/admin/compras">Ver compras e historial</Link>
+      {permiteCompras && <Link className="btn-ghost" href="/admin/compras/diferencias-precios">Diferencias de precios</Link>}
+      {permiteCompras && <Link className="btn-ghost" href="/admin/compras?vista=historial">Ver compras e historial</Link>}
     </div>
     <div className="grid gap-3 text-sm sm:grid-cols-3">
       {["1 · Subí el comprobante", "2 · Corregí y revisá el impacto", "3 · Confirmá stock y precios"].map(t => <div key={t} className="rounded-xl border border-slate-200 bg-white p-4 font-medium">{t}</div>)}

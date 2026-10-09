@@ -1,4 +1,5 @@
 "use client";
+import { Overlay } from "@/components/overlay";
 
 // Selector de medio de pago con atajos de teclado. En un mostrador con lector
 // de códigos el mouse sobra: se escanea, se aprieta Enter y se cierra la venta
@@ -51,7 +52,7 @@ export function SelectorPago({
   }, [ajustes.teclasPago, pendiente, onSelect, onClose]);
 
   return (
-    <div className="overlay" onClick={() => !pendiente && onClose()}>
+    <Overlay className="overlay" onClick={() => !pendiente && onClose()}>
       <div className="sheet p-5" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>
@@ -97,6 +98,6 @@ export function SelectorPago({
         )}
         {error && <p className="mt-4 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-600">{error}</p>}
       </div>
-    </div>
+    </Overlay>
   );
 }

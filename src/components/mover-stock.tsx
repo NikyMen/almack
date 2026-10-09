@@ -6,6 +6,7 @@
 // verifica las cantidades y decide si lo acepta o rechaza.
 
 import { useMemo, useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowRight, CircleCheck, Fuel, Loader2, PackageCheck, Plus, Search, Trash2, Truck } from "lucide-react";
 import type { Sucursal } from "@/db/schema";
@@ -33,7 +34,7 @@ export type TrasladoVista = {
   destinoId: number;
   recibidoPor: string;
   recepcionNota: string;
-  items: { id: number; nombre: string; enviado: number; verificado: number | null; ingresado: number }[];
+  items: { id: number; codigo?: string; nombre: string; enviado: number; verificado: number | null; ingresado: number }[];
   gasto: { concepto: string; categoria: string; monto: number } | null;
 };
 
@@ -381,9 +382,6 @@ export function MoverStock({
                   </span>
                 </div>
                 <p className="mt-1 text-[11px] text-slate-400">{fechaHora(m.fecha)}</p>
-                <div className="mt-3 space-y-1.5">
-                  {m.items.map((item) => <div key={item.id} className="flex flex-wrap justify-between gap-1 rounded-lg bg-slate-50 px-2 py-1.5 text-xs"><span>{item.nombre}</span><span className="font-semibold tabular-nums">Enviado {item.enviado}{item.verificado !== null && ` · Verificado ${item.verificado}`}{m.estado === "recibido" && ` · Ingresado ${item.ingresado}`}</span></div>)}
-                </div>
                 <p className="mt-1 text-[11px] text-slate-400">
                   {m.unidades} unidades{m.usuario && ` · ${m.usuario}`}
                   {m.nota && ` · ${m.nota}`}
@@ -394,8 +392,7 @@ export function MoverStock({
                   </p>
                 )}
                 {m.recepcionNota && <p className="mt-2 rounded-lg bg-slate-50 px-2 py-1.5 text-xs text-slate-600">{m.recepcionNota}{m.recibidoPor && ` · ${m.recibidoPor}`}</p>}
-                {m.estado === "en_transito" && (sucursalActivaId === null || sucursalActivaId === m.destinoId) && <RecepcionTraslado traslado={m} modo="recepcion" />}
-                {m.estado === "rechazado" && (sucursalActivaId === null || sucursalActivaId === m.origenId) && <RecepcionTraslado traslado={m} modo="devolucion" />}
+                <Link href={`/admin/stock/mover/${m.id}?sucursal=${sucursalActivaId ?? "todas"}`} className="btn-ghost mt-3 w-full border border-slate-200 text-sm">Ver movimiento <ArrowRight className="h-4 w-4" /></Link>
               </div>
             ))}
           </div>
@@ -407,7 +404,7 @@ export function MoverStock({
   );
 }
 
-function RecepcionTraslado({ traslado, modo }: { traslado: TrasladoVista; modo: "recepcion" | "devolucion" }) {
+export function RecepcionTraslado({ traslado, modo }: { traslado: TrasladoVista; modo: "recepcion" | "devolucion" }) {
   const router = useRouter();
   const [abierto, setAbierto] = useState(false);
   const [cantidades, setCantidades] = useState<Record<number, number>>(() => Object.fromEntries(traslado.items.map((item) => [item.id, item.enviado])));
@@ -433,7 +430,7 @@ function RecepcionTraslado({ traslado, modo }: { traslado: TrasladoVista; modo: 
 
   return (
     <div className="mt-3 border-t border-slate-100 pt-3">
-      <button className="inline-flex items-center gap-2 rounded-lg bg-navy px-3 py-2 text-xs font-semibold text-white transition hover:opacity-90" onClick={() => setAbierto((v) => !v)}>
+      <button className="inline-flex items-center gap-2 min-h-11 rounded-lg bg-navy px-3 py-2 text-sm font-semibold text-white transition hover:opacity-90" onClick={() => setAbierto((v) => !v)}>
         {modo === "recepcion" ? <PackageCheck className="h-4 w-4" /> : <ArrowRight className="h-4 w-4" />}
         {modo === "recepcion" ? "Verificar llegada" : "Confirmar devolución al origen"}
       </button>
@@ -443,7 +440,7 @@ function RecepcionTraslado({ traslado, modo }: { traslado: TrasladoVista; modo: 
           const actual = cantidades[item.id] ?? 0;
           const diferencia = actual - item.enviado;
           return <label key={item.id} className="grid grid-cols-[minmax(0,1fr)_4.5rem] items-center gap-2 rounded-lg bg-white p-2 text-xs sm:grid-cols-[minmax(0,1fr)_5.5rem]">
-            <span className="min-w-0"><strong className="block truncate text-slate-700">{item.nombre}</strong><small className="text-slate-500">Enviado: {item.enviado}{diferencia !== 0 && <span className={diferencia < 0 ? "text-rose-700" : "text-amber-700"}> · {diferencia > 0 ? `Sobran ${diferencia}` : `Faltan ${Math.abs(diferencia)}`}</span>}</small></span>
+            <span className="min-w-0"><strong className="block break-words text-slate-700">{item.nombre}</strong><small className="text-slate-500">Enviado: {item.enviado}{diferencia !== 0 && <span className={diferencia < 0 ? "text-rose-700" : "text-amber-700"}> · {diferencia > 0 ? `Sobran ${diferencia}` : `Faltan ${Math.abs(diferencia)}`}</span>}</small></span>
             <input type="number" min="0" step="1" className="input px-2 py-1 text-center" aria-label={`${modo === "recepcion" ? "Recibidas" : "Devueltas"} de ${item.nombre}`} value={actual} onChange={(e) => setCantidades((prev) => ({ ...prev, [item.id]: Number(e.target.value) }))} />
           </label>;
         })}

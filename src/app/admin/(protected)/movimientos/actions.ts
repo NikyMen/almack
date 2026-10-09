@@ -60,6 +60,7 @@ export async function registrarTraslado(datos: {
     });
     revalidatePath("/admin/movimientos");
     revalidatePath("/admin/stock/mover");
+  revalidatePath("/admin/stock/mover/[id]", "page");
     revalidatePath("/admin/stock");
     revalidatePath("/admin");
     return { ok: true as const, ...resultado };
@@ -74,6 +75,7 @@ export async function resolverTraslado(datos: { id: number; decision: "aceptar" 
     const resultado = await verificarTransferencia({ ...datos, usuario });
     revalidatePath("/admin/movimientos");
     revalidatePath("/admin/stock/mover");
+  revalidatePath("/admin/stock/mover/[id]", "page");
     revalidatePath("/admin/stock");
     revalidatePath("/admin");
     return { ok: true as const, ...resultado };
@@ -88,6 +90,7 @@ export async function confirmarDevolucion(datos: { id: number; cantidades: { ite
     await devolverTransferencia({ ...datos, usuario });
     revalidatePath("/admin/movimientos");
     revalidatePath("/admin/stock/mover");
+  revalidatePath("/admin/stock/mover/[id]", "page");
     revalidatePath("/admin/stock");
     revalidatePath("/admin");
     return { ok: true as const };
@@ -118,6 +121,7 @@ export async function registrarGasto(datos: {
 
   revalidatePath("/admin/movimientos");
   revalidatePath("/admin/stock/mover");
+  revalidatePath("/admin/stock/mover/[id]", "page");
   revalidatePath("/admin");
   return { ok: true as const };
 }
@@ -127,6 +131,7 @@ export async function eliminarGasto(id: number) {
   await db.delete(gastos).where(eq(gastos.id, id));
   revalidatePath("/admin/movimientos");
   revalidatePath("/admin/stock/mover");
+  revalidatePath("/admin/stock/mover/[id]", "page");
   revalidatePath("/admin");
   return { ok: true as const };
 }

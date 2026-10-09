@@ -1,3 +1,5 @@
+import { stockDDL } from "./stock-config-schema";
+import { cajaDDL } from "./caja-ddl";
 import { randomBytes, scryptSync } from "node:crypto";
 import { client } from "./index";
 
@@ -15,6 +17,8 @@ const MODULOS = [
 ];
 
 const statements = [
+  ...cajaDDL,
+  ...stockDDL,
   `CREATE TABLE IF NOT EXISTS diferencias_precios (
     id INTEGER PRIMARY KEY AUTOINCREMENT, compra_id INTEGER NOT NULL,
     producto_id INTEGER NOT NULL, sucursal_id INTEGER,
@@ -281,6 +285,8 @@ const statements = [
 // ALTER idempotentes para DBs ya existentes (SQLite no soporta ADD COLUMN IF
 // NOT EXISTS → si la columna ya existe, el execute tira error y lo ignoramos).
 const alters = [
+  `ALTER TABLE ventas ADD COLUMN caja_turno_id INTEGER REFERENCES caja_turnos(id)`,
+  `ALTER TABLE ventas ADD COLUMN cajero TEXT NOT NULL DEFAULT ''`,
   `ALTER TABLE wa_contactos ADD COLUMN numero_lead TEXT NOT NULL DEFAULT ''`,
   `ALTER TABLE wa_contactos ADD COLUMN email TEXT NOT NULL DEFAULT ''`,
   `ALTER TABLE wa_contactos ADD COLUMN notas TEXT NOT NULL DEFAULT ''`,
@@ -343,8 +349,9 @@ async function migrate() {
     try {
       await client.execute(sql);
       if (sql.includes("stock_movimiento_items ADD COLUMN cantidad_recibida")) nuevaColumnaRecibida = true;
-    } catch {
-      /* la columna ya existe → ignorar */
+    } catch (error) {
+      // Solo se tolera una columna existente; un error real bloquea el despliegue.
+      if (!(error instanceof Error) || !error.message.toLowerCase().includes("duplicate column name")) throw error;
     }
   }
   if (nuevaColumnaRecibida) {

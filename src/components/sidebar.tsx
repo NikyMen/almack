@@ -86,23 +86,13 @@ function SidebarContent({
               href={item.href}
               onClick={onNavigate}
               aria-current={active ? "page" : undefined}
-              className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition md:py-2 ${
+              className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition xl:py-2 ${
                 active ? "bg-lime/15 text-lime" : "text-slate-400 hover:bg-white/5 hover:text-white"
               }`}
             >
               <Icon className="h-4 w-4 shrink-0" strokeWidth={2} />
               {item.label}
             </Link>
-            {item.key === "compras" && <div className="ml-4 mt-1 flex flex-col gap-1 border-l-2 border-white/15 pl-2">
-              <Link href="/admin/compras/carga" onClick={onNavigate} className={`rounded-lg px-3 py-2 text-xs ${path === "/admin/compras/carga" ? "bg-white/10 text-lime" : "text-slate-400 hover:text-white"}`}>Carga de stock</Link>
-              <Link href="/admin/compras/diferencias-precios" onClick={onNavigate} className={`rounded-lg px-3 py-2 text-xs ${path === "/admin/compras/diferencias-precios" ? "bg-white/10 text-lime" : "text-slate-400 hover:text-white"}`}>Diferencias de precios</Link>
-            </div>}
-            {item.key === "stock" && tieneAcceso(usuario, "movimientos") && (
-              <Link href="/admin/stock/mover" onClick={onNavigate} aria-current={activo === "movimientos" ? "page" : undefined}
-                className={`ml-4 mt-1 flex items-center gap-2 rounded-xl border-l-2 px-3 py-2 text-xs font-semibold transition ${activo === "movimientos" ? "border-l-lime bg-white/10 text-lime" : "border-l-white/15 text-slate-400 hover:bg-white/5 hover:text-white"}`}>
-                <ArrowLeftRight className="h-3.5 w-3.5" /> Mover stock
-              </Link>
-            )}
             </div>
           );
         })}
@@ -112,7 +102,7 @@ function SidebarContent({
         <Link
           href="/tienda"
           onClick={onNavigate}
-          className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-400 transition hover:bg-white/5 hover:text-white md:py-2"
+          className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-400 transition hover:bg-white/5 hover:text-white xl:py-2"
         >
           <Store className="h-4 w-4 shrink-0" />
           Ver tienda
@@ -120,7 +110,7 @@ function SidebarContent({
 
         <button
           onClick={onConfig}
-          className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-400 transition hover:bg-white/5 hover:text-white md:py-2"
+          className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-400 transition hover:bg-white/5 hover:text-white xl:py-2"
         >
           <Settings className="h-4 w-4 shrink-0" />
           Configuración
@@ -169,7 +159,7 @@ export function Sidebar({
   return (
     <>
       {/* Barra superior compacta en móvil: la navegación vive abajo */}
-      <header className="sticky top-0 z-30 flex items-center gap-2 border-b border-white/10 bg-navy px-4 py-2.5 text-slate-300 md:hidden">
+      <header className="sticky top-0 z-30 flex items-center gap-2 border-b border-white/10 bg-navy px-4 py-2.5 text-slate-300 xl:hidden">
         <button
           onClick={() => setMenuAbierto(!menuAbierto)}
           className="rounded-lg p-1.5 text-slate-300 transition hover:bg-white/10 hover:text-white"
@@ -187,7 +177,7 @@ export function Sidebar({
       </header>
 
       {/* Sidebar fijo en escritorio, con los rayos de luz de fondo */}
-      <aside className="sticky top-0 z-30 hidden h-screen w-64 shrink-0 flex-col overflow-visible bg-navy px-4 py-6 text-slate-300 md:flex">
+      <aside className="sticky top-0 z-30 hidden h-dvh w-64 shrink-0 flex-col overflow-y-auto bg-navy px-4 py-6 text-slate-300 xl:flex">
         <LightRays className="absolute inset-0 -z-0 h-full w-full opacity-70" />
         <div className="relative z-10 flex h-full flex-col">
           <SidebarContent
@@ -203,14 +193,14 @@ export function Sidebar({
 
       {/* Overlay + drawer deslizante en móvil */}
       <div
-        className={`fixed inset-0 z-40 bg-black/50 transition-opacity md:hidden ${
+        className={`fixed inset-0 z-40 bg-black/50 transition-opacity xl:hidden ${
           menuAbierto ? "opacity-100" : "pointer-events-none opacity-0"
         }`}
         onClick={() => setMenuAbierto(false)}
         aria-hidden={!menuAbierto}
       />
       <aside
-        className={`fixed inset-y-0 left-0 z-50 flex w-72 max-w-[85vw] flex-col overflow-y-auto bg-navy px-4 py-6 text-slate-300 shadow-xl transition-transform md:hidden ${
+        className={`fixed inset-y-0 left-0 z-50 flex w-72 max-w-[85vw] flex-col overflow-y-auto bg-navy px-4 py-6 text-slate-300 shadow-xl transition-transform xl:hidden ${
           menuAbierto ? "translate-x-0" : "-translate-x-full"
         }`}
       >

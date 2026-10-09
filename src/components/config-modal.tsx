@@ -1,4 +1,5 @@
 "use client";
+import { Overlay } from "@/components/overlay";
 
 // Preferencias del dispositivo: calidad del fondo animado, autocobrador y
 // atajos de teclado del cobro. Todo se guarda en el navegador (ver lib/ajustes).
@@ -30,7 +31,7 @@ export function ConfigModal() {
     Object.entries(ajustes.teclasPago).find(([, m]) => m === medio)?.[0] ?? "";
 
   return (
-    <div className="overlay" onClick={() => setConfigAbierta(false)}>
+    <Overlay className="overlay" onClick={() => setConfigAbierta(false)}>
       <div className="sheet p-5" onClick={(e) => e.stopPropagation()}>
         <div className="mb-5 flex items-start justify-between">
           <div>
@@ -127,6 +128,6 @@ export function ConfigModal() {
           </button>
         </section>
       </div>
-    </div>
+    </Overlay>
   );
 }

@@ -58,7 +58,7 @@ h1, h2, h3, .font-display {
 }
 
 @utility btn {
-  @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition disabled:opacity-50;
+  @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition disabled:opacity-50;
 }
 @utility btn-primary {
   @apply btn bg-lime font-semibold text-navy hover:brightness-95;
@@ -69,7 +69,7 @@ h1, h2, h3, .font-display {
 
 /* text-base en mobile: con menos de 16px iOS hace zoom al enfocar el input */
 @utility input {
-  @apply w-full rounded-xl border border-slate-200 bg-white/90 px-3 py-2.5 text-base outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100 sm:py-2 sm:text-sm;
+  @apply w-full rounded-xl border border-slate-200 bg-white/90 px-3 py-2.5 text-base outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100 lg:py-2 lg:text-sm;
 }
 
 @utility label {
@@ -107,8 +107,40 @@ h1, h2, h3, .font-display {
 
 /* Diálogo: hoja desde abajo en mobile, centrado en escritorio */
 @utility overlay {
-  @apply fixed inset-0 z-50 flex items-end justify-center bg-navy/40 backdrop-blur-[2px] sm:items-center sm:p-4;
+  @apply fixed inset-0 z-[100] flex items-end justify-center bg-navy/40 backdrop-blur-[2px] sm:items-center sm:p-4;
 }
 @utility sheet {
-  @apply max-h-[92vh] w-full overflow-y-auto rounded-t-2xl border border-slate-200 bg-white shadow-xl safe-b sm:max-w-lg sm:rounded-2xl;
+  @apply max-h-[calc(100dvh-1rem)] w-full overflow-y-auto rounded-t-2xl border border-slate-200 bg-white shadow-xl safe-b sm:max-w-lg sm:rounded-2xl;
+}
+
+/* Les portales mantienen los diálogos fuera de las tarjetas con backdrop-filter. */
+.overlay {
+  top: var(--dialog-top, 0px);
+  bottom: auto;
+  height: var(--dialog-height, 100dvh);
+  padding: max(0.5rem, env(safe-area-inset-top)) max(0.5rem, env(safe-area-inset-right)) max(0.5rem, env(safe-area-inset-bottom)) max(0.5rem, env(safe-area-inset-left));
+  isolation: isolate;
+  overscroll-behavior: contain;
+  outline: none;
+}
+.overlay .sheet {
+  max-height: 100%;
+  min-height: 0;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 1023px) {
+  .input, .store-input { font-size: 16px; min-height: 44px; }
+  .sheet { scroll-padding-block: 1rem; }
+}
+@media (pointer: coarse) {
+  button, a, input, select, textarea { touch-action: manipulation; }
+  input[type="checkbox"], input[type="radio"] { width: 1.125rem; height: 1.125rem; flex-shrink: 0; }
+}
+@media (max-width: 1279px) {
+  .admin-content { padding-bottom: calc(6rem + env(safe-area-inset-bottom, 0px)); }
+}
+@media (max-width: 1023px) and (max-height: 600px) {
+  .overlay .sheet { border-radius: 1rem; }
 }

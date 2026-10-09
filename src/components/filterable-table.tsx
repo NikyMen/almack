@@ -1,4 +1,5 @@
 "use client";
+import { Overlay } from "@/components/overlay";
 
 import { useState, useMemo, ReactNode } from "react";
 import { ArrowUpDown, Filter, Search, X, SlidersHorizontal, ChevronRight } from "lucide-react";
@@ -116,7 +117,7 @@ export function FilterableTable<T>({
 
         {/* En mobile los filtros de las cabeceras no existen: van a una hoja */}
         {mobileCard && (cols.some((c) => c.filter || c.sort)) && (
-          <button className="btn-ghost shrink-0 md:hidden" onClick={() => setPanelMovil(true)}>
+          <button className="btn-ghost shrink-0 xl:hidden" onClick={() => setPanelMovil(true)}>
             <SlidersHorizontal className="h-4 w-4" />
             {activos > 0 && <span className="rounded-full bg-navy px-1.5 text-[10px] text-white">{activos}</span>}
           </button>
@@ -132,20 +133,20 @@ export function FilterableTable<T>({
 
       {/* Lista de tarjetas (mobile) */}
       {mobileCard && (
-        <div className="card divide-y divide-slate-100 md:hidden">
+        <div className="grid gap-3 sm:grid-cols-2 xl:hidden">
           {filtered.map((r) => {
             const contenido = <div className="min-w-0 flex-1">{mobileCard(r)}</div>;
             return onRowClick ? (
               <button
                 key={rowKey(r)}
                 onClick={() => onRowClick(r)}
-                className={`flex w-full items-center gap-2 p-3 text-left transition active:bg-slate-50 ${rowClassName?.(r) ?? ""}`}
+                className={`card flex w-full min-w-0 items-center gap-2 p-4 text-left transition active:bg-slate-50 ${rowClassName?.(r) ?? ""}`}
               >
                 {contenido}
                 <ChevronRight className="h-4 w-4 shrink-0 text-slate-300" />
               </button>
             ) : (
-              <div key={rowKey(r)} className={`p-3 ${rowClassName?.(r) ?? ""}`}>
+              <div key={rowKey(r)} className={`card min-w-0 p-4 ${rowClassName?.(r) ?? ""}`}>
                 {mobileCard(r)}
               </div>
             );
@@ -155,7 +156,7 @@ export function FilterableTable<T>({
       )}
 
       {/* Tabla (escritorio, y también mobile si no hay render de tarjeta) */}
-      <div className={`card overflow-visible ${mobileCard ? "hidden md:block" : "overflow-x-auto"}`}>
+      <div className={`card overflow-x-auto ${mobileCard ? "hidden xl:block" : ""}`}>
         <table className="w-full text-sm">
           <thead className="border-b border-slate-200 bg-slate-50/80 text-left text-xs uppercase tracking-wide text-slate-500">
             <tr>
@@ -228,7 +229,7 @@ export function FilterableTable<T>({
 
       {/* Hoja de filtros y orden en mobile */}
       {panelMovil && (
-        <div className="overlay md:hidden" onClick={() => setPanelMovil(false)}>
+        <Overlay className="overlay xl:hidden" onClick={() => setPanelMovil(false)}>
           <div className="sheet p-5" onClick={(e) => e.stopPropagation()}>
             <div className="mb-4 flex items-center justify-between">
               <h3 className="text-base font-semibold">Filtrar y ordenar</h3>
@@ -291,7 +292,7 @@ export function FilterableTable<T>({
               )}
             </div>
           </div>
-        </div>
+        </Overlay>
       )}
     </div>
   );

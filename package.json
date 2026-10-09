@@ -11,6 +11,7 @@
     "lint": "next lint",
     "security:check": "node scripts/check-push.mjs --working-tree && pnpm audit --audit-level low && node node_modules/typescript/bin/tsc --noEmit",
     "test:stock-import": "node scripts/run-stock-import-tests.mjs",
+    "test:caja": "node scripts/run-caja-tests.mjs",
     "test:transfers": "node scripts/run-transfer-tests.mjs",
     "db:push": "tsx src/db/migrate.ts",
     "db:seed": "tsx src/db/seed.ts",
@@ -32,7 +33,7 @@
     "leaflet": "^1.9.4",
     "lucide-react": "^1.17.0",
     "mammoth": "^1.13.0",
-    "next": "^15.5.24",
+    "next": "^15.5.27",
     "ogl": "^1.0.11",
     "pino": "^10.3.1",
     "qrcode": "^1.5.4",
@@ -61,7 +62,10 @@
       "nanoid": ">=3.3.18 <4.0.0",
       "postcss": ">=8.5.23 <9.0.0",
       "protobufjs": ">=7.6.5 <8.0.0",
-      "sharp": ">=0.35.4 <0.36.0"
+      "sharp": ">=0.35.4 <0.36.0",
+      "source-map-js": ">=1.2.2 <2.0.0",
+      "baileys>music-metadata": ">=11.16.0 <12.0.0",
+      "mammoth>argparse": "2.0.1"
     }
   }
 }

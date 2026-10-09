@@ -1,6 +1,8 @@
 "use server";
+import { leerReglasStock, precioDesdeCosto } from "@/lib/reglas-stock";
+import { venderEnCaja } from "@/lib/caja";
 
-import { db, productos, clientes, compras, ventas, ventaItems, tiendaProductoMeta, sucursales, stockSucursal, stockTransito, stockMovimientos } from "@/db";
+import { db, productos, clientes, compras, ventas, ventaItems, tiendaProductoMeta, sucursales, stockSucursal, stockTransito, stockMovimientos, cajaTurnos } from "@/db";
 import { eq, sql, inArray } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
@@ -105,6 +107,9 @@ export async function archivarSucursal(id: number) {
     return { ok: false as const, error: "Tiene que quedar al menos una sucursal activa." };
   }
 
+  const [cajaPendiente] = await db.select({ id: cajaTurnos.id }).from(cajaTurnos)
+    .where(sql`${cajaTurnos.sucursalId} = ${id} and ${cajaTurnos.estado} = 'abierta'`).limit(1);
+  if (cajaPendiente) return { ok: false as const, error: "Cerrá la caja antes de archivar esta sucursal." };
   const [conStock] = await db
     .select({ unidades: sql<number>`coalesce(sum(${stockSucursal.cantidad}),0)` })
     .from(stockSucursal)
@@ -144,7 +149,7 @@ function datosProducto(fd: FormData) {
     precioVenta: Number(fd.get("precioVenta") || 0),
     precioCompra: Number(fd.get("precioCompra") || 0),
     stock: Number(fd.get("stock") || 0),
-    stockMinimo: Number(fd.get("stockMinimo") || 5),
+    stockMinimo: Number(fd.get("stockMinimo") ?? 5),
   };
 }
 
@@ -193,10 +198,15 @@ async function sucursalDelForm(fd: FormData): Promise<number | null> {
 }
 
 export async function crearProducto(formData: FormData) {
-  await requireAcceso("stock");
+  const usuario = await requireAcceso("stock");
   const d = datosProducto(formData);
   if (!d.nombre) return { ok: false as const, error: "El nombre es obligatorio." };
 
+  if (!esSuperAdmin(usuario)) {
+    const config = await leerReglasStock();
+    d.precioVenta = precioDesdeCosto(d.precioCompra, config.multiplicador ?? 2);
+    d.stockMinimo = 5;
+  }
   const img = await resolverImagen(formData, "");
   if (!img.ok) return img;
 
@@ -222,13 +232,14 @@ export async function crearProducto(formData: FormData) {
 }
 
 export async function editarProducto(id: number, formData: FormData) {
-  await requireAcceso("stock");
+  const usuario = await requireAcceso("stock");
   const d = datosProducto(formData);
   if (!d.nombre) return { ok: false as const, error: "El nombre es obligatorio." };
 
   const [previo] = await db.select().from(productos).where(eq(productos.id, id)).limit(1);
   if (!previo) return { ok: false as const, error: "El producto no existe." };
 
+  if (!esSuperAdmin(usuario)) { d.precioVenta = previo.precioVenta; d.stockMinimo = previo.stockMinimo; }
   const img = await resolverImagen(formData, previo.imagen ?? "");
   if (!img.ok) return img;
 
@@ -339,62 +350,17 @@ export async function cobrarVenta(
   medioPago: MedioPago = "efectivo",
   opts?: { clienteId?: number | null; canal?: string }
 ) {
-  const limpios = items.filter((i) => i.cantidad > 0);
-  if (limpios.length === 0) return { ok: false as const, error: "El pedido está vacío." };
-
-  // Traemos los productos involucrados para fijar precio y validar stock.
-  const ids = limpios.map((i) => i.productoId);
-  const prods = await db.select().from(productos).where(inArray(productos.id, ids));
-  const byId = new Map(prods.map((p) => [p.id, p]));
-
-  // La venta sale del local en el que está parado el panel (o del principal si
-  // está en "Todas"), y el stock se descuenta de ese mismo local.
+  const usuario = await requireAcceso(opts ? "ventas" : "caja");
   const sucursalId = await sucursalOperativaId();
-  const enLocal = sucursalId ? await stockDeSucursal(sucursalId) : null;
-  const disponible = (p: typeof productos.$inferSelect) =>
-    enLocal ? enLocal.get(p.id) ?? 0 : p.stock;
-
-  for (const it of limpios) {
-    const p = byId.get(it.productoId);
-    if (!p) return { ok: false as const, error: "Hay un producto que ya no existe." };
-    const hay = disponible(p);
-    if (hay < it.cantidad)
-      return { ok: false as const, error: `Sin stock suficiente de "${p.nombre}" (quedan ${hay}).` };
+  if (!sucursalId) return { ok: false as const, error: "Creá una sucursal antes de cobrar." };
+  try {
+    const resultado = await venderEnCaja(sucursalId, usuario.nombre, items, medioPago, opts);
+    for (const ruta of ["/admin/caja", "/admin/ventas", "/admin/stock", "/admin"]) revalidatePath(ruta);
+    return { ok: true as const, ...resultado };
+  } catch (e) {
+    return { ok: false as const, error: e instanceof Error ? e.message : "No se pudo cobrar la venta." };
   }
-
-  const total = limpios.reduce((a, it) => a + (byId.get(it.productoId)!.precioVenta * it.cantidad), 0);
-
-  const medio = MEDIOS_PAGO.includes(medioPago) ? medioPago : "efectivo";
-
-  const [venta] = await db
-    .insert(ventas)
-    .values({
-      total,
-      estado: "completada",
-      canal: opts?.canal === "online" ? "online" : "local",
-      medioPago: medio,
-      clienteId: opts?.clienteId ?? null,
-      sucursalId,
-    })
-    .returning({ id: ventas.id });
-
-  await db.insert(ventaItems).values(
-    limpios.map((it) => ({
-      ventaId: venta.id,
-      productoId: it.productoId,
-      cantidad: it.cantidad,
-      precioUnit: byId.get(it.productoId)!.precioVenta,
-    }))
-  );
-  await descontarStock(limpios, sucursalId);
-
-  revalidatePath("/caja");
-  revalidatePath("/ventas");
-  revalidatePath("/stock");
-  revalidatePath("/");
-  return { ok: true as const, ventaId: venta.id, total };
 }
-
 // --- Compras -----------------------------------------------------------------
 export async function crearCompra(formData: FormData) {
   const proveedor = String(formData.get("proveedor") || "").trim();

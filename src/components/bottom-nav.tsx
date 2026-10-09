@@ -68,7 +68,7 @@ export function BottomNav({ usuario }: { usuario: UsuarioActual }) {
 
   function onDetect(codigo: string) {
     setEscaneando(false);
-    if (path === "/caja") {
+    if (path === "/admin/caja") {
       // El POS ya está montado con su carrito: le pasamos el código sin navegar
       // para no perder lo que hay cargado.
       window.dispatchEvent(new CustomEvent("gestoria:scan", { detail: codigo }));
@@ -80,7 +80,7 @@ export function BottomNav({ usuario }: { usuario: UsuarioActual }) {
   return (
     <>
       <nav
-        className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 backdrop-blur safe-b md:hidden"
+        className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 backdrop-blur safe-b xl:hidden"
         aria-label="Navegación principal"
       >
         <div className="mx-auto flex h-16 max-w-lg items-stretch justify-around px-1">

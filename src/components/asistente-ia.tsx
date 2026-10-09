@@ -1,4 +1,5 @@
 "use client";
+import { Overlay } from "@/components/overlay";
 
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import {
@@ -272,7 +273,7 @@ export function AsistenteIA({ inicial }: { inicial: ConversacionResumen[] }) {
 
       {/* Lista de conversaciones en mobile */}
       {listaAbierta && (
-        <div className="overlay md:hidden" onClick={() => setListaAbierta(false)}>
+        <Overlay className="overlay md:hidden" onClick={() => setListaAbierta(false)}>
           <div className="sheet flex flex-col p-4" onClick={(e) => e.stopPropagation()}>
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-base font-semibold">Conversaciones</h3>
@@ -282,7 +283,7 @@ export function AsistenteIA({ inicial }: { inicial: ConversacionResumen[] }) {
             </div>
             {lista}
           </div>
-        </div>
+        </Overlay>
       )}
     </div>
   );

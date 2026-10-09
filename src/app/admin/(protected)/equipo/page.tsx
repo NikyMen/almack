@@ -1,4 +1,6 @@
 import { db } from "@/db";
+import { ClaveAdministrador } from "@/components/clave-administrador";
+import { cajaSeguridad } from "@/db/schema";
 import { usuarios } from "@/db/schema";
 import { asc } from "drizzle-orm";
 import { requireAdmin } from "@/lib/auth";
@@ -10,6 +12,7 @@ export const dynamic = "force-dynamic";
 
 export default async function EquipoPage() {
   await requireAdmin();
+  const claves = await db.select({ id: cajaSeguridad.id }).from(cajaSeguridad);
   const items = await db.select().from(usuarios).orderBy(asc(usuarios.id));
 
   return (
@@ -18,6 +21,7 @@ export default async function EquipoPage() {
         title="Equipo"
         subtitle="Usuarios del sistema: definí qué puede ver y gestionar cada integrante."
       />
+      <ClaveAdministrador configurada={claves.length > 0} />
       <EquipoManager
         items={items.map((u) => ({
           id: u.id,

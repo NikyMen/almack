@@ -1,4 +1,5 @@
 "use client";
+import { Overlay } from "@/components/overlay";
 
 // Alta manual de venta desde el módulo Ventas. Usa el mismo carrito y la misma
 // server action que la Caja (cobrarVenta), así el stock se descuenta igual y no
@@ -48,7 +49,7 @@ export function NuevaVentaModal({
   }
 
   return (
-    <div className="overlay" onClick={() => !guardando && onClose()}>
+    <Overlay className="overlay" onClick={() => !guardando && onClose()}>
       <div className="sheet sm:max-w-2xl" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
         <div className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-slate-100 bg-white px-5 py-4">
           <div>
@@ -186,6 +187,6 @@ export function NuevaVentaModal({
           </div>
         </div>
       </div>
-    </div>
+    </Overlay>
   );
 }

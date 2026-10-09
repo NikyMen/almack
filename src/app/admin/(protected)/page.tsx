@@ -5,7 +5,7 @@ import { PageHeader, StatCard } from "@/components/ui";
 import { BarChart, DonutChart, HBarChart } from "@/components/charts";
 import { money } from "@/lib/format";
 import Link from "next/link";
-import { Sparkles, TriangleAlert, TrendingUp, Receipt, Package, Store } from "lucide-react";
+import { Sparkles, TrendingUp, Receipt, Package, Store } from "lucide-react";
 
 const MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
 function labelMes(ym: string) {
@@ -51,17 +51,6 @@ export default async function Panel() {
         <StatCard label="Clientes" value={String(r.clientesCount)} />
         <StatCard label="Stock bajo" value={String(r.bajoStock.length)} hint="productos a reponer" />
       </div>
-
-      {r.bajoStock.length > 0 && (
-        <div className="card mt-6 border-amber-200 bg-amber-50 p-4">
-          <p className="flex items-center gap-2 text-sm font-semibold text-amber-800">
-            <TriangleAlert className="h-4 w-4 shrink-0" /> {r.bajoStock.length} producto(s) con stock bajo
-          </p>
-          <p className="mt-1 text-sm text-amber-700">
-            {r.bajoStock.map((p) => `${p.nombre} (${p.stock})`).join(" · ")}
-          </p>
-        </div>
-      )}
 
       {/* Gráficos */}
       <div className="mt-8 grid gap-6 lg:grid-cols-2">

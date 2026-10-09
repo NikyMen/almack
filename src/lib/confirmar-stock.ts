@@ -1,3 +1,4 @@
+import { leerReglasStock, multiplicadorProducto, precioDesdeCosto } from "@/lib/reglas-stock";
 import { db, productos, compraLineas, compraItems, diferenciasPrecios, stockSucursal, compras, compraHistorial } from "@/db";
 import type { CompraLinea } from "@/db/schema";
 import { and, eq, asc, desc, sql, type SQL } from "drizzle-orm";
@@ -13,6 +14,7 @@ export async function confirmarStockEnTransaccion({ compraId, pendientes, sucurs
   const creados: string[] = [];
   const ahora = new Date();
   await db.transaction(async (tx) => {
+    const config = await leerReglasStock(tx);
     const vigentes = await tx.select().from(compraLineas).where(and(eq(compraLineas.compraId, compraId), eq(compraLineas.aplicado, false))).orderBy(asc(compraLineas.id));
     if (JSON.stringify(vigentes) !== JSON.stringify(pendientes)) throw new Error("El borrador cambió. Volvé a revisar la carga.");
     const ids = pendientes.flatMap(l => l.productoId === null ? [] : [l.productoId]);
@@ -22,7 +24,12 @@ export async function confirmarStockEnTransaccion({ compraId, pendientes, sucurs
       const impacto = opciones.impactos?.find(i => i.lineaId === linea.id);
       if (!impacto || impacto.costoNuevo !== linea.precioUnit || impacto.stockNuevo - impacto.stockAnterior !== linea.cantidad) throw new Error("El borrador cambió. Revisá nuevamente.");
 
+      const multiplicador = multiplicadorProducto(config, productoId);
+      if ((impacto.multiplicador ?? null) !== multiplicador) throw new Error("El multiplicador cambió. Revisá y confirmá nuevamente.");
+      if (multiplicador !== null && linea.precioUnit <= 0) throw new Error("Ingresá un costo positivo para aplicar el multiplicador.");
+      const precioNuevo = multiplicador !== null ? precioDesdeCosto(linea.precioUnit, multiplicador) : linea.precioVenta;
       if (productoId === null) {
+        if (impacto.ventaNueva !== undefined && impacto.ventaNueva !== precioNuevo) throw new Error("El precio de venta cambió. Revisá nuevamente.");
         if (linea.codigo) {
           const [duplicado] = await tx.select().from(productos).where(eq(productos.sku, linea.codigo));
           if (duplicado) throw new Error(`El código ${linea.codigo} ya existe. Vinculá el renglón al producto existente.`);
@@ -35,7 +42,7 @@ export async function confirmarStockEnTransaccion({ compraId, pendientes, sucurs
             categoria: "General",
             stock: linea.cantidad,
             precioCompra: linea.precioUnit,
-            precioVenta: linea.precioVenta,
+            precioVenta: precioNuevo,
             // publicado queda en false por defecto: entra al stock, no a la tienda.
           })
           .returning({ id: productos.id });
@@ -47,12 +54,12 @@ export async function confirmarStockEnTransaccion({ compraId, pendientes, sucurs
         if (!actual) throw new Error("El producto ya no existe.");
         const [ultima] = await tx.select().from(compraItems).where(and(eq(compraItems.productoId, productoId), sql`${compraItems.precioUnit} > 0`)).orderBy(desc(compraItems.id)).limit(1);
         const costoAnterior = ultima?.precioUnit ?? actual.precioCompra;
-        const diferencia = diferenciaCosto(costoAnterior, linea.precioUnit, actual.precioVenta);
+        const diferencia = diferenciaCosto(costoAnterior, linea.precioUnit, actual.precioVenta, multiplicador);
         const [local] = sucursalId ? await tx.select().from(stockSucursal).where(and(eq(stockSucursal.productoId, productoId), eq(stockSucursal.sucursalId, sucursalId))) : [];
         const stockAnterior = sucursalId ? local?.cantidad ?? 0 : actual.stock;
         const revisado = opciones.impactos?.find(i => i.lineaId === linea.id);
         if (!revisado || revisado.costoAnterior !== costoAnterior || revisado.ventaAnterior !== actual.precioVenta || revisado.costoNuevo !== linea.precioUnit || revisado.stockAnterior !== stockAnterior || revisado.stockNuevo !== stockAnterior + linea.cantidad || revisado.nombre !== actual.nombre || revisado.codigo !== actual.sku) throw new Error("Los precios cambiaron. Revisá y confirmá nuevamente.");
-        const revalorizar = Boolean(opciones.revalorizar?.includes(linea.id));
+        const revalorizar = multiplicador !== null || Boolean(opciones.revalorizar?.includes(linea.id));
         if (revalorizar && diferencia.sugerido === null) throw new Error("No hay margen anterior para calcular el precio sugerido.");
         const set: { stock?: SQL; precioCompra?: number; precioVenta?: number } = {};
         if (revalorizar) set.precioVenta = diferencia.sugerido!;
@@ -68,7 +75,7 @@ export async function confirmarStockEnTransaccion({ compraId, pendientes, sucurs
         // Sin sucursales (base previa a la migración) se suma al total, como antes.
         if (!sucursalId) set.stock = sql`${productos.stock} + ${linea.cantidad}`;
         // El costo solo se pisa si se pidió y si el remito trae precio.
-        if (opciones.actualizarCosto && linea.precioUnit > 0) set.precioCompra = linea.precioUnit;
+        if ((opciones.actualizarCosto || multiplicador !== null) && linea.precioUnit > 0) set.precioCompra = linea.precioUnit;
 
         if (Object.keys(set).length > 0) {
           const r = await tx.update(productos).set(set).where(eq(productos.id, productoId));

@@ -19,7 +19,7 @@ import {
   type Compra,
   type CompraLinea,
 } from "@/db/schema";
-import { requireAcceso } from "@/lib/auth";
+import { requireAcceso, requireCargaStock } from "@/lib/auth";
 import {
   transcribirImagen,
   leerRemitoImagen,
@@ -28,6 +28,7 @@ import {
 } from "@/lib/ai";
 import { esEstadoCompra } from "@/lib/compras";
 import { getContextoSucursal, sucursalOperativaId } from "@/lib/sucursal";
+import { leerReglasStock, multiplicadorProducto, precioDesdeCosto } from "@/lib/reglas-stock";
 import { diferenciaCosto, type ImpactoLinea } from "@/lib/precios-stock";
 import type { ResumenRecepcion } from "@/lib/recepcion";
 import {
@@ -191,7 +192,7 @@ async function borrarArchivo(rutaPublica: string) {
 }
 
 export async function subirImagenCompra(compraId: number, formData: FormData) {
-  const usuario = await requireAcceso("compras");
+  const usuario = await requireCargaStock();
   const antes = await getCompra(compraId);
   if (!antes) return { ok: false as const, error: "La compra no existe." };
 
@@ -227,7 +228,7 @@ export async function subirImagenCompra(compraId: number, formData: FormData) {
  * No pisa nada por accidente: si ya hay detalle, hay que pasar reemplazar=true.
  */
 export async function transcribirImagenCompra(compraId: number, reemplazar = false) {
-  const usuario = await requireAcceso("compras");
+  const usuario = await requireCargaStock();
   const antes = await getCompra(compraId);
   if (!antes) return { ok: false as const, error: "La compra no existe." };
   if (!antes.imagen) return { ok: false as const, error: "Esta compra todavía no tiene imagen." };
@@ -303,14 +304,11 @@ async function getLinea(lineaId: number): Promise<CompraLinea | null> {
 
 /** Renglones del borrador, los pendientes primero y en el orden en que entraron. */
 export async function lineasCompra(compraId: number) {
-  await requireAcceso("compras");
-  return db
-    .select()
-    .from(compraLineas)
-    .where(eq(compraLineas.compraId, compraId))
-    .orderBy(asc(compraLineas.id));
+  const usuario = await requireCargaStock();
+  const config = await leerReglasStock();
+  const lineas = await db.select().from(compraLineas).where(eq(compraLineas.compraId, compraId)).orderBy(asc(compraLineas.id));
+  return lineas.map(linea => ({ ...linea, multiplicador: multiplicadorProducto(config, linea.productoId), permitePrecioManual: usuario.rol === "admin" }));
 }
-
 async function pendientesDe(compraId: number) {
   return db
     .select()
@@ -332,6 +330,7 @@ async function guardarLectura(
       .where(and(eq(compraLineas.compraId, compraId), eq(compraLineas.aplicado, false))).orderBy(asc(compraLineas.id));
   }
   if (items.length === 0) return;
+  const configPrecios = await leerReglasStock();
   await db.insert(compraLineas).values(
     items.map((it) => ({
       compraId,
@@ -339,7 +338,7 @@ async function guardarLectura(
       codigo: it.codigo,
       cantidad: it.cantidad,
       precioUnit: it.precioUnit,
-      precioVenta: it.estado === "nuevo" ? Math.round(it.precioUnit * 2 * 100) / 100 : 0,
+      precioVenta: it.estado === "nuevo" ? precioDesdeCosto(it.precioUnit, configPrecios.multiplicador ?? 2) : 0,
       productoId: it.productoId,
       estado: it.estado,
       candidatos: JSON.stringify(it.candidatos),
@@ -358,7 +357,7 @@ function resumenLectura(items: LineaClasificada[]): string {
  * solo deja los renglones listos para revisar.
  */
 export async function leerRemitoCompra(compraId: number, modo?: "reemplazar" | "agregar") {
-  const usuario = await requireAcceso("compras");
+  const usuario = await requireCargaStock();
   const compra = await getCompra(compraId);
   if (!compra) return { ok: false as const, error: "La compra no existe." };
 
@@ -410,7 +409,7 @@ export async function analizarDetalleCompra(
   modo?: "reemplazar" | "agregar",
   texto?: string
 ) {
-  const usuario = await requireAcceso("compras");
+  const usuario = await requireCargaStock();
   const compra = await getCompra(compraId);
   if (!compra) return { ok: false as const, error: "La compra no existe." };
 
@@ -453,7 +452,7 @@ export async function analizarDetalleCompra(
 
 /** Renglón cargado a mano: el que estaba tachado, el que la IA no vio. */
 export async function agregarLineaCompra(compraId: number, datos: DatosLinea) {
-  await requireAcceso("compras");
+  const usuario = await requireCargaStock();
   const compra = await getCompra(compraId);
   if (!compra) return { ok: false as const, error: "La compra no existe." };
 
@@ -477,7 +476,7 @@ export async function agregarLineaCompra(compraId: number, datos: DatosLinea) {
       codigo: item.codigo,
       cantidad: item.cantidad,
       precioUnit: item.precioUnit,
-      precioVenta: montoPositivo(datos.precioVenta),
+      precioVenta: usuario.rol === "admin" ? montoPositivo(datos.precioVenta) : precioDesdeCosto(item.precioUnit, (await leerReglasStock()).multiplicador ?? 2),
       productoId: item.productoId,
       estado: item.estado,
       candidatos: JSON.stringify(item.candidatos),
@@ -489,7 +488,7 @@ export async function agregarLineaCompra(compraId: number, datos: DatosLinea) {
 }
 
 export async function actualizarLineaCompra(lineaId: number, datos: DatosLinea) {
-  await requireAcceso("compras");
+  const usuario = await requireCargaStock();
   const linea = await getLinea(lineaId);
   if (!linea) return { ok: false as const, error: "El renglón no existe." };
   if (linea.aplicado) return { ok: false as const, error: "Ese renglón ya se cargó al stock." };
@@ -517,6 +516,7 @@ export async function actualizarLineaCompra(lineaId: number, datos: DatosLinea) 
     precioVenta: datos.precioVenta !== undefined ? montoPositivo(datos.precioVenta) : linea.precioVenta,
   };
 
+  if (usuario.rol !== "admin") cambios.precioVenta = precioDesdeCosto(cambios.precioUnit, (await leerReglasStock()).multiplicador ?? 2);
   // Si cambió lo que identifica al producto, la clasificación anterior ya no
   // vale. Salvo que alguien haya elegido el producto a mano: ahí manda la
   // persona, no el algoritmo.
@@ -542,7 +542,7 @@ export async function actualizarLineaCompra(lineaId: number, datos: DatosLinea) 
  * (productoId = null). Elegir a mano cuenta como confirmación.
  */
 export async function vincularLineaCompra(lineaId: number, productoId: number | null) {
-  await requireAcceso("compras");
+  await requireCargaStock();
   const linea = await getLinea(lineaId);
   if (!linea) return { ok: false as const, error: "El renglón no existe." };
   if (linea.aplicado) return { ok: false as const, error: "Ese renglón ya se cargó al stock." };
@@ -575,7 +575,7 @@ export async function vincularLineaCompra(lineaId: number, productoId: number | 
 
 /** El visto bueno por renglón (crear el producto nuevo / aceptar la duda). */
 export async function confirmarLineaCompra(lineaId: number, confirmado: boolean) {
-  await requireAcceso("compras");
+  await requireCargaStock();
   const linea = await getLinea(lineaId);
   if (!linea) return { ok: false as const, error: "El renglón no existe." };
   if (linea.aplicado) return { ok: false as const, error: "Ese renglón ya se cargó al stock." };
@@ -584,7 +584,7 @@ export async function confirmarLineaCompra(lineaId: number, confirmado: boolean)
 }
 
 export async function eliminarLineaCompra(lineaId: number) {
-  await requireAcceso("compras");
+  await requireCargaStock();
   const linea = await getLinea(lineaId);
   if (!linea) return { ok: true as const };
   if (linea.aplicado) {
@@ -595,7 +595,7 @@ export async function eliminarLineaCompra(lineaId: number) {
 }
 
 export async function buscarProductosCompra(q: string) {
-  await requireAcceso("compras");
+  await requireCargaStock();
   return buscarProductos(q);
 }
 
@@ -618,14 +618,14 @@ function armarResumen(pendientes: CompraLinea[]): ResumenRecepcion {
 }
 
 export async function unificarLineasCompra(compraId: number) {
-  await requireAcceso("compras");
+  await requireCargaStock();
   if (!await getCompra(compraId)) throw new Error("La compra no existe.");
   return unificarBorrador(compraId);
 }
 
 /** Qué pasaría si se confirma. Es lo que se muestra en el cartel de confirmación. */
 export async function resumenRecepcion(compraId: number): Promise<ResumenRecepcion> {
-  await requireAcceso("compras");
+  await requireCargaStock();
   return armarResumen(await pendientesDe(compraId));
 }
 
@@ -641,7 +641,7 @@ export async function aplicarRecepcion(
   compraId: number,
   opciones: { confirmado: boolean; actualizarCosto?: boolean; revalorizar?: number[]; impactos?: ImpactoLinea[] }
 ) {
-  const usuario = await requireAcceso("compras");
+  const usuario = await requireCargaStock();
   const compra = await getCompra(compraId);
   if (!compra) return { ok: false as const, error: "La compra no existe." };
 
@@ -651,6 +651,7 @@ export async function aplicarRecepcion(
     return { ok: false as const, error: "Hay que confirmar antes de cargar al stock." };
   }
 
+  if (usuario.rol !== "admin" && opciones.revalorizar?.length) return { ok: false as const, error: "Solo el administrador puede elegir una revalorización manual." };
   const pendientes = await pendientesDe(compraId);
   if (pendientes.length === 0) {
     return { ok: false as const, error: "No hay renglones pendientes para cargar." };
@@ -714,11 +715,12 @@ function montoPositivo(v: unknown): number {
 
 
 export async function impactosRecepcion(compraId: number): Promise<ImpactoLinea[]> {
-  await requireAcceso("compras");
+  await requireCargaStock();
   const compra = await getCompra(compraId);
   if (!compra) throw new Error("La compra no existe.");
   const sucursalId = compra.sucursalId ?? await sucursalOperativaId();
   const pendientes = await pendientesDe(compraId);
+  const configPrecios = await leerReglasStock();
   const resultado: ImpactoLinea[] = [];
   for (const linea of pendientes) {
     const [p] = linea.productoId === null ? [] : await db.select().from(productos).where(eq(productos.id, linea.productoId));
@@ -726,16 +728,17 @@ export async function impactosRecepcion(compraId: number): Promise<ImpactoLinea[
     const [local] = p && sucursalId ? await db.select().from(stockSucursal).where(and(eq(stockSucursal.productoId, p.id), eq(stockSucursal.sucursalId, sucursalId))) : [];
     const anterior = sucursalId ? (local?.cantidad ?? 0) : (p?.stock ?? 0);
     const costoAnterior = ultima?.precioUnit ?? p?.precioCompra ?? 0;
-    resultado.push({ lineaId: linea.id, nombre: p?.nombre ?? linea.descripcion, codigo: p?.sku ?? linea.codigo,
+    const multiplicador = multiplicadorProducto(configPrecios, linea.productoId);
+    resultado.push({ multiplicador, ventaNueva: multiplicador !== null ? precioDesdeCosto(linea.precioUnit, multiplicador) : p?.precioVenta ?? linea.precioVenta, lineaId: linea.id, nombre: p?.nombre ?? linea.descripcion, codigo: p?.sku ?? linea.codigo,
       stockAnterior: anterior, stockNuevo: anterior + linea.cantidad, costoAnterior,
       costoNuevo: linea.precioUnit, ventaAnterior: p?.precioVenta ?? 0,
-      ...diferenciaCosto(costoAnterior, linea.precioUnit, p?.precioVenta ?? 0) });
+      ...diferenciaCosto(costoAnterior, linea.precioUnit, p?.precioVenta ?? 0, multiplicador) });
   }
   return resultado;
 }
 
 export async function importarArchivoCompra(compraId: number, formData: FormData) {
-  const usuario = await requireAcceso("compras");
+  const usuario = await requireCargaStock();
   if (!await getCompra(compraId)) return { ok: false as const, error: "La compra no existe." };
   const archivo = formData.get("archivo");
   if (!(archivo instanceof File)) return { ok: false as const, error: "Elegí un archivo." };
@@ -750,7 +753,7 @@ export async function importarArchivoCompra(compraId: number, formData: FormData
 }
 
 export async function crearCargaStock(formData: FormData) {
-  await requireAcceso("compras");
+  await requireCargaStock();
   const { lista, activaId } = await getContextoSucursal();
   const sucursalId = activaId ?? Number(formData.get("sucursalId"));
   if (!lista.some(s => s.id === sucursalId)) return { ok: false as const, error: "Elegí una sucursal de destino activa." };

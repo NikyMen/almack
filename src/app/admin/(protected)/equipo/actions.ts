@@ -1,5 +1,7 @@
 "use server";
 
+import { hashClaveAdministrador } from "@/lib/clave-admin";
+import { cajaSeguridad } from "@/db/schema";
 import { db } from "@/db";
 import { usuarios, waContactos } from "@/db/schema";
 import { eq } from "drizzle-orm";
@@ -86,4 +88,16 @@ export async function eliminarUsuario(id: number) {
   await db.delete(usuarios).where(eq(usuarios.id, id));
   revalidatePath("/equipo");
   return { ok: true as const };
+}
+
+export async function guardarClaveAdministrador(clave: string, confirmacion: string) {
+  const admin = await requireAdmin();
+  try {
+    if (clave !== confirmacion) return { ok: false, error: "Las claves no coinciden." };
+    const claveHash = hashClaveAdministrador(clave);
+    await db.insert(cajaSeguridad).values({ id: 1, claveHash, actualizadoPor: `${admin.nombre} (${admin.usuario})`, actualizadoEn: new Date() }).onConflictDoUpdate({ target: cajaSeguridad.id, set: { claveHash, actualizadoPor: `${admin.nombre} (${admin.usuario})`, actualizadoEn: new Date() } });
+    revalidatePath("/admin/equipo");
+    revalidatePath("/admin/caja");
+    return { ok: true, error: "" };
+  } catch (e) { return { ok: false, error: e instanceof Error ? e.message : "No se pudo guardar la clave." }; }
 }

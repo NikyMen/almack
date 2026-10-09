@@ -3,7 +3,7 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Menu, ShoppingCart } from "lucide-react";
+import { LogIn, Menu, ShoppingCart } from "lucide-react";
 import { Logo } from "@/components/Logo";
 import { SearchBar } from "@/components/store/SearchBar";
 import { useCart } from "@/store/cart";
@@ -35,7 +35,7 @@ export function StoreHeader() {
         </button>
 
         <Link href="/" aria-label="Inicio de la tienda Almack">
-          <Logo />
+          <Logo className="h-11 w-28 sm:h-14 sm:w-[190px]" />
         </Link>
 
         {/* Navegación horizontal solo en escritorio */}
@@ -64,6 +64,14 @@ export function StoreHeader() {
           <Suspense fallback={null}>
             <SearchBar className="hidden w-48 lg:block xl:w-60" />
           </Suspense>
+
+          <Link
+            href="/admin/login"
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-brand-red px-2.5 py-2 text-xs font-semibold text-white transition hover:bg-brand-red/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-red sm:px-3 sm:text-sm"
+          >
+            <LogIn size={18} aria-hidden="true" className="hidden shrink-0 sm:block" />
+            <span className="whitespace-nowrap">Iniciar sesión</span>
+          </Link>
 
           <button
             onClick={openCart}

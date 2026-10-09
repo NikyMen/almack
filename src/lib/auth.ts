@@ -151,3 +151,9 @@ export async function requireAdmin(): Promise<UsuarioActual> {
   if (u.rol !== "admin") redirect(primerModuloPermitido(u));
   return u;
 }
+
+// La carga de inventario pertenece a Stock; se conserva el acceso de Compras.
+export async function requireCargaStock(): Promise<UsuarioActual> {
+  const usuario = await getUsuarioActual();
+  return requireAcceso(usuario?.permisos.includes("stock") ? "stock" : "compras");
+}
