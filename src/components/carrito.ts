@@ -6,6 +6,7 @@
 
 import { useCallback, useMemo, useState } from "react";
 import type { Producto } from "@/db/schema";
+import { cantidadValida, redondearCantidad } from "@/lib/cantidades";
 
 export type Linea = { producto: Producto; cantidad: number };
 
@@ -27,15 +28,22 @@ export function useCarrito(productos: Producto[]) {
     setCarrito((prev) => {
       const existe = prev.find((l) => l.producto.id === p.id);
       const actual = existe?.cantidad ?? 0;
-      const siguiente = actual + delta;
+      const siguiente = redondearCantidad(actual + delta);
       if (siguiente > p.stock) {
         setError(`Sin stock suficiente de "${p.nombre}" (quedan ${p.stock}).`);
         return prev;
       }
       if (siguiente <= 0) return prev.filter((l) => l.producto.id !== p.id);
       if (existe) return prev.map((l) => (l.producto.id === p.id ? { ...l, cantidad: siguiente } : l));
-      return [...prev, { producto: p, cantidad: 1 }];
+      return [...prev, { producto: p, cantidad: siguiente }];
     });
+  }, []);
+
+  const cambiarCantidad = useCallback((p: Producto, cantidad: number) => {
+    setError("");
+    if (!cantidadValida(cantidad, p.unidadMedida as "unidad" | "kg")) { setError("Ingresá unidades enteras o kilos con hasta tres decimales."); return; }
+    if (cantidad > p.stock) { setError(`Sin stock suficiente de "${p.nombre}" (quedan ${p.stock}).`); return; }
+    setCarrito(prev => prev.map(l => l.producto.id === p.id ? { ...l, cantidad: redondearCantidad(cantidad) } : l));
   }, []);
 
   const quitar = useCallback((id: number) => {
@@ -87,6 +95,6 @@ export function useCarrito(productos: Producto[]) {
   return {
     carrito, error, setError,
     enCarrito, total, unidades,
-    agregar, quitar, vaciar, buscar, agregarPorCodigo, items,
+    agregar, cambiarCantidad, quitar, vaciar, buscar, agregarPorCodigo, items,
   };
 }

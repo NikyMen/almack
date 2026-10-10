@@ -15,6 +15,7 @@ import {
 import { COOKIE_SUCURSAL, TODAS, getSucursales, sucursalOperativaId } from "@/lib/sucursal";
 import { getUsuarioActual, requireAcceso, requireAdmin } from "@/lib/auth";
 import { esSuperAdmin } from "@/lib/permisos";
+import { cantidadValida, type UnidadMedida } from "@/lib/cantidades";
 import { MEDIOS_PAGO, type MedioPago } from "@/lib/medios-pago";
 import { esEstadoCompra } from "@/lib/compras";
 import {
@@ -148,6 +149,7 @@ function datosProducto(fd: FormData) {
     precioVenta: Number(fd.get("precioVenta") || 0),
     precioCompra: Number(fd.get("precioCompra") || 0),
     stock: Number(fd.get("stock") || 0),
+    unidadMedida: (fd.get("unidadMedida") === "kg" ? "kg" : "unidad") as UnidadMedida,
     stockMinimo: Number(fd.get("stockMinimo") ?? 5),
   };
 }
@@ -200,6 +202,7 @@ export async function crearProducto(formData: FormData) {
   const usuario = await requireAcceso("stock");
   const d = datosProducto(formData);
   if (!d.nombre) return { ok: false as const, error: "El nombre es obligatorio." };
+  if (!cantidadValida(d.stock, d.unidadMedida, true) || !Number.isFinite(d.precioVenta) || d.precioVenta < 0 || !Number.isFinite(d.precioCompra) || d.precioCompra < 0) return { ok: false as const, error: "Revisá stock, unidad y precios." };
 
   if (!esSuperAdmin(usuario)) {
     const config = await leerReglasStock();
@@ -234,6 +237,7 @@ export async function editarProducto(id: number, formData: FormData) {
   const usuario = await requireAcceso("stock");
   const d = datosProducto(formData);
   if (!d.nombre) return { ok: false as const, error: "El nombre es obligatorio." };
+  if (!cantidadValida(d.stock, d.unidadMedida, true) || !Number.isFinite(d.precioVenta) || d.precioVenta < 0 || !Number.isFinite(d.precioCompra) || d.precioCompra < 0) return { ok: false as const, error: "Revisá stock, unidad y precios." };
 
   const [previo] = await db.select().from(productos).where(eq(productos.id, id)).limit(1);
   if (!previo || !previo.activo) return { ok: false as const, error: "El producto no existe." };

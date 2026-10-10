@@ -31,9 +31,10 @@ export const productos = sqliteTable("productos", {
   categoria: text("categoria").default("General"),
   precioVenta: real("precio_venta").notNull().default(0),
   precioCompra: real("precio_compra").notNull().default(0),
-  stock: integer("stock").notNull().default(0),
+  stock: real("stock").notNull().default(0),
+  unidadMedida: text("unidad_medida").notNull().default("unidad"),
   activo: integer("activo", { mode: "boolean" }).notNull().default(true),
-  stockMinimo: integer("stock_minimo").notNull().default(5),
+  stockMinimo: real("stock_minimo").notNull().default(5),
   imagen: text("imagen").default(""),
   // Tienda online
   publicado: integer("publicado", { mode: "boolean" }).notNull().default(false),
@@ -59,7 +60,7 @@ export const stockSucursal = sqliteTable("stock_sucursal", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   productoId: integer("producto_id").notNull().references(() => productos.id),
   sucursalId: integer("sucursal_id").notNull().references(() => sucursales.id),
-  cantidad: integer("cantidad").notNull().default(0),
+  cantidad: real("cantidad").notNull().default(0),
 });
 
 // Mercadería enviada y todavía no aceptada por la sucursal de destino.
@@ -68,7 +69,7 @@ export const stockTransito = sqliteTable("stock_transito", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   productoId: integer("producto_id").notNull().references(() => productos.id),
   sucursalId: integer("sucursal_id").notNull().references(() => sucursales.id),
-  cantidad: integer("cantidad").notNull().default(0),
+  cantidad: real("cantidad").notNull().default(0),
 });
 
 // Remito interno: al despachar se descuenta del origen y queda en tránsito
@@ -178,7 +179,7 @@ export const ventaItems = sqliteTable("venta_items", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   ventaId: integer("venta_id").notNull().references(() => ventas.id),
   productoId: integer("producto_id").notNull().references(() => productos.id),
-  cantidad: integer("cantidad").notNull().default(1),
+  cantidad: real("cantidad").notNull().default(1),
   precioUnit: real("precio_unit").notNull().default(0),
 });
 
@@ -226,7 +227,9 @@ export const compraLineas = sqliteTable("compra_lineas", {
   compraId: integer("compra_id").notNull().references(() => compras.id),
   descripcion: text("descripcion").notNull().default(""),
   codigo: text("codigo").notNull().default(""), // SKU / código de barras del remito
-  cantidad: integer("cantidad").notNull().default(1),
+  cantidad: real("cantidad").notNull().default(1),
+  modoStock: text("modo_stock").notNull().default("sumar"), // sumar | fijar (inventario)
+  unidadMedida: text("unidad_medida").notNull().default("unidad"), // unidad | kg
   precioUnit: real("precio_unit").notNull().default(0), // costo unitario
   // Solo se usa al crear un producto nuevo; en los existentes no se toca nada
   // del precio de venta.
@@ -268,7 +271,7 @@ export const compraItems = sqliteTable("compra_items", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   compraId: integer("compra_id").notNull().references(() => compras.id),
   productoId: integer("producto_id").notNull().references(() => productos.id),
-  cantidad: integer("cantidad").notNull().default(1),
+  cantidad: real("cantidad").notNull().default(1),
   precioUnit: real("precio_unit").notNull().default(0),
 });
 

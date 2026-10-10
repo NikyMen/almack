@@ -1,5 +1,6 @@
 import { db, compraLineas } from "@/db";
 import { and, asc, eq } from "drizzle-orm";
+import { cantidadValida, type UnidadMedida } from "@/lib/cantidades";
 
 /** Agrupa el mismo SKU/producto; nunca mezcla precios incompatibles. */
 export async function unificarBorrador(compraId: number) {
@@ -16,8 +17,10 @@ export async function unificarBorrador(compraId: number) {
       const primera = grupo[0];
       const ventas = new Set(grupo.map(l => l.precioVenta).filter(p => p > 0));
       if (new Set(grupo.map(l => l.precioUnit)).size > 1 || ventas.size > 1) throw new Error(`El código ${primera.codigo || primera.descripcion} tiene precios distintos. Igualá los precios antes de continuar.`);
+      if (grupo.some(l => l.modoStock === "fijar")) throw new Error(`El código ${primera.codigo || primera.descripcion} aparece varias veces en el inventario. Revisá cuál saldo conservar.`);
+      if (new Set(grupo.map(l => l.unidadMedida)).size > 1) throw new Error("Hay unidades de medida distintas para el mismo producto.");
       const cantidad = grupo.reduce((n, l) => n + l.cantidad, 0);
-      if (!Number.isSafeInteger(cantidad) || cantidad <= 0) throw new Error("La cantidad agrupada no es válida.");
+      if (!cantidadValida(cantidad, primera.unidadMedida as UnidadMedida)) throw new Error("La cantidad agrupada no es válida.");
       await tx.update(compraLineas).set({ cantidad, precioVenta: [...ventas][0] ?? 0, confirmado: grupo.every(l => l.confirmado) }).where(eq(compraLineas.id, primera.id));
       for (const extra of grupo.slice(1)) await tx.delete(compraLineas).where(eq(compraLineas.id, extra.id));
       unificadas += grupo.length - 1;

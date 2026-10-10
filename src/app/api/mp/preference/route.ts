@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { eq, inArray } from "drizzle-orm";
 import { db, clientes, productos, tiendaPedidos, ventaItems, ventas } from "@/db";
 import { crearPreferencia, mercadopagoConfigurado } from "@/lib/mercadopago";
+import { cantidadValida, redondearCantidad } from "@/lib/cantidades";
 
 export const runtime = "nodejs";
 
@@ -24,8 +25,8 @@ function cleanItems(items: ItemReq[] | undefined): ItemReq[] {
   for (const item of items ?? []) {
     const id = Number(item.productoId);
     const quantity = Number(item.cantidad);
-    if (Number.isInteger(id) && id > 0 && Number.isInteger(quantity) && quantity > 0) {
-      grouped.set(id, (grouped.get(id) ?? 0) + quantity);
+    if (Number.isInteger(id) && id > 0 && Number.isFinite(quantity) && quantity > 0) {
+      grouped.set(id, redondearCantidad((grouped.get(id) ?? 0) + quantity));
     }
   }
   return [...grouped].map(([productoId, cantidad]) => ({ productoId, cantidad }));
@@ -54,10 +55,11 @@ export async function POST(req: Request) {
   for (const item of items) {
     const product = byId.get(item.productoId);
     if (!product || !product.activo || !product.publicado) return NextResponse.json({ error: "Hay un producto que ya no está disponible." }, { status: 400 });
+    if (!cantidadValida(item.cantidad, product.unidadMedida as "unidad" | "kg")) return NextResponse.json({ error: `Cantidad inválida de "${product.nombre}".` }, { status: 400 });
     if (product.stock < item.cantidad) return NextResponse.json({ error: `Sin stock suficiente de "${product.nombre}" (quedan ${product.stock}).` }, { status: 400 });
   }
 
-  const total = items.reduce((sum, item) => sum + byId.get(item.productoId)!.precioVenta * item.cantidad, 0);
+  const total = items.reduce((sum, item) => sum + Math.round(byId.get(item.productoId)!.precioVenta * item.cantidad * 100) / 100, 0);
   const nombre = String(body.nombre ?? "").trim();
   const telefono = String(body.telefono ?? "").trim();
   const direccion = String(body.direccion ?? "").trim();
@@ -87,7 +89,9 @@ export async function POST(req: Request) {
       ventaId: venta.id,
       items: items.map((item) => {
         const product = byId.get(item.productoId)!;
-        return { title: product.nombre, quantity: item.cantidad, unit_price: product.precioVenta };
+        return product.unidadMedida === "kg"
+          ? { title: `${product.nombre} (${item.cantidad} kg)`, quantity: 1, unit_price: Math.round(product.precioVenta * item.cantidad * 100) / 100 }
+          : { title: product.nombre, quantity: item.cantidad, unit_price: product.precioVenta };
       }),
     });
     await db.update(tiendaPedidos).set({ preferenciaMp: preference.id, initPointMp: preference.initPoint }).where(eq(tiendaPedidos.ventaId, venta.id));

@@ -26,22 +26,21 @@ export function leerTablaStock(filas: string[][]): LecturaRemito {
   const cab = filas[encabezado].map(normalizar);
   const indice = (key: keyof typeof alias) => cab.findIndex(c => alias[key].includes(c));
   const esInventario = cab.includes("stock actual");
-  let omitidos = 0;
   const items = filas.slice(encabezado + 1).flatMap((f, i) => {
     if (!f.some(c => c.trim())) return [];
     const descripcion = f[indice("descripcion")]?.trim() ?? "";
     const cantidad = numeroDocumento(f[indice("cantidad")] ?? "");
     const precioUnit = numeroDocumento(f[indice("precioUnit")] ?? "");
     const precioVenta = indice("precioVenta") >= 0 ? numeroDocumento(f[indice("precioVenta")] ?? "") : undefined;
-    if (!descripcion || !Number.isSafeInteger(cantidad) || !Number.isFinite(precioUnit) || precioUnit < 0 ||
+    if (!descripcion || !Number.isFinite(cantidad) || Math.abs(cantidad) > 1_000_000 || Math.abs(cantidad * 1000 - Math.round(cantidad * 1000)) > 0.000001 || !Number.isFinite(precioUnit) || precioUnit < 0 ||
       (precioVenta !== undefined && (!Number.isFinite(precioVenta) || precioVenta < 0)))
-      throw new Error(`Revisá la fila ${encabezado + i + 2}: producto, stock entero y precios válidos son obligatorios.`);
-    if (esInventario && cantidad <= 0) { omitidos++; return []; }
-    if (cantidad <= 0) throw new Error(`Revisá la fila ${encabezado + i + 2}: la cantidad debe ser positiva.`);
-    return [{ descripcion, codigo: f[indice("codigo")]?.trim() ?? "", cantidad, precioUnit, precioVenta }];
+      throw new Error(`Revisá la fila ${encabezado + i + 2}: producto, stock (hasta 3 decimales) y precios válidos son obligatorios.`);
+    if (!esInventario && cantidad <= 0) throw new Error(`Revisá la fila ${encabezado + i + 2}: la cantidad de un remito debe ser positiva.`);
+    return [{ descripcion, codigo: f[indice("codigo")]?.trim() ?? "", cantidad, precioUnit, precioVenta,
+      modoStock: esInventario ? "fijar" as const : "sumar" as const, unidadMedida: Number.isInteger(cantidad) ? "unidad" as const : "kg" as const }];
   });
-  if (!items.length || items.length > 1000) throw new Error("El archivo debe contener entre 1 y 1000 productos con stock positivo.");
-  return { proveedor: "", total: items.reduce((s, i) => s + i.cantidad * i.precioUnit, 0), items, omitidos };
+  if (!items.length || items.length > 1000) throw new Error("El archivo debe contener entre 1 y 1000 productos.");
+  return { proveedor: "", total: items.reduce((s, i) => s + i.cantidad * i.precioUnit, 0), items, omitidos: 0 };
 }
 
 export async function extraerDocumentoStock(archivo: File): Promise<LecturaRemito> {
@@ -56,7 +55,7 @@ export async function extraerDocumentoStock(archivo: File): Promise<LecturaRemit
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(buffer as unknown as Parameters<typeof workbook.xlsx.load>[0]);
     const sheet = workbook.worksheets.find(s => s.actualRowCount > 0);
-    if (!sheet || sheet.rowCount > 1000 || sheet.columnCount > 100) throw new Error("Usá una hoja de hasta 500 productos y 100 columnas.");
+    if (!sheet || sheet.rowCount > 1100 || sheet.columnCount > 100) throw new Error("Usá una hoja de hasta 1000 productos y 100 columnas.");
     const filas: string[][] = [];
     sheet.eachRow(row => filas.push(Array.from({ length: sheet.columnCount }, (_, i) => row.getCell(i + 1).text)));
     return leerTablaStock(filas);

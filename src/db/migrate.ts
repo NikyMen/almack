@@ -46,9 +46,10 @@ const statements = [
     categoria TEXT DEFAULT 'General',
     precio_venta REAL NOT NULL DEFAULT 0,
     precio_compra REAL NOT NULL DEFAULT 0,
-    stock INTEGER NOT NULL DEFAULT 0,
+    stock REAL NOT NULL DEFAULT 0,
+    unidad_medida TEXT NOT NULL DEFAULT 'unidad',
     activo INTEGER NOT NULL DEFAULT 1,
-    stock_minimo INTEGER NOT NULL DEFAULT 5,
+    stock_minimo REAL NOT NULL DEFAULT 5,
     imagen TEXT DEFAULT '',
     publicado INTEGER NOT NULL DEFAULT 0,
     descripcion_web TEXT DEFAULT '',
@@ -79,7 +80,7 @@ const statements = [
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     venta_id INTEGER NOT NULL REFERENCES ventas(id),
     producto_id INTEGER NOT NULL REFERENCES productos(id),
-    cantidad INTEGER NOT NULL DEFAULT 1,
+    cantidad REAL NOT NULL DEFAULT 1,
     precio_unit REAL NOT NULL DEFAULT 0
   )`,
   `CREATE TABLE IF NOT EXISTS tienda_producto_meta (
@@ -147,13 +148,15 @@ const statements = [
     compra_id INTEGER NOT NULL REFERENCES compras(id),
     descripcion TEXT NOT NULL DEFAULT '',
     codigo TEXT NOT NULL DEFAULT '',
-    cantidad INTEGER NOT NULL DEFAULT 1,
+    cantidad REAL NOT NULL DEFAULT 1,
     precio_unit REAL NOT NULL DEFAULT 0,
     precio_venta REAL NOT NULL DEFAULT 0,
     producto_id INTEGER REFERENCES productos(id),
     estado TEXT NOT NULL DEFAULT 'nuevo',
     candidatos TEXT NOT NULL DEFAULT '[]',
     origen TEXT NOT NULL DEFAULT 'ia',
+    modo_stock TEXT NOT NULL DEFAULT 'sumar',
+    unidad_medida TEXT NOT NULL DEFAULT 'unidad',
     confirmado INTEGER NOT NULL DEFAULT 0,
     aplicado INTEGER NOT NULL DEFAULT 0,
     aplicado_en INTEGER,
@@ -163,7 +166,7 @@ const statements = [
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     compra_id INTEGER NOT NULL REFERENCES compras(id),
     producto_id INTEGER NOT NULL REFERENCES productos(id),
-    cantidad INTEGER NOT NULL DEFAULT 1,
+    cantidad REAL NOT NULL DEFAULT 1,
     precio_unit REAL NOT NULL DEFAULT 0
   )`,
   `CREATE TABLE IF NOT EXISTS facturas (
@@ -237,20 +240,20 @@ const statements = [
     presupuesto_id INTEGER NOT NULL REFERENCES wa_presupuestos(id),
     producto_id INTEGER REFERENCES productos(id),
     descripcion TEXT NOT NULL DEFAULT '',
-    cantidad INTEGER NOT NULL DEFAULT 1,
+    cantidad REAL NOT NULL DEFAULT 1,
     precio_unit REAL NOT NULL DEFAULT 0
   )`,
   `CREATE TABLE IF NOT EXISTS stock_sucursal (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     producto_id INTEGER NOT NULL REFERENCES productos(id),
     sucursal_id INTEGER NOT NULL REFERENCES sucursales(id),
-    cantidad INTEGER NOT NULL DEFAULT 0
+    cantidad REAL NOT NULL DEFAULT 0
   )`,
   `CREATE TABLE IF NOT EXISTS stock_transito (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     producto_id INTEGER NOT NULL REFERENCES productos(id),
     sucursal_id INTEGER NOT NULL REFERENCES sucursales(id),
-    cantidad INTEGER NOT NULL DEFAULT 0
+    cantidad REAL NOT NULL DEFAULT 0
   )`,
   `CREATE TABLE IF NOT EXISTS stock_movimientos (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -307,6 +310,9 @@ const alters = [
   `ALTER TABLE clientes ADD COLUMN sucursal_id INTEGER REFERENCES sucursales(id)`,
   `ALTER TABLE compras ADD COLUMN stock_revertido INTEGER NOT NULL DEFAULT 0`,
   `ALTER TABLE productos ADD COLUMN activo INTEGER NOT NULL DEFAULT 1`,
+  `ALTER TABLE productos ADD COLUMN unidad_medida TEXT NOT NULL DEFAULT 'unidad'`,
+  `ALTER TABLE compra_lineas ADD COLUMN modo_stock TEXT NOT NULL DEFAULT 'sumar'`,
+  `ALTER TABLE compra_lineas ADD COLUMN unidad_medida TEXT NOT NULL DEFAULT 'unidad'`,
   `ALTER TABLE stock_movimientos ADD COLUMN estado TEXT NOT NULL DEFAULT 'recibido'`,
   `ALTER TABLE stock_movimientos ADD COLUMN recibido_por TEXT NOT NULL DEFAULT ''`,
   `ALTER TABLE stock_movimientos ADD COLUMN recepcion_nota TEXT NOT NULL DEFAULT ''`,

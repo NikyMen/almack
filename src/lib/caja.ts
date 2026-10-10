@@ -1,6 +1,7 @@
 import { verificarClaveAdministrador } from "./clave-admin";
 import { db, cajaTurnos, cajaMovimientos, ventas, ventaItems, productos, stockSucursal, cajaSeguridad, cajaIntentos, cajaExtracciones } from "@/db";
 import { and, eq, sql, desc } from "drizzle-orm";
+import { cantidadValida, redondearCantidad } from "@/lib/cantidades";
 export type CajaTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 // El cliente SQLite embebido comparte conexión; serializamos sus operaciones
 // de caja. En Turso, cada transacción usa el aislamiento del servidor.
@@ -67,8 +68,8 @@ export async function venderEnCaja(sucursalId: number, cajero: string, items: { 
   if (!items.length || !["efectivo", "qr", "tarjeta"].includes(medioPago)) throw new Error("Revisá los productos y el medio de pago.");
   const cantidades = new Map<number, number>();
   for (const item of items) {
-    if (!Number.isSafeInteger(item.productoId) || !Number.isSafeInteger(item.cantidad) || item.cantidad <= 0) throw new Error("Las cantidades deben ser unidades enteras positivas.");
-    cantidades.set(item.productoId, (cantidades.get(item.productoId) ?? 0) + item.cantidad);
+    if (!Number.isSafeInteger(item.productoId) || !Number.isFinite(item.cantidad) || item.cantidad <= 0) throw new Error("Revisá las cantidades del pedido.");
+    cantidades.set(item.productoId, redondearCantidad((cantidades.get(item.productoId) ?? 0) + item.cantidad));
   }
   return transaccionCaja(async tx => {
     const turno = await cajaAbierta(sucursalId, tx);
@@ -78,8 +79,9 @@ export async function venderEnCaja(sucursalId: number, cajero: string, items: { 
     for (const [productoId, cantidad] of cantidades) {
       const [p] = await tx.select().from(productos).where(eq(productos.id, productoId));
       if (!p || !p.activo) throw new Error("Hay un producto que ya no está disponible.");
+      if (!cantidadValida(cantidad, p.unidadMedida as "unidad" | "kg")) throw new Error(`Cantidad inválida de "${p.nombre}". Usá unidades enteras o kg con hasta tres decimales.`);
       validarMonto(p.precioVenta);
-      const r = await tx.update(stockSucursal).set({ cantidad: sql`${stockSucursal.cantidad} - ${cantidad}` }).where(and(eq(stockSucursal.productoId, productoId), eq(stockSucursal.sucursalId, sucursalId), sql`${stockSucursal.cantidad} >= ${cantidad}`));
+      const r = await tx.update(stockSucursal).set({ cantidad: sql`round(${stockSucursal.cantidad} - ${cantidad}, 3)` }).where(and(eq(stockSucursal.productoId, productoId), eq(stockSucursal.sucursalId, sucursalId), sql`${stockSucursal.cantidad} >= ${cantidad}`));
       if (!r.rowsAffected) throw new Error(`Sin stock suficiente de "${p.nombre}".`);
       await tx.update(productos).set({ stock: sql`(select coalesce(sum(cantidad),0) from stock_sucursal where producto_id = ${productoId})` }).where(eq(productos.id, productoId));
       lineas.push({ productoId, cantidad, precioUnit: p.precioVenta });

@@ -125,7 +125,7 @@ export function TiendaProductCard({ product }: { product: TiendaProducto }) {
         <p className="mt-2 line-clamp-2 min-h-10 text-xs text-brand-ink/60">{product.description || "Producto disponible en nuestra tienda."}</p>
         <div className="mt-4 flex items-end justify-between gap-2">
           <div>
-            <p className="text-xl font-extrabold">{money(product.price)}</p>
+            <p className="text-xl font-extrabold">{money(product.price)} / {product.unidadMedida === "kg" ? "kg" : "u"}</p>
             {product.oldPrice && product.oldPrice > product.price && <p className="text-xs text-brand-ink/40 line-through">{money(product.oldPrice)}</p>}
           </div>
           <button type="button" disabled={unavailable} onClick={() => { add(product); setAdded(true); openCart(); }} className="rounded-xl bg-brand-red px-3 py-2 text-xs font-bold text-white transition hover:bg-brand-dark disabled:cursor-not-allowed disabled:opacity-40">
@@ -212,8 +212,8 @@ function TiendaCartDrawer({ onClose }: { onClose: () => void }) {
           {!lines.length ? <div className="py-16 text-center text-sm text-brand-ink/50">Tu carrito está vacío.</div> : <div className="space-y-3">
             {lines.map((line) => <div key={line.product.id} className="flex items-center gap-3 rounded-xl border border-black/10 p-3">
               <img src={line.product.image} alt="" className="h-14 w-14 rounded-lg object-cover" />
-              <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{line.product.name}</p><p className="text-xs text-brand-ink/50">{money(line.product.price)} c/u</p></div>
-              <div className="flex items-center gap-1"><button type="button" onClick={() => setQty(line.product.id, line.qty - 1)} className="rounded-lg p-1 hover:bg-brand-cream"><Minus size={14} /></button><span className="w-5 text-center text-sm">{line.qty}</span><button type="button" onClick={() => setQty(line.product.id, line.qty + 1)} className="rounded-lg p-1 hover:bg-brand-cream"><Plus size={14} /></button></div>
+              <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{line.product.name}</p><p className="text-xs text-brand-ink/50">{money(line.product.price)} / {line.product.unidadMedida === "kg" ? "kg" : "u"}</p></div>
+              <div className="flex items-center gap-1"><button type="button" onClick={() => setQty(line.product.id, line.qty - (line.product.unidadMedida === "kg" ? 0.1 : 1))} className="rounded-lg p-1 hover:bg-brand-cream"><Minus size={14} /></button><input key={line.product.id} className="w-16 rounded border border-black/10 px-1 text-center text-sm" type="number" min={line.product.unidadMedida === "kg" ? "0.001" : "1"} step={line.product.unidadMedida === "kg" ? "0.001" : "1"} defaultValue={line.qty} onBlur={e => { setQty(line.product.id, Number(e.target.value)); e.target.value = String(line.qty); }} aria-label={line.product.unidadMedida === "kg" ? "Cantidad en kg" : "Cantidad en unidades"} /><button type="button" onClick={() => setQty(line.product.id, line.qty + (line.product.unidadMedida === "kg" ? 0.1 : 1))} className="rounded-lg p-1 hover:bg-brand-cream"><Plus size={14} /></button></div>
               <button type="button" onClick={() => remove(line.product.id)} aria-label="Quitar producto" className="rounded-lg p-1 text-red-500 hover:bg-red-50"><Trash2 size={15} /></button>
             </div>)}
           </div>}

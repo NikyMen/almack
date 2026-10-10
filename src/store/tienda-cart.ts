@@ -3,6 +3,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { TiendaProducto } from "@/lib/tienda";
+import { cantidadValida, redondearCantidad } from "@/lib/cantidades";
 
 export type TiendaLinea = { product: TiendaProducto; qty: number };
 
@@ -21,11 +22,11 @@ export const useTiendaCart = create<CartState>()(
     (set, get) => ({
       lines: [],
       add: (product, qty = 1) => {
-        if (!product.available || product.stock <= 0 || qty <= 0) return;
+        if (!product.available || product.stock <= 0 || !cantidadValida(qty, product.unidadMedida)) return;
         set((state) => {
           const existing = state.lines.find((line) => line.product.id === product.id);
           if (existing) {
-            const next = Math.min(existing.qty + qty, product.stock);
+            const next = redondearCantidad(Math.min(existing.qty + qty, product.stock));
             return {
               lines: state.lines.map((line) =>
                 line.product.id === product.id ? { product, qty: next } : line
@@ -38,7 +39,8 @@ export const useTiendaCart = create<CartState>()(
       setQty: (productId, qty) =>
         set((state) => {
           const line = state.lines.find((item) => item.product.id === productId);
-          const next = line ? Math.min(qty, line.product.stock) : qty;
+          const next = line ? redondearCantidad(Math.min(qty, line.product.stock)) : qty;
+          if (line && next > 0 && !cantidadValida(next, line.product.unidadMedida)) return state;
           return {
             lines:
               next <= 0

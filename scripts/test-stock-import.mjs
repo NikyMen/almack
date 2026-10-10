@@ -24,7 +24,13 @@ try {
   assert.equal(xlsx.items[0].precioUnit, 110);
   assert.equal(xlsx.items[0].codigo, "00123");
   assert.throws(() => leerTablaStock([["Nombre", "Cantidad", "Costo"], ["Milka", "-2", "100"]]));
-  assert.throws(() => leerTablaStock([["Nombre", "Cantidad", "Costo"], ["Milka", "1.5", "100"]]));
+  const fraccion = leerTablaStock([["Nombre", "Cantidad", "Costo"], ["Queso", "1.5", "100"]]);
+  assert.equal(fraccion.items[0].cantidad, 1.5);
+  assert.equal(fraccion.items[0].unidadMedida, "kg");
+  const inventario = leerTablaStock([["Producto", "Stock actual", "Precio de costo"], ["Cero", "0", "100"], ["Deuda", "-2", "100"], ["Queso", "0,375", "100"]]);
+  assert.deepEqual(inventario.items.map(i => i.cantidad), [0, -2, 0.375]);
+  assert.equal(inventario.omitidos, 0);
+  assert.ok(inventario.items.every(i => i.modoStock === "fijar"));
   await assert.rejects(() => extraerDocumentoStock(new File(["texto"], "ticket.doc")), /Formato no soportado/);
   assert.equal(diferenciaCosto(0, 100, 200).sugerido, null);
 
@@ -90,6 +96,28 @@ try {
   ]);
   await assert.rejects(() => unificarBorrador(conflicto.id), /precios distintos/);
   assert.equal((await db.select().from(compraLineas).where(eq(compraLineas.compraId, conflicto.id))).length, 2);
+  const [inventarioCompra] = await db.insert(compras).values({ proveedor: "Inventario", sucursalId }).returning();
+  const saldos = await db.insert(compraLineas).values([
+    { compraId: inventarioCompra.id, productoId: producto.id, descripcion: "Milka", codigo: "00123", cantidad: -2, modoStock: "fijar", precioUnit: 100, estado: "match" },
+    { compraId: inventarioCompra.id, descripcion: "Sin existencias", codigo: "CERO", cantidad: 0, modoStock: "fijar", precioUnit: 100, precioVenta: 200, confirmado: true, estado: "nuevo" },
+    { compraId: inventarioCompra.id, descripcion: "Queso a peso", codigo: "PESO", cantidad: 0.375, modoStock: "fijar", unidadMedida: "kg", precioUnit: 100, precioVenta: 200, confirmado: true, estado: "nuevo" },
+  ]).returning();
+  const vistas = saldos.map((l, i) => ({
+    lineaId: l.id, nombre: l.descripcion, codigo: l.codigo,
+    stockAnterior: i === 0 ? 14 : 0, stockNuevo: l.cantidad,
+    costoAnterior: i === 0 ? 99 : 0, costoNuevo: 100,
+    ventaAnterior: i === 0 ? 220 : 0, ventaNueva: i === 0 ? 220 : 200,
+    ...diferenciaCosto(i === 0 ? 99 : 0, 100, i === 0 ? 220 : 0),
+  }));
+  await confirmarStockEnTransaccion({ compraId: inventarioCompra.id, pendientes: saldos.slice(0, 2), sucursalId, usuario, opciones: { impactos: vistas } });
+  assert.equal((await db.select().from(compraLineas).where(eq(compraLineas.compraId, inventarioCompra.id))).filter(l => !l.aplicado).length, 1);
+  await confirmarStockEnTransaccion({ compraId: inventarioCompra.id, pendientes: saldos.slice(2), sucursalId, usuario, opciones: { impactos: vistas } });
+  assert.equal((await db.select().from(productos).where(eq(productos.id, producto.id)))[0].stock, -2);
+  assert.equal((await db.select().from(productos).where(eq(productos.sku, "CERO")))[0].stock, 0);
+  const [porPeso] = await db.select().from(productos).where(eq(productos.sku, "PESO"));
+  assert.equal(porPeso.stock, 0.375); assert.equal(porPeso.unidadMedida, "kg");
+  const movimientosInventario = await db.select().from(compraItems).where(eq(compraItems.compraId, inventarioCompra.id));
+  assert.deepEqual(movimientosInventario.map(i => i.cantidad), [-16, 0, 0.375]);
   const { precioDesdeCosto, validarMultiplicador } = await import("../src/lib/reglas-stock.ts");
   assert.equal(precioDesdeCosto(123.45,1.8),222.21);
   for (const factor of [0,-1,NaN,Infinity,1001,1.12345]) assert.throws(()=>validarMultiplicador(factor));

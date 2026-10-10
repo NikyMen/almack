@@ -33,6 +33,8 @@ export type ItemRemito = {
   cantidad: number;
   precioUnit: number;
   precioVenta?: number;
+  modoStock?: "sumar" | "fijar";
+  unidadMedida?: "unidad" | "kg";
 };
 
 export type LecturaRemito = {
@@ -152,4 +154,6 @@ export type ResumenRecepcion = {
   dudas: number;
   sinConfirmar: number;
   costo: number;
+  inventario: number;
+  noPositivos: number;
 };

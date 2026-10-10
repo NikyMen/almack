@@ -15,7 +15,7 @@ import {
 } from "@/lib/recepcion";
 import type { Compra, CompraLinea } from "@/db/schema";
 import {
-  unificarLineasCompra, impactosRecepcion, importarArchivoCompra, lineasCompra, leerRemitoCompra, analizarDetalleCompra, agregarLineaCompra,
+  unificarLineasCompra, confirmarNuevosCompra, ponerNegativosEnCero, impactosRecepcion, importarArchivoCompra, lineasCompra, leerRemitoCompra, analizarDetalleCompra, agregarLineaCompra,
   actualizarLineaCompra, vincularLineaCompra, confirmarLineaCompra,
   eliminarLineaCompra, buscarProductosCompra, resumenRecepcion, aplicarRecepcion,
 } from "@/app/admin/(protected)/compras/actions";
@@ -107,19 +107,27 @@ export function CompraRecepcion({ compra, onCambio }: { compra: Compra; onCambio
     } catch (e) { setError((e as Error).message); }
   }
 
-  async function aplicar(actualizarCosto: boolean, revalorizar: number[]) {
+  async function aplicar(actualizarCosto: boolean, revalorizar: number[], aceptarNoPositivos: boolean) {
     setError(""); setAviso("");
-    let r;
-    try { r = await aplicarRecepcion(compra.id, { confirmado: true, actualizarCosto, revalorizar, impactos }); }
-    catch { setResumen(null); setError("No se pudo confirmar la carga. Revisá la conexión e intentá nuevamente."); return; }
-    if (!r.ok) { setResumen(null); return setError(r.error); }
-    setResumen(null);
-    await cargar();
-    onCambio();
-    setAviso(
-      `Listo: ${r.unidades} unidades cargadas al stock · ${r.actualizados} productos existentes · ` +
-      `${r.creados} productos nuevos creados (sin publicar).`
-    );
+    let aplicados = 0;
+    let creados = 0;
+    let actualizados = 0;
+    let impactosActuales = impactos;
+    try {
+      for (let intento = 0; intento < 100; intento++) {
+        const r = await aplicarRecepcion(compra.id, { confirmado: true, aceptarNoPositivos, actualizarCosto, revalorizar, impactos: impactosActuales });
+        if (!r.ok) { setResumen(null); await cargar(); setError(`${r.error} ${aplicados ? `Se aplicaron ${aplicados} renglones; los restantes siguen en el borrador.` : ""}`); return; }
+        aplicados += r.lineas; creados += r.creados; actualizados += r.actualizados;
+        setAviso(`Aplicando inventario… ${aplicados} renglones listos, ${r.pendientesRestantes} pendientes.`);
+        if (!r.pendientesRestantes) {
+          setResumen(null); await cargar(); onCambio();
+          setAviso(`Listo: ${aplicados} renglones aplicados · ${actualizados} productos existentes · ${creados} productos nuevos (sin publicar).`);
+          return;
+        }
+        impactosActuales = await impactosRecepcion(compra.id);
+      }
+      throw new Error("La carga no terminó. Volvé a abrir el borrador para continuar.");
+    } catch (e) { setResumen(null); await cargar(); setError(`${e instanceof Error ? e.message : "Falló la conexión."} ${aplicados ? `Se aplicaron ${aplicados} renglones; los restantes siguen pendientes.` : ""}`); }
   }
 
   return (
@@ -148,14 +156,16 @@ export function CompraRecepcion({ compra, onCambio }: { compra: Compra; onCambio
             const fd = new FormData(); fd.set("archivo", archivo);
             setLeyendo(true); setError(""); setAviso("");
             try {
-              const r = await importarArchivoCompra(compra.id, fd);
+              const modo = pendientes.length ? (confirm(`Hay ${pendientes.length} renglones pendientes. ¿Reemplazarlos por este archivo? Cancelar deja el borrador intacto.`) ? "reemplazar" : null) : "agregar";
+              if (!modo) { setLeyendo(false); e.target.value = ""; return; }
+              const r = await importarArchivoCompra(compra.id, fd, modo);
               if (!r.ok) setError(r.error);
-              else { await cargar(); setAviso(`${r.lineas} productos con stock positivo extraídos. ${r.omitidos ? `${r.omitidos} filas con stock cero o negativo se omitieron; esta carga solo suma mercadería.` : ""} Revisá los datos antes de confirmar.`); }
+              else { await cargar(); setAviso(`${r.lineas} productos extraídos, incluidos los saldos en cero o negativos. Revisá cada saldo antes de confirmar.`); }
             } catch { setError("No se pudo procesar el archivo. Intentá nuevamente."); }
             finally { setLeyendo(false); e.target.value = ""; }
           }} />
         </label>
-        <span className="mt-2 block text-xs font-normal text-slate-500">Foto, Excel (.xlsx), CSV, Word (.docx) o TXT · hasta 8 MB. Excel/CSV: Nombre, Código, Cantidad y Costo unitario; también Producto, Stock actual y Precio de costo. Cada archivo suma renglones al borrador.</span>
+        <span className="mt-2 block text-xs font-normal text-slate-500">Foto, Excel (.xlsx), CSV, Word (.docx) o TXT · hasta 8 MB. Excel/CSV: Nombre, Código, Cantidad y Costo unitario. Si dice “Stock actual”, propone el saldo final de cada producto, incluso cero o negativo. Nada se aplica sin confirmar.</span>
       </div>
       <div className="flex flex-wrap gap-2">
         <button className="btn-ghost" disabled={!compra.imagen || leyendo} onClick={() => leer("imagen")}>
@@ -170,8 +180,7 @@ export function CompraRecepcion({ compra, onCambio }: { compra: Compra; onCambio
         </button>
       </div>
       <p className="mt-2 text-xs text-slate-400">
-        Nada de esto toca el stock todavía. Se carga recién cuando confirmás, y solo suma unidades:
-        no cambia si un producto está publicado u oculto.
+        Nada de esto toca el stock todavía. Los remitos suman; una planilla con “Stock actual” fija el saldo revisado al confirmar.
       </p>
 
       {error && <p className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-600">{error}</p>}
@@ -188,6 +197,8 @@ export function CompraRecepcion({ compra, onCambio }: { compra: Compra; onCambio
         />
       )}
 
+      {pendientes.some(l => l.estado === "nuevo" && !l.confirmado) && <button className="btn-ghost mt-3" disabled={leyendo || guardandoTodos} onClick={async () => { const r = await confirmarNuevosCompra(compra.id); if (!r.ok) return setError(r.error); await cargar(); setAviso(`Se confirmaron ${r.cantidad} productos nuevos. Revisá los nombres y códigos antes de aplicar.`); }}>Confirmar todos los productos nuevos del borrador</button>}
+      {pendientes.some(l => l.modoStock === "fijar" && l.cantidad < 0) && <button className="btn-ghost mt-3 ml-2" disabled={leyendo || guardandoTodos} onClick={async () => { if (!confirm("¿Cambiar a 0 todos los saldos negativos de este borrador? Los positivos y los ceros no cambian.")) return; const r = await ponerNegativosEnCero(compra.id); if (!r.ok) return setError(r.error); await cargar(); setAviso(`Se dejaron en 0 ${r.cantidad} saldos negativos. Todavía no se aplicó nada al stock.`); }}>Poner todos los negativos en 0</button>}
       <div className="mt-4 space-y-2">
         {lineas === null ? (
           <p className="flex items-center gap-2 text-sm text-slate-400">
@@ -274,7 +285,7 @@ function NuevaLinea({
       }}
     >
       <label className="text-xs font-medium text-slate-600">Producto / descripción<input name="descripcion" className="input mt-1" placeholder="Producto que faltó" required /></label>
-      <label className="text-xs font-medium text-slate-600">Cantidad<input name="cantidad" type="number" min={1} className="input mt-1" defaultValue={1} /></label>
+      <label className="text-xs font-medium text-slate-600">Cantidad<input name="cantidad" type="number" min={0.001} step="0.001" className="input mt-1" defaultValue={1} /></label>
       <label className="text-xs font-medium text-slate-600">Costo unitario ($)<input name="precioUnit" type="number" min={0} step="0.01" inputMode="decimal" className="input mt-1" placeholder="0" /></label>
       <button type="submit" className="btn-primary" disabled={guardando}>
         {guardando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Agregar
@@ -308,6 +319,8 @@ function Fila({
   const [codigo, setCodigo] = useState(linea.codigo);
   const [descripcion, setDescripcion] = useState(linea.descripcion);
   const [cantidad, setCantidad] = useState(String(linea.cantidad));
+  const [unidadMedida, setUnidadMedida] = useState(linea.unidadMedida);
+  const [modoStock, setModoStock] = useState(linea.modoStock);
   const [precioUnit, setPrecioUnit] = useState(String(linea.precioUnit || ""));
   const recomendado = Math.round(Number(precioUnit || 0) * (linea.multiplicador ?? 2) * 100) / 100;
   const [ventaManual, setVentaManual] = useState(linea.precioVenta > 0 && linea.precioVenta !== Math.round(linea.precioUnit * (linea.multiplicador ?? 2) * 100) / 100);
@@ -318,8 +331,8 @@ function Fila({
 
   const [guardando, setGuardando] = useState(false);
   const [guardado, setGuardado] = useState(false);
-  const snapshot = JSON.stringify([codigo, descripcion, cantidad, precioUnit, precioVenta]);
-  const ultimoGuardado = useRef(JSON.stringify([linea.codigo, linea.descripcion, String(linea.cantidad), String(linea.precioUnit || ""), String(linea.precioVenta || "")]));
+  const snapshot = JSON.stringify([codigo, descripcion, cantidad, precioUnit, precioVenta, unidadMedida, modoStock]);
+  const ultimoGuardado = useRef(JSON.stringify([linea.codigo, linea.descripcion, String(linea.cantidad), String(linea.precioUnit || ""), String(linea.precioVenta || ""), linea.unidadMedida, linea.modoStock]));
   const modificado = snapshot !== ultimoGuardado.current;
   useEffect(() => {
     // Una actualización de otra fila no debe borrar este borrador local.
@@ -327,8 +340,9 @@ function Fila({
     const venta = String(linea.precioVenta || "");
     setCodigo(linea.codigo); setDescripcion(linea.descripcion);
     setCantidad(String(linea.cantidad)); setPrecioUnit(String(linea.precioUnit || ""));
+    setUnidadMedida(linea.unidadMedida); setModoStock(linea.modoStock);
     setPrecioVenta(venta);
-    ultimoGuardado.current = JSON.stringify([linea.codigo, linea.descripcion, String(linea.cantidad), String(linea.precioUnit || ""), venta]);
+    ultimoGuardado.current = JSON.stringify([linea.codigo, linea.descripcion, String(linea.cantidad), String(linea.precioUnit || ""), venta, linea.unidadMedida, linea.modoStock]);
   }, [linea]);
   useEffect(() => {
     registrar(linea.id, () => guardar(false));
@@ -344,6 +358,8 @@ function Fila({
         descripcion,
         codigo,
         cantidad: Number(cantidad),
+        unidadMedida: unidadMedida as "unidad" | "kg",
+        modoStock: modoStock as "sumar" | "fijar",
         precioUnit: Number(precioUnit),
         precioVenta: linea.multiplicador != null ? recomendado : Number(precioVenta),
       });
@@ -379,11 +395,11 @@ function Fila({
           aria-label="Producto"
         />
         </label>
-        <label className="text-xs font-medium text-slate-600">Cantidad (unidades)
+        <label className="text-xs font-medium text-slate-600">Cantidad ({unidadMedida === "kg" ? "kg" : "unidades"})
         <input
           className="input mt-1" disabled={bloqueado || guardando}
           type="number"
-          min={1}
+          step={unidadMedida === "kg" ? "0.001" : "1"}
           value={cantidad}
           onChange={(e) => setCantidad(e.target.value)}
 
@@ -420,6 +436,8 @@ function Fila({
         </button>
       </div>
 
+      <div className="mt-2 flex flex-wrap gap-3 text-xs"><label>Se vende por <select className="input mt-1" value={unidadMedida} onChange={e => setUnidadMedida(e.target.value)}><option value="unidad">Unidad</option><option value="kg">Peso (kg)</option></select></label><label>Cómo aplicar <select className="input mt-1" value={modoStock} onChange={e => setModoStock(e.target.value)}><option value="sumar">Sumar cantidad</option><option value="fijar">Fijar saldo final</option></select></label></div>
+      {modoStock === "fijar" && Number(cantidad) <= 0 && <p className="mt-2 rounded-lg bg-amber-50 p-2 text-xs text-amber-900">Saldo {cantidad}: quedará sin disponibilidad para vender. Podés conservarlo o corregirlo antes de confirmar.</p>}
       {repetidas > 1 && <p className="mt-2 rounded-lg bg-amber-50 p-2 text-xs text-amber-800">Este código aparece en {repetidas} renglones. Al continuar se agrupan como un solo producto y se suman sus unidades. Si repetiste la foto, eliminá los renglones de más.</p>}
       <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
         <span className={`badge ${ESTILO_LINEA[estado]}`}>{ETIQUETA_LINEA[estado]}</span>
@@ -427,7 +445,7 @@ function Fila({
         {linea.productoId !== null && (
           <span className="flex items-center gap-1 text-slate-500">
             <Link2 className="h-3 w-3" />
-            {vinculado ? vinculado.nombre : `producto #${linea.productoId}`} · le suma {linea.cantidad} unidades
+            {vinculado ? vinculado.nombre : `producto #${linea.productoId}`} · {linea.modoStock === "fijar" ? "saldo final" : "suma"} {linea.cantidad} {linea.unidadMedida === "kg" ? "kg" : "u"}
           </span>
         )}
 
@@ -583,38 +601,39 @@ function ConfirmarCarga({
   impactos: ImpactoLinea[];
   resumen: ResumenRecepcion;
   onCancelar: () => void;
-  onConfirmar: (actualizarCosto: boolean, revalorizar: number[]) => Promise<void>;
+  onConfirmar: (actualizarCosto: boolean, revalorizar: number[], aceptarNoPositivos: boolean) => Promise<void>;
 }) {
   const [actualizarCosto, setActualizarCosto] = useState(true);
   const [revalorizar, setRevalorizar] = useState<number[]>([]);
   const [aplicando, setAplicando] = useState(false);
-  const bloqueado = resumen.dudas > 0 || resumen.sinConfirmar > 0;
+  const [aceptarNoPositivos, setAceptarNoPositivos] = useState(false);
+  const bloqueado = resumen.dudas > 0 || resumen.sinConfirmar > 0 || (resumen.noPositivos > 0 && !aceptarNoPositivos);
 
   return (
     <Overlay className="overlay" onClick={() => !aplicando && onCancelar()}>
       <div className="sheet sm:max-w-2xl" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
         <div className="border-b border-slate-100 px-5 py-4">
           <h3 className="text-lg font-semibold">Confirmá antes de cargar</h3>
-          <p className="text-sm text-slate-500">Los registros ya están guardados. Para sumar las unidades al inventario, pulsá “Confirmar y cargar stock”.</p>
+          <p className="text-sm text-slate-500">Los registros ya están guardados. Revisá el saldo final y confirmá para aplicarlos al inventario.</p>
         </div>
 
         <div className="space-y-4 p-5 text-sm">
-          <p className="rounded-lg bg-emerald-50 p-3 text-emerald-800">Revisá las cantidades: los renglones del mismo código se agrupan sumando unidades. Si cargaste el comprobante más de una vez, cancelá y corregí la cantidad antes de confirmar.</p>
+          <p className="rounded-lg bg-emerald-50 p-3 text-emerald-800">Revisá las cantidades. Los remitos suman; las filas de inventario fijan el saldo final mostrado abajo.</p>
           <ul className="space-y-1.5">
             <li className="flex justify-between gap-3">
               <span>Productos que ya tenés</span>
               <b className="tabular-nums">
-                {resumen.existentes.lineas} · +{resumen.existentes.unidades} u
+                {resumen.existentes.lineas} · {resumen.existentes.unidades}
               </b>
             </li>
             <li className="flex justify-between gap-3">
               <span>Productos nuevos a crear</span>
               <b className="tabular-nums">
-                {resumen.nuevos.lineas} · +{resumen.nuevos.unidades} u
+                {resumen.nuevos.lineas} · {resumen.nuevos.unidades}
               </b>
             </li>
             <li className="flex justify-between gap-3 border-t border-slate-100 pt-1.5">
-              <span>Costo total de lo que entra</span>
+              <span>{resumen.inventario ? "Valor según archivo" : "Costo total de lo que entra"}</span>
               <b className="tabular-nums">{money(resumen.costo)}</b>
             </li>
           </ul>
@@ -622,7 +641,7 @@ function ConfirmarCarga({
           <div className="max-h-72 space-y-2 overflow-auto">
             {impactos.map(i => <div key={i.lineaId} className="rounded-xl border border-slate-200 p-3">
               <p className="font-semibold">{i.nombre} <span className="font-mono text-xs text-slate-400">{i.codigo}</span></p>
-              <p className="mt-1 text-xs text-slate-500">Stock en destino: {i.stockAnterior} → {i.stockNuevo} unidades · Costo: {money(i.costoAnterior)} → {money(i.costoNuevo)}</p>
+              <p className="mt-1 text-xs text-slate-500">Stock en destino: {i.stockAnterior} → {i.stockNuevo} {i.unidadMedida === "kg" ? "kg" : "u"} · {i.modoStock === "fijar" ? "saldo final" : "ingreso"} · Costo: {money(i.costoAnterior)} → {money(i.costoNuevo)}</p>
               {i.multiplicador != null && <p className="mt-2 rounded-lg bg-lime/15 p-2 text-sm font-medium text-navy">Precio automático: {money(i.costoNuevo)} × {i.multiplicador} = {money(i.ventaNueva ?? 0)}. Se aplicará al cargar.</p>}
               {i.multiplicador == null && i.ventaAnterior === 0 && i.ventaNueva !== undefined && <p className="mt-2 text-sm">Precio de venta al crear: {money(i.ventaNueva)}</p>}
               {i.multiplicador == null && i.porcentaje !== null && Math.abs(i.porcentaje) > 0.000001 && <>
@@ -643,7 +662,7 @@ function ConfirmarCarga({
                 <AlertTriangle className="h-4 w-4" /> Se van a crear estos productos
               </p>
               <ul className="mt-1.5 list-disc pl-5 text-violet-900">
-                {resumen.nuevos.nombres.map((n, i) => <li key={i}>{n}</li>)}
+                {resumen.nuevos.nombres.slice(0, 20).map((n, i) => <li key={i}>{n}</li>)}{resumen.nuevos.nombres.length > 20 && <li>Y {resumen.nuevos.nombres.length - 20} más…</li>}
               </ul>
               <p className="mt-2 text-xs text-violet-700">
                 Si alguno ya existía escrito distinto, cancelá y vinculalo al producto correcto:
@@ -658,6 +677,11 @@ function ConfirmarCarga({
               {resumen.sinConfirmar > 0 && `Quedan ${resumen.sinConfirmar} productos nuevos sin confirmar.`}
             </p>
           )}
+
+          {resumen.noPositivos > 0 && <label className="flex items-start gap-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-amber-950">
+            <input type="checkbox" className="mt-1" checked={aceptarNoPositivos} onChange={e => setAceptarNoPositivos(e.target.checked)} />
+            <span><strong>Confirmo {resumen.noPositivos} saldos en cero o negativos.</strong><span className="block text-xs">Se guardarán tal como figuran en la vista previa. Los negativos no estarán disponibles para vender; cancelá si querés corregirlos.</span></span>
+          </label>}
 
           <label className="flex items-start gap-2 text-slate-600">
             <input
@@ -679,7 +703,7 @@ function ConfirmarCarga({
           <button
             className="btn-primary flex-1 justify-center gap-2 transition hover:-translate-y-0.5 hover:shadow-md focus-visible:ring-2 focus-visible:ring-emerald-600"
             disabled={bloqueado || aplicando}
-            onClick={async () => { setAplicando(true); try { await onConfirmar(actualizarCosto, revalorizar); } finally { setAplicando(false); } }}
+            onClick={async () => { setAplicando(true); try { await onConfirmar(actualizarCosto, revalorizar, aceptarNoPositivos); } finally { setAplicando(false); } }}
           >
             {aplicando ? <Loader2 className="h-4 w-4 animate-spin" /> : <PackagePlus className="h-4 w-4" />}
             Confirmar y cargar stock

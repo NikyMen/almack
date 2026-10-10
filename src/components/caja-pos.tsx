@@ -11,7 +11,7 @@ import { money } from "@/lib/format";
 import { cobrarVenta } from "@/app/actions";
 import { ETIQUETA_MEDIO, type MedioPago } from "@/lib/medios-pago";
 import { useAjustes } from "@/lib/ajustes";
-import { useCarrito } from "@/components/carrito";
+import { useCarrito, type Linea } from "@/components/carrito";
 import { SelectorPago } from "@/components/selector-pago";
 import { BarcodeScanner } from "@/components/barcode-scanner";
 
@@ -30,7 +30,7 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
   const [ajustes, setAjustes] = useAjustes();
   const {
     carrito, error, setError, enCarrito, total, unidades,
-    agregar, quitar, vaciar, buscar, agregarPorCodigo, items,
+    agregar, cambiarCantidad, quitar, vaciar, buscar, agregarPorCodigo, items,
   } = useCarrito(productos);
 
   const filtrados = buscar(busqueda);
@@ -112,7 +112,7 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
       <div className="mb-3 flex items-center gap-2 border-b border-slate-100 pb-3">
         <ShoppingCart className="h-4 w-4 text-slate-500" />
         <h2 className="font-semibold">Pedido</h2>
-        {unidades > 0 && <span className="badge ml-auto bg-lime/15 text-navy">{unidades} u.</span>}
+        {unidades > 0 && <span className="badge ml-auto bg-lime/15 text-navy">{carrito.length} productos</span>}
       </div>
 
       {carrito.length === 0 ? (
@@ -122,7 +122,7 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
               <CheckCircle2 className="h-8 w-8" />
               <p className="font-semibold">¡Cobrado!</p>
               <p className="text-slate-500">
-                Venta #{ticket.ventaId} · {ticket.items} u. · {money(ticket.total)}
+                Venta #{ticket.ventaId} · {ticket.items} productos · {money(ticket.total)}
               </p>
               <p className="text-xs text-slate-400">Pago: {ETIQUETA_MEDIO[ticket.medioPago]}</p>
               <p className="mt-1 text-xs text-slate-400">Listo para el próximo cliente.</p>
@@ -137,14 +137,14 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
             <div key={l.producto.id} className="flex items-center gap-2 py-2">
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium">{l.producto.nombre}</p>
-                <p className="text-xs text-slate-400">{money(l.producto.precioVenta)} c/u</p>
+                <p className="text-xs text-slate-400">{money(l.producto.precioVenta)} / {l.producto.unidadMedida === "kg" ? "kg" : "u"}</p>
               </div>
               <div className="flex items-center gap-1">
-                <button className="btn-ghost px-2 py-1.5" onClick={() => agregar(l.producto, -1)} aria-label="Quitar una unidad">
+                <button className="btn-ghost px-2 py-1.5" onClick={() => agregar(l.producto, l.producto.unidadMedida === "kg" ? -0.1 : -1)} aria-label={l.producto.unidadMedida === "kg" ? "Quitar 100 gramos" : "Quitar una unidad"}>
                   <Minus className="h-3.5 w-3.5" />
                 </button>
-                <span className="w-6 text-center text-sm font-semibold">{l.cantidad}</span>
-                <button className="btn-ghost px-2 py-1.5" onClick={() => agregar(l.producto, 1)} aria-label="Agregar una unidad">
+                <CantidadCarrito linea={l} cambiarCantidad={cambiarCantidad} />
+                <button className="btn-ghost px-2 py-1.5" onClick={() => agregar(l.producto, l.producto.unidadMedida === "kg" ? 0.1 : 1)} aria-label={l.producto.unidadMedida === "kg" ? "Agregar 100 gramos" : "Agregar una unidad"}>
                   <Plus className="h-3.5 w-3.5" />
                 </button>
               </div>
@@ -255,10 +255,10 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
                 <span className="mt-1 shrink-0 break-all font-mono text-[11px] leading-4 text-slate-400">{p.sku}</span>
                 <div className="mt-auto flex shrink-0 flex-wrap items-end justify-between gap-2 pt-3">
                   <span className={`text-[11px] leading-tight ${agotado ? "text-rose-500" : "text-slate-400"}`}>
-                    {agotado ? "sin stock" : `stock ${restante}`}
+                    {agotado ? "sin stock" : `stock ${restante} ${p.unidadMedida === "kg" ? "kg" : "u"}`}
                   </span>
                   <span className="text-right text-base font-bold tabular-nums leading-none text-navy">
-                    {money(p.precioVenta)}
+                    {money(p.precioVenta)} / {p.unidadMedida === "kg" ? "kg" : "u"}
                   </span>
                 </div>
               </button>
@@ -283,7 +283,7 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
         >
           <span className="flex items-center gap-2 text-sm">
             <ShoppingCart className="h-4 w-4 text-lime" />
-            {unidades} u.
+            {carrito.length} productos
           </span>
           <span className="text-lg font-bold tabular-nums text-lime">{money(total)}</span>
           <span className="flex items-center gap-1 text-sm font-semibold">
@@ -340,4 +340,16 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
       )}
     </div>
   );
+}
+
+
+function CantidadCarrito({ linea, cambiarCantidad }: { linea: Linea; cambiarCantidad: (producto: Linea["producto"], cantidad: number) => void }) {
+  const [texto, setTexto] = useState(String(linea.cantidad));
+  useEffect(() => setTexto(String(linea.cantidad)), [linea.cantidad]);
+  return <input className="input w-20 px-1 text-center text-sm" type="number"
+    min={linea.producto.unidadMedida === "kg" ? "0.001" : "1"}
+    step={linea.producto.unidadMedida === "kg" ? "0.001" : "1"}
+    value={texto} onChange={e => setTexto(e.target.value)}
+    onBlur={() => { cambiarCantidad(linea.producto, Number(texto)); setTexto(String(linea.cantidad)); }}
+    aria-label={linea.producto.unidadMedida === "kg" ? "Cantidad en kilos" : "Cantidad en unidades"} />;
 }

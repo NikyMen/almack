@@ -83,14 +83,14 @@ export function StockManager({
     { key: "sku", head: "SKU", cell: (p) => <span className="font-mono text-xs text-slate-500">{p.sku}</span>, value: (p) => p.sku },
     { key: "nombre", head: "Producto", cell: (p) => <span className="font-medium">{p.nombre}</span>, value: (p) => p.nombre },
     { key: "categoria", head: "Categoría", cell: (p) => <span className="text-slate-500">{p.categoria}</span>, value: (p) => p.categoria ?? "General", filter: true },
-    { key: "precio", head: "Precio", cell: (p) => money(p.precioVenta), value: (p) => p.precioVenta, sort: true },
+    { key: "precio", head: "Precio", cell: (p) => <>{money(p.precioVenta)} / {p.unidadMedida === "kg" ? "kg" : "u"}</>, value: (p) => p.precioVenta, sort: true },
     {
       key: "stock", head: sucursalActivaId ? "Stock acá" : "Stock total", value: (p) => p.stockLocal, sort: true,
       cell: (p) => {
         const bajo = p.alertaActiva && p.stockLocal < p.stockMinimo;
         return (
           <span className={bajo ? "font-semibold text-rose-600" : "font-medium"}>
-            {p.stockLocal}{bajo && <span className="ml-2 text-xs text-rose-500">bajo</span>}
+            {p.stockLocal} {p.unidadMedida === "kg" ? "kg" : "u"}{bajo && <span className="ml-2 text-xs text-rose-500">bajo</span>}
           </span>
         );
       },
@@ -179,7 +179,7 @@ export function StockManager({
               )}
               <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
                 <span className={`text-xs ${bajo ? "font-semibold text-rose-600" : "text-slate-500"}`}>
-                  stock {p.stockLocal}
+                  stock {p.stockLocal} {p.unidadMedida === "kg" ? "kg" : "u"}
                   {bajo && " · bajo"}
                   {p.transitoLocal > 0 && ` · tránsito ${p.transitoLocal}`}
                 </span>
@@ -354,13 +354,14 @@ function CampoStock({ p, ctx }: { p?: ProductoConStock; ctx: Contexto }) {
           key={sucursalId}
           name="stock"
           type="number"
+          step="0.001"
           className="input"
           defaultValue={p ? cantidad : 0}
         />
       </div>
       <div>
         <label className="label">Mínimo</label>
-        <input name="stockMinimo" disabled={!ctx.administrador} min="0" step="1" type="number" className="input" defaultValue={p?.stockMinimo ?? 5} />
+        <input name="stockMinimo" disabled={!ctx.administrador} min="0" step="0.001" type="number" className="input" defaultValue={p?.stockMinimo ?? 5} />
       </div>
       {preguntar ? (
         <div className="col-span-2">
@@ -401,7 +402,8 @@ function CamposProducto({
       <div><label className="label">Nombre *</label><input name="nombre" className="input" defaultValue={p?.nombre} required /></div>
       <CampoSku p={p} />
       <div><label className="label">Categoría</label><input name="categoria" className="input" defaultValue={p?.categoria ?? ""} /></div>
-      <div><label className="label">Precio venta</label><input name="precioVenta" disabled={!ctx.administrador} type="number" step="0.01" className="input" defaultValue={p?.precioVenta ?? 0} /></div>
+      <div><label className="label">Se vende por</label><select name="unidadMedida" className="input" defaultValue={p?.unidadMedida ?? "unidad"}><option value="unidad">Unidad</option><option value="kg">Peso (kg, hasta 3 decimales)</option></select></div>
+      <div><label className="label">Precio venta {p?.unidadMedida === "kg" ? "por kg" : "por unidad"}</label><input name="precioVenta" disabled={!ctx.administrador} type="number" step="0.01" className="input" defaultValue={p?.precioVenta ?? 0} /></div>
       <div><label className="label">Precio compra</label><input name="precioCompra" type="number" step="0.01" className="input" defaultValue={p?.precioCompra ?? 0} /></div>
       <CampoStock p={p} ctx={ctx} />
       <div className="md:col-span-3"><CampoImagenProducto valorInicial={p?.imagen ?? ""} onArchivo={onArchivo} /></div>

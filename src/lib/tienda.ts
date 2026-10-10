@@ -15,6 +15,7 @@ export type TiendaProducto = {
   dailyOffer: boolean;
   available: boolean;
   stock: number;
+  unidadMedida: "unidad" | "kg";
 };
 
 function imageUrl(image: string | null | undefined): string {
@@ -46,6 +47,7 @@ function mapProduct(row: {
     dailyOffer: Boolean(m?.ofertaDelDia),
     available: Boolean(p.publicado),
     stock: Math.max(0, Number(p.stock)),
+    unidadMedida: p.unidadMedida === "kg" ? "kg" : "unidad",
   };
 }
 

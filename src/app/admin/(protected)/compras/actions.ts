@@ -1,12 +1,13 @@
 "use server";
 
 import { unificarBorrador } from "@/lib/unificar-borrador";
+import { cantidadValida, stockDespues, type UnidadMedida, type ModoStock } from "@/lib/cantidades";
 import { confirmarStockEnTransaccion } from "@/lib/confirmar-stock";
 import { extraerDocumentoStock } from "@/lib/documento-stock";
 import { randomBytes } from "node:crypto";
 import { mkdir, writeFile, readFile, unlink } from "node:fs/promises";
 import path from "node:path";
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, lt, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
 import {
@@ -270,6 +271,8 @@ type DatosLinea = {
   cantidad?: number;
   precioUnit?: number;
   precioVenta?: number;
+  unidadMedida?: UnidadMedida;
+  modoStock?: ModoStock;
 };
 
 const MEDIA_TYPES: Record<string, ImagenEntrada["mediaType"]> = {
@@ -332,28 +335,28 @@ async function guardarLectura(
   items: LineaClasificada[],
   modo: "reemplazar" | "agregar"
 ) {
-  if (modo === "reemplazar") {
-    // Solo lo pendiente: lo ya aplicado al stock es historia y no se borra.
-    await db
-      .delete(compraLineas)
-      .where(and(eq(compraLineas.compraId, compraId), eq(compraLineas.aplicado, false))).orderBy(asc(compraLineas.id));
-  }
   if (items.length === 0) return;
   const configPrecios = await leerReglasStock();
-  await db.insert(compraLineas).values(
-    items.map((it) => ({
+  await db.transaction(async tx => {
+    if (modo === "reemplazar") {
+      // La sustitución es atómica: una importación fallida conserva el borrador.
+      await tx.delete(compraLineas).where(and(eq(compraLineas.compraId, compraId), eq(compraLineas.aplicado, false)));
+    }
+    await tx.insert(compraLineas).values(items.map((it) => ({
       compraId,
       descripcion: it.descripcion,
       codigo: it.codigo,
       cantidad: it.cantidad,
+      modoStock: it.modoStock ?? "sumar",
+      unidadMedida: it.unidadMedida ?? "unidad",
       precioUnit: it.precioUnit,
       precioVenta: it.estado === "nuevo" ? (it.precioVenta ?? precioDesdeCosto(it.precioUnit, configPrecios.multiplicador ?? 2)) : 0,
       productoId: it.productoId,
       estado: it.estado,
       candidatos: JSON.stringify(it.candidatos),
       origen: "ia",
-    }))
-  );
+    })));
+  });
 }
 
 function resumenLectura(items: LineaClasificada[]): string {
@@ -465,7 +468,7 @@ export async function agregarLineaCompra(compraId: number, datos: DatosLinea) {
   const compra = await getCompra(compraId);
   if (!compra) return { ok: false as const, error: "La compra no existe." };
 
-  if (datos.cantidad !== undefined && (!Number.isSafeInteger(datos.cantidad) || datos.cantidad <= 0)) return { ok: false as const, error: "La cantidad debe ser un entero mayor a cero." };
+  if (datos.cantidad !== undefined && !cantidadValida(datos.cantidad, datos.unidadMedida ?? "unidad", datos.modoStock === "fijar")) return { ok: false as const, error: "Revisá la cantidad y la unidad de medida." };
   if ([datos.precioUnit, datos.precioVenta].some(v => v !== undefined && (!Number.isFinite(v) || v < 0))) return { ok: false as const, error: "Los precios deben ser números positivos o cero." };
   const descripcion = String(datos.descripcion || "").trim();
   if (!descripcion) return { ok: false as const, error: "Escribí qué producto es." };
@@ -473,7 +476,9 @@ export async function agregarLineaCompra(compraId: number, datos: DatosLinea) {
   const item = await reclasificar({
     descripcion,
     codigo: String(datos.codigo || "").trim(),
-    cantidad: enteroPositivo(datos.cantidad, 1),
+    cantidad: datos.cantidad ?? 1,
+    modoStock: datos.modoStock ?? "sumar",
+    unidadMedida: datos.unidadMedida ?? "unidad",
     precioUnit: montoPositivo(datos.precioUnit),
   });
 
@@ -484,6 +489,8 @@ export async function agregarLineaCompra(compraId: number, datos: DatosLinea) {
       descripcion: item.descripcion,
       codigo: item.codigo,
       cantidad: item.cantidad,
+      modoStock: item.modoStock ?? "sumar",
+      unidadMedida: item.unidadMedida ?? "unidad",
       precioUnit: item.precioUnit,
       precioVenta: usuario.rol === "admin" ? montoPositivo(datos.precioVenta) : precioDesdeCosto(item.precioUnit, (await leerReglasStock()).multiplicador ?? 2),
       productoId: item.productoId,
@@ -502,7 +509,10 @@ export async function actualizarLineaCompra(lineaId: number, datos: DatosLinea) 
   if (!linea) return { ok: false as const, error: "El renglón no existe." };
   if (linea.aplicado) return { ok: false as const, error: "Ese renglón ya se cargó al stock." };
 
-  if (datos.cantidad !== undefined && (!Number.isSafeInteger(datos.cantidad) || datos.cantidad <= 0)) return { ok: false as const, error: "La cantidad debe ser un entero mayor a cero." };
+  const modoStock = datos.modoStock ?? (linea.modoStock as ModoStock);
+  const unidadMedida = datos.unidadMedida ?? (linea.unidadMedida as UnidadMedida);
+  if (!["sumar", "fijar"].includes(modoStock) || !["unidad", "kg"].includes(unidadMedida) ||
+    (datos.cantidad !== undefined && !cantidadValida(datos.cantidad, unidadMedida, modoStock === "fijar"))) return { ok: false as const, error: "Revisá la cantidad y la unidad de medida." };
   if ([datos.precioUnit, datos.precioVenta].some(v => v !== undefined && (!Number.isFinite(v) || v < 0))) return { ok: false as const, error: "Los precios deben ser números positivos o cero." };
   const descripcion = datos.descripcion !== undefined ? String(datos.descripcion).trim() : linea.descripcion;
   if (!descripcion) return { ok: false as const, error: "La descripción no puede quedar vacía." };
@@ -512,6 +522,8 @@ export async function actualizarLineaCompra(lineaId: number, datos: DatosLinea) 
     descripcion: string;
     codigo: string;
     cantidad: number;
+    modoStock: ModoStock;
+    unidadMedida: UnidadMedida;
     precioUnit: number;
     precioVenta: number;
     productoId?: number | null;
@@ -520,7 +532,9 @@ export async function actualizarLineaCompra(lineaId: number, datos: DatosLinea) 
   } = {
     descripcion,
     codigo,
-    cantidad: enteroPositivo(datos.cantidad, linea.cantidad),
+    cantidad: datos.cantidad ?? linea.cantidad,
+    modoStock,
+    unidadMedida,
     precioUnit: datos.precioUnit !== undefined ? montoPositivo(datos.precioUnit) : linea.precioUnit,
     precioVenta: datos.precioVenta !== undefined ? montoPositivo(datos.precioVenta) : linea.precioVenta,
   };
@@ -535,6 +549,8 @@ export async function actualizarLineaCompra(lineaId: number, datos: DatosLinea) 
       descripcion,
       codigo,
       cantidad: cambios.cantidad,
+      modoStock: cambios.modoStock,
+      unidadMedida: cambios.unidadMedida,
       precioUnit: cambios.precioUnit,
     });
     cambios.productoId = item.productoId;
@@ -592,6 +608,22 @@ export async function confirmarLineaCompra(lineaId: number, confirmado: boolean)
   return { ok: true as const };
 }
 
+export async function confirmarNuevosCompra(compraId: number) {
+  await requireCargaStock();
+  if (!await getCompra(compraId)) return { ok: false as const, error: "La carga no existe." };
+  const r = await db.update(compraLineas).set({ confirmado: true })
+    .where(and(eq(compraLineas.compraId, compraId), eq(compraLineas.aplicado, false), eq(compraLineas.estado, "nuevo"), isNull(compraLineas.productoId), eq(compraLineas.confirmado, false)));
+  return { ok: true as const, cantidad: r.rowsAffected };
+}
+
+export async function ponerNegativosEnCero(compraId: number) {
+  await requireCargaStock();
+  if (!await getCompra(compraId)) return { ok: false as const, error: "La carga no existe." };
+  const r = await db.update(compraLineas).set({ cantidad: 0 })
+    .where(and(eq(compraLineas.compraId, compraId), eq(compraLineas.aplicado, false), eq(compraLineas.modoStock, "fijar"), lt(compraLineas.cantidad, 0)));
+  return { ok: true as const, cantidad: r.rowsAffected };
+}
+
 export async function eliminarLineaCompra(lineaId: number) {
   await requireCargaStock();
   const linea = await getLinea(lineaId);
@@ -623,6 +655,8 @@ function armarResumen(pendientes: CompraLinea[]): ResumenRecepcion {
     dudas: pendientes.filter((l) => l.estado === "duda" && !l.confirmado).length,
     sinConfirmar: sinProducto.filter((l) => !l.confirmado).length,
     costo: pendientes.reduce((a, l) => a + l.cantidad * l.precioUnit, 0),
+    inventario: pendientes.filter(l => l.modoStock === "fijar").length,
+    noPositivos: pendientes.filter(l => l.modoStock === "fijar" && l.cantidad <= 0).length,
   };
 }
 
@@ -648,7 +682,7 @@ export async function resumenRecepcion(compraId: number): Promise<ResumenRecepci
  */
 export async function aplicarRecepcion(
   compraId: number,
-  opciones: { confirmado: boolean; actualizarCosto?: boolean; revalorizar?: number[]; impactos?: ImpactoLinea[] }
+  opciones: { confirmado: boolean; aceptarNoPositivos?: boolean; actualizarCosto?: boolean; revalorizar?: number[]; impactos?: ImpactoLinea[] }
 ) {
   const usuario = await requireCargaStock();
   const compra = await getCompra(compraId);
@@ -679,9 +713,10 @@ export async function aplicarRecepcion(
       error: `Hay ${resumen.sinConfirmar} productos nuevos sin confirmar. Revisá que no sean un producto que ya tenés escrito distinto.`,
     };
   }
-  const invalidas = pendientes.filter((l) =>  !Number.isSafeInteger(l.cantidad) || l.cantidad <= 0 || !Number.isFinite(l.precioUnit) || l.precioUnit < 0 || !l.descripcion.trim());
+  if (resumen.noPositivos > 0 && !opciones.aceptarNoPositivos) return { ok: false as const, error: "Confirmá expresamente los saldos en cero o negativos del inventario." };
+  const invalidas = pendientes.filter((l) => !cantidadValida(l.cantidad, l.unidadMedida as UnidadMedida, l.modoStock === "fijar") || !Number.isFinite(l.precioUnit) || l.precioUnit < 0 || !l.descripcion.trim());
   if (invalidas.length > 0) {
-    return { ok: false as const, error: "Hay renglones sin descripción o con cantidad en cero." };
+    return { ok: false as const, error: "Hay renglones con descripción o cantidad inválida." };
   }
 
   const creados: string[] = [];
@@ -691,12 +726,13 @@ export async function aplicarRecepcion(
   const sucursalId = compra.sucursalId ?? (await sucursalOperativaId());
 
   try {
-    creados.push(...await confirmarStockEnTransaccion({ compraId, pendientes, sucursalId, usuario, opciones }));
+    creados.push(...await confirmarStockEnTransaccion({ compraId, pendientes: pendientes.slice(0, 20), sucursalId, usuario, opciones }));
   } catch (e) {
     return { ok: false as const, error: `No se cargó nada al stock: ${(e as Error).message}` };
   }
 
-  const unidades = resumen.existentes.unidades + resumen.nuevos.unidades;
+  const aplicadasAhora = pendientes.slice(0, 20);
+  const unidades = aplicadasAhora.reduce((n, l) => n + l.cantidad, 0);
 
   revalidatePath("/admin/compras");
   revalidatePath("/admin/stock");
@@ -705,16 +741,12 @@ export async function aplicarRecepcion(
   revalidatePath("/");
   return {
     ok: true as const,
-    lineas: resumen.pendientes,
+    lineas: aplicadasAhora.length,
     unidades,
     creados: creados.length,
-    actualizados: resumen.existentes.lineas,
+    actualizados: aplicadasAhora.filter(l => l.productoId !== null).length,
+    pendientesRestantes: Math.max(0, pendientes.length - aplicadasAhora.length),
   };
-}
-
-function enteroPositivo(v: unknown, porDefecto: number): number {
-  const n = Math.round(Number(v));
-  return Number.isFinite(n) && n > 0 ? n : porDefecto;
 }
 
 function montoPositivo(v: unknown): number {
@@ -738,15 +770,15 @@ export async function impactosRecepcion(compraId: number): Promise<ImpactoLinea[
     const anterior = sucursalId ? (local?.cantidad ?? 0) : (p?.stock ?? 0);
     const costoAnterior = ultima?.precioUnit ?? p?.precioCompra ?? 0;
     const multiplicador = multiplicadorProducto(configPrecios, linea.productoId);
-    resultado.push({ multiplicador, ventaNueva: multiplicador !== null ? precioDesdeCosto(linea.precioUnit, multiplicador) : p?.precioVenta ?? linea.precioVenta, lineaId: linea.id, nombre: p?.nombre ?? linea.descripcion, codigo: p?.sku ?? linea.codigo,
-      stockAnterior: anterior, stockNuevo: anterior + linea.cantidad, costoAnterior,
+    resultado.push({ cantidad: linea.cantidad, modoStock: linea.modoStock as ModoStock, unidadMedida: linea.unidadMedida as UnidadMedida, multiplicador, ventaNueva: multiplicador !== null ? precioDesdeCosto(linea.precioUnit, multiplicador) : p?.precioVenta ?? linea.precioVenta, lineaId: linea.id, nombre: p?.nombre ?? linea.descripcion, codigo: p?.sku ?? linea.codigo,
+      stockAnterior: anterior, stockNuevo: stockDespues(anterior, linea.cantidad, linea.modoStock as ModoStock), costoAnterior,
       costoNuevo: linea.precioUnit, ventaAnterior: p?.precioVenta ?? 0,
       ...diferenciaCosto(costoAnterior, linea.precioUnit, p?.precioVenta ?? 0, multiplicador) });
   }
   return resultado;
 }
 
-export async function importarArchivoCompra(compraId: number, formData: FormData) {
+export async function importarArchivoCompra(compraId: number, formData: FormData, modo: "reemplazar" | "agregar" = "agregar") {
   const usuario = await requireCargaStock();
   if (!await getCompra(compraId)) return { ok: false as const, error: "La compra no existe." };
   const archivo = formData.get("archivo");
@@ -754,7 +786,7 @@ export async function importarArchivoCompra(compraId: number, formData: FormData
   try {
     const lectura = await extraerDocumentoStock(archivo);
     if (!lectura.items.length || lectura.items.length > 1000) throw new Error("Se permiten entre 1 y 1000 productos por archivo.");
-    await guardarLectura(compraId, await clasificarItems(lectura.items), "agregar");
+    await guardarLectura(compraId, await clasificarItems(lectura.items), modo);
     await anotar(compraId, usuario, "Archivo importado", `${archivo.name}: ${lectura.items.length} renglones`);
     revalidatePath("/admin/compras");
     return { ok: true as const, lineas: lectura.items.length, omitidos: lectura.omitidos ?? 0 };

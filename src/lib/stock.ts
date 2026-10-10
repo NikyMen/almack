@@ -1,5 +1,6 @@
 import { db, productos, stockSucursal, stockTransito } from "@/db";
 import { and, asc, eq, sql, inArray, desc } from "drizzle-orm";
+import { cantidadValida, redondearCantidad } from "@/lib/cantidades";
 
 // El stock disponible vive en dos lugares y hay que escribirlos juntos:
 //
@@ -38,7 +39,7 @@ export async function sumarStockEnTx(tx: Tx, productoId: number, sucursalId: num
     .values({ productoId, sucursalId, cantidad: Math.max(0, delta) })
     .onConflictDoUpdate({
       target: [stockSucursal.productoId, stockSucursal.sucursalId],
-      set: { cantidad: delta >= 0 ? sql`${stockSucursal.cantidad} + ${delta}` : sql`max(0, ${stockSucursal.cantidad} + ${delta})` },
+      set: { cantidad: delta >= 0 ? sql`round(${stockSucursal.cantidad} + ${delta}, 3)` : sql`max(0, round(${stockSucursal.cantidad} + ${delta}, 3))` },
     });
   await recalcularTotal(tx, productoId);
 }
@@ -51,19 +52,18 @@ export async function ajustarStockEnSucursal(productoId: number, sucursalId: num
   });
 }
 
-/** Deja la sucursal con exactamente `cantidad` unidades (edición del producto). */
+/** Fija el saldo observado, incluso si está en cero o negativo. */
+export async function fijarStockEnTx(tx: Tx, productoId: number, sucursalId: number, cantidad: number) {
+  const [producto] = await tx.select({ unidadMedida: productos.unidadMedida }).from(productos).where(eq(productos.id, productoId));
+  if (!producto || !cantidadValida(cantidad, producto.unidadMedida as "unidad" | "kg", true)) throw new Error("Cantidad de stock inválida.");
+  const valor = redondearCantidad(cantidad);
+  await tx.insert(stockSucursal).values({ productoId, sucursalId, cantidad: valor })
+    .onConflictDoUpdate({ target: [stockSucursal.productoId, stockSucursal.sucursalId], set: { cantidad: valor } });
+  await recalcularTotal(tx, productoId);
+}
+
 export async function fijarStockEnSucursal(productoId: number, sucursalId: number, cantidad: number) {
-  const valor = Math.max(0, Math.trunc(cantidad));
-  await db.transaction(async (tx) => {
-    await tx
-      .insert(stockSucursal)
-      .values({ productoId, sucursalId, cantidad: valor })
-      .onConflictDoUpdate({
-        target: [stockSucursal.productoId, stockSucursal.sucursalId],
-        set: { cantidad: valor },
-      });
-    await recalcularTotal(tx, productoId);
-  });
+  await db.transaction(async tx => fijarStockEnTx(tx, productoId, sucursalId, cantidad));
 }
 
 /** Borra el desglose de un producto (se llama al eliminarlo del catálogo). */
@@ -90,7 +90,7 @@ export async function descontarStock(
       if (sucursalId) {
         const r = await tx
           .update(stockSucursal)
-          .set({ cantidad: sql`${stockSucursal.cantidad} - ${it.cantidad}` })
+          .set({ cantidad: sql`round(${stockSucursal.cantidad} - ${it.cantidad}, 3)` })
           .where(
             and(
               eq(stockSucursal.productoId, it.productoId),
@@ -114,7 +114,7 @@ export async function descontarStock(
           if (toma <= 0) continue;
           await tx
             .update(stockSucursal)
-            .set({ cantidad: sql`${stockSucursal.cantidad} - ${toma}` })
+            .set({ cantidad: sql`round(${stockSucursal.cantidad} - ${toma}, 3)` })
             .where(eq(stockSucursal.id, fila.id));
           falta -= toma;
         }

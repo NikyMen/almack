@@ -37,7 +37,7 @@ export function clasificarItem(item: ItemRemito, catalogo: Producto[]): LineaCla
   if (codigo) {
     const porCodigo = catalogo.find((p) => normalizar(p.sku) === codigo);
     if (porCodigo) {
-      return { ...item, productoId: porCodigo.id, estado: "match", candidatos: [candidato(porCodigo, 1)] };
+      return { ...item, unidadMedida: porCodigo.unidadMedida === "kg" ? "kg" : item.unidadMedida, productoId: porCodigo.id, estado: "match", candidatos: [candidato(porCodigo, 1)] };
     }
   }
 
@@ -62,6 +62,7 @@ export function clasificarItem(item: ItemRemito, catalogo: Producto[]): LineaCla
     // En "duda" y en "nuevo" no se preselecciona nada: que la línea quede
     // vinculada sola es justamente lo que queremos evitar.
     productoId: estado === "match" ? mejor.p.id : null,
+    unidadMedida: estado === "match" && mejor.p.unidadMedida === "kg" ? "kg" : item.unidadMedida,
     estado,
     candidatos,
   };
