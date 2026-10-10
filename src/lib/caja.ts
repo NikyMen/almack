@@ -77,7 +77,7 @@ export async function venderEnCaja(sucursalId: number, cajero: string, items: { 
     let total = 0;
     for (const [productoId, cantidad] of cantidades) {
       const [p] = await tx.select().from(productos).where(eq(productos.id, productoId));
-      if (!p) throw new Error("Hay un producto que ya no existe.");
+      if (!p || !p.activo) throw new Error("Hay un producto que ya no está disponible.");
       validarMonto(p.precioVenta);
       const r = await tx.update(stockSucursal).set({ cantidad: sql`${stockSucursal.cantidad} - ${cantidad}` }).where(and(eq(stockSucursal.productoId, productoId), eq(stockSucursal.sucursalId, sucursalId), sql`${stockSucursal.cantidad} >= ${cantidad}`));
       if (!r.rowsAffected) throw new Error(`Sin stock suficiente de "${p.nombre}".`);

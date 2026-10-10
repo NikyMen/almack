@@ -30,7 +30,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
     </>;
   }
   const [items, desglose, transito, contexto, config] = await Promise.all([
-    db.select().from(productos).orderBy(desc(productos.id)),
+    db.select().from(productos).where(eq(productos.activo, true)).orderBy(desc(productos.id)),
     desgloseStock(),
     desgloseTransito(),
     getContextoSucursal(),
@@ -48,11 +48,12 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
       ? lista.find((s) => String(s.id) === destinoSolicitado)?.id ?? null
       : contexto.activaId
     : null;
+  const destinoSeguro = administrador ? destinoId : contexto.activaId;
   const activaId = administrador && parametro && !modoTransito
     ? parametro === "todas" ? null : lista.find((s) => String(s.id) === parametro)?.id ?? contexto.activaId
     : contexto.activaId;
   const activa = lista.find((s) => s.id === activaId) ?? null;
-  const destino = lista.find((s) => s.id === destinoId) ?? null;
+  const destino = lista.find((s) => s.id === destinoSeguro) ?? null;
 
   const pendientes = modoTransito ? await db
     .select({
@@ -71,7 +72,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
     .innerJoin(productos, eq(stockMovimientoItems.productoId, productos.id))
     .where(and(
       inArray(stockMovimientos.estado, ["en_transito", "rechazado"]),
-      destinoId ? eq(stockMovimientos.destinoId, destinoId) : undefined,
+      destinoSeguro ? eq(stockMovimientos.destinoId, destinoSeguro) : undefined,
     ))
     .orderBy(desc(stockMovimientos.id), stockMovimientoItems.id) : [];
   const nombres = new Map(lista.map((s) => [s.id, s.nombre]));
@@ -91,11 +92,12 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
   // lo que hay en ese local y nada más.
   const filas: ProductoConStock[] = items.map((p) => {
     const porSucursal: Record<number, number> = {};
-    for (const d of desglose.get(p.id) ?? []) porSucursal[d.sucursalId] = d.cantidad;
+    for (const d of desglose.get(p.id) ?? []) if (administrador || d.sucursalId === activaId) porSucursal[d.sucursalId] = d.cantidad;
     const transitoPorSucursal: Record<number, number> = {};
-    for (const d of transito.get(p.id) ?? []) transitoPorSucursal[d.sucursalId] = d.cantidad;
+    for (const d of transito.get(p.id) ?? []) if (administrador || d.sucursalId === activaId) transitoPorSucursal[d.sucursalId] = d.cantidad;
     return {
       ...p,
+      stock: administrador ? p.stock : (activaId ? porSucursal[activaId] ?? 0 : 0),
       alertaActiva: config.reglas.find(r => r.productoId === p.id)?.alertaActiva ?? true,
       multiplicadorCosto: config.reglas.find(r => r.productoId === p.id)?.multiplicador ?? null,
       porSucursal,
@@ -131,7 +133,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
       </div>
       {administrador && !modoTransito && <MultiplicadorStock valor={config.multiplicador} />}
       {modoTransito
-        ? <StockTransitoView lineas={lineasEnTransito} sucursales={lista} destinoId={destinoId} elegirDestino={administrador} />
+        ? <StockTransitoView lineas={lineasEnTransito} sucursales={lista} destinoId={destinoSeguro} elegirDestino={administrador} />
         : modoAlertas ? <AlertasStock items={filas} administrador={administrador} global={config.multiplicador} />
         : <StockManager items={filas} sucursales={lista} sucursalActivaId={activaId} administrador={administrador} multiplicadorGeneral={config.multiplicador} />}
     </>

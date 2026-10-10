@@ -46,6 +46,7 @@ export type UsuarioActual = {
   nombre: string;
   usuario: string;
   rol: string; // admin | miembro
+  sucursalId: number | null;
   permisos: ModuloKey[];
 };
 
@@ -73,6 +74,7 @@ export function esSuperAdmin(u: UsuarioActual | null): boolean {
 export function tieneAcceso(u: UsuarioActual | null, modulo: ModuloKey): boolean {
   if (!u) return false;
   if (u.rol === "admin") return true;
+  if (modulo === "whatsapp" || modulo === "equipo") return false;
   if (modulo === "stock" && u.permisos.includes("movimientos")) return true;
   return u.permisos.includes(modulo);
 }

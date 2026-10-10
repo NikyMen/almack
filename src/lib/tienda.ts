@@ -54,7 +54,7 @@ export async function listTiendaProductos(opts: {
   ofertas?: boolean;
 } = {}): Promise<TiendaProducto[]> {
   const search = opts.search?.trim();
-  const conditions = [eq(productos.publicado, true)];
+  const conditions = [eq(productos.publicado, true), eq(productos.activo, true)];
   if (search) {
     const pattern = `%${search}%`;
     conditions.push(or(like(productos.nombre, pattern), like(productos.descripcion, pattern))!);
@@ -78,7 +78,7 @@ export async function getTiendaProducto(id: number): Promise<TiendaProducto | nu
     .select({ producto: productos, meta: tiendaProductoMeta })
     .from(productos)
     .leftJoin(tiendaProductoMeta, eq(tiendaProductoMeta.productoId, productos.id))
-    .where(and(eq(productos.id, id), eq(productos.publicado, true)))
+    .where(and(eq(productos.id, id), eq(productos.publicado, true), eq(productos.activo, true)))
     .limit(1);
   return rows[0] ? mapProduct(rows[0]) : null;
 }

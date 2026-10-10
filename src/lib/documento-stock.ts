@@ -14,23 +14,34 @@ export function leerTablaStock(filas: string[][]): LecturaRemito {
   const alias = {
     descripcion: ["nombre", "producto", "descripcion", "detalle"],
     codigo: ["codigo", "sku", "codigo de barras"],
-    cantidad: ["cantidad", "cant", "unidades"],
-    precioUnit: ["costo", "precio", "precio unitario", "precio compra", "costo unitario"],
+    cantidad: ["cantidad", "cant", "unidades", "stock actual"],
+    precioUnit: ["costo", "precio", "precio unitario", "precio compra", "costo unitario", "precio de costo"],
+    precioVenta: ["precio de venta", "precio venta"],
   };
-  const encabezado = filas.findIndex(f => Object.values(alias).filter(a => f.some(c => a.includes(normalizar(c)))).length >= 3);
-  if (encabezado < 0) throw new Error("Usá columnas Nombre, Código, Cantidad y Costo unitario. No se encontró el encabezado.");
+  const encabezado = filas.findIndex(f => {
+    const c = f.map(normalizar);
+    return ["descripcion", "cantidad", "precioUnit"].every(k => c.some(v => alias[k as keyof typeof alias].includes(v)));
+  });
+  if (encabezado < 0) throw new Error("No se encontró el encabezado. Usá Producto, Stock actual y Precio de costo, o Nombre, Cantidad y Costo unitario.");
   const cab = filas[encabezado].map(normalizar);
   const indice = (key: keyof typeof alias) => cab.findIndex(c => alias[key].includes(c));
-  if (["descripcion", "cantidad", "precioUnit"].some(k => indice(k as keyof typeof alias) < 0)) throw new Error("Faltan columnas Nombre, Cantidad o Costo unitario.");
-  const items = filas.slice(encabezado + 1).filter(f => f.some(c => c.trim())).map((f, i) => {
+  const esInventario = cab.includes("stock actual");
+  let omitidos = 0;
+  const items = filas.slice(encabezado + 1).flatMap((f, i) => {
+    if (!f.some(c => c.trim())) return [];
     const descripcion = f[indice("descripcion")]?.trim() ?? "";
     const cantidad = numeroDocumento(f[indice("cantidad")] ?? "");
     const precioUnit = numeroDocumento(f[indice("precioUnit")] ?? "");
-    if (!descripcion || !Number.isSafeInteger(cantidad) || cantidad <= 0 || !Number.isFinite(precioUnit) || precioUnit <= 0) throw new Error(`Revisá la fila ${encabezado + i + 2}: nombre, cantidad entera positiva y costo unitario positivo son obligatorios.`);
-    return { descripcion, codigo: f[indice("codigo")]?.trim() ?? "", cantidad, precioUnit };
+    const precioVenta = indice("precioVenta") >= 0 ? numeroDocumento(f[indice("precioVenta")] ?? "") : undefined;
+    if (!descripcion || !Number.isSafeInteger(cantidad) || !Number.isFinite(precioUnit) || precioUnit < 0 ||
+      (precioVenta !== undefined && (!Number.isFinite(precioVenta) || precioVenta < 0)))
+      throw new Error(`Revisá la fila ${encabezado + i + 2}: producto, stock entero y precios válidos son obligatorios.`);
+    if (esInventario && cantidad <= 0) { omitidos++; return []; }
+    if (cantidad <= 0) throw new Error(`Revisá la fila ${encabezado + i + 2}: la cantidad debe ser positiva.`);
+    return [{ descripcion, codigo: f[indice("codigo")]?.trim() ?? "", cantidad, precioUnit, precioVenta }];
   });
-  if (!items.length || items.length > 500) throw new Error("El archivo debe contener entre 1 y 500 productos.");
-  return { proveedor: "", total: items.reduce((s, i) => s + i.cantidad * i.precioUnit, 0), items };
+  if (!items.length || items.length > 1000) throw new Error("El archivo debe contener entre 1 y 1000 productos con stock positivo.");
+  return { proveedor: "", total: items.reduce((s, i) => s + i.cantidad * i.precioUnit, 0), items, omitidos };
 }
 
 export async function extraerDocumentoStock(archivo: File): Promise<LecturaRemito> {

@@ -1,4 +1,4 @@
-import { db } from "@/db";
+import { db, sucursales } from "@/db";
 import { ClaveAdministrador } from "@/components/clave-administrador";
 import { cajaSeguridad } from "@/db/schema";
 import { usuarios } from "@/db/schema";
@@ -14,6 +14,7 @@ export default async function EquipoPage() {
   await requireAdmin();
   const claves = await db.select({ id: cajaSeguridad.id }).from(cajaSeguridad);
   const items = await db.select().from(usuarios).orderBy(asc(usuarios.id));
+  const locales = await db.select().from(sucursales).orderBy(asc(sucursales.orden));
 
   return (
     <>
@@ -23,12 +24,14 @@ export default async function EquipoPage() {
       />
       <ClaveAdministrador configurada={claves.length > 0} />
       <EquipoManager
+        sucursales={locales.filter(s => s.activo).map(s => ({ id: s.id, nombre: s.nombre }))}
         items={items.map((u) => ({
           id: u.id,
           nombre: u.nombre,
           usuario: u.usuario,
           email: u.email,
           rol: u.rol === "admin" ? "admin" : "miembro",
+          sucursalId: u.sucursalId,
           permisos: parsePermisos(u.permisos),
           activo: u.activo,
         }))}

@@ -14,6 +14,8 @@ export async function confirmarStockEnTransaccion({ compraId, pendientes, sucurs
   const creados: string[] = [];
   const ahora = new Date();
   await db.transaction(async (tx) => {
+    const [compra] = await tx.select().from(compras).where(eq(compras.id, compraId));
+    if (!compra || compra.stockRevertido) throw new Error("Esta carga fue revertida y no se puede volver a aplicar.");
     const config = await leerReglasStock(tx);
     const vigentes = await tx.select().from(compraLineas).where(and(eq(compraLineas.compraId, compraId), eq(compraLineas.aplicado, false))).orderBy(asc(compraLineas.id));
     if (JSON.stringify(vigentes) !== JSON.stringify(pendientes)) throw new Error("El borrador cambió. Volvé a revisar la carga.");
@@ -31,7 +33,7 @@ export async function confirmarStockEnTransaccion({ compraId, pendientes, sucurs
       if (productoId === null) {
         if (impacto.ventaNueva !== undefined && impacto.ventaNueva !== precioNuevo) throw new Error("El precio de venta cambió. Revisá nuevamente.");
         if (linea.codigo) {
-          const [duplicado] = await tx.select().from(productos).where(eq(productos.sku, linea.codigo));
+          const [duplicado] = await tx.select().from(productos).where(and(eq(productos.sku, linea.codigo), eq(productos.activo, true)));
           if (duplicado) throw new Error(`El código ${linea.codigo} ya existe. Vinculá el renglón al producto existente.`);
         }
         const [nuevo] = await tx
@@ -51,7 +53,7 @@ export async function confirmarStockEnTransaccion({ compraId, pendientes, sucurs
         if (sucursalId) await sumarStockEnTx(tx, productoId, sucursalId, linea.cantidad);
       } else {
         const [actual] = await tx.select().from(productos).where(eq(productos.id, productoId));
-        if (!actual) throw new Error("El producto ya no existe.");
+        if (!actual || !actual.activo) throw new Error("El producto ya no está disponible.");
         const [ultima] = await tx.select().from(compraItems).where(and(eq(compraItems.productoId, productoId), sql`${compraItems.precioUnit} > 0`)).orderBy(desc(compraItems.id)).limit(1);
         const costoAnterior = ultima?.precioUnit ?? actual.precioCompra;
         const diferencia = diferenciaCosto(costoAnterior, linea.precioUnit, actual.precioVenta, multiplicador);

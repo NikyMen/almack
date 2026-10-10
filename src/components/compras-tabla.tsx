@@ -245,7 +245,8 @@ function DetalleCompra({
   function borrar() {
     if (!confirm(`¿Eliminar la compra #${compra.id} de ${compra.proveedor}? No se puede deshacer.`)) return;
     startTransition(async () => {
-      await eliminarCompra(compra.id);
+      const r = await eliminarCompra(compra.id);
+      if (!r.ok) return setError(r.error);
       onCambio();
       onClose();
     });

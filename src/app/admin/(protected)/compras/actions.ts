@@ -19,7 +19,7 @@ import {
   type Compra,
   type CompraLinea,
 } from "@/db/schema";
-import { requireAcceso, requireCargaStock } from "@/lib/auth";
+import { getUsuarioActual, requireAcceso, requireCargaStock } from "@/lib/auth";
 import {
   transcribirImagen,
   leerRemitoImagen,
@@ -71,6 +71,8 @@ const ETIQUETA_CAMPO: Record<string, string> = {
 
 async function getCompra(id: number): Promise<Compra | null> {
   const [c] = await db.select().from(compras).where(eq(compras.id, id));
+  const usuario = await getUsuarioActual();
+  if (usuario?.rol === "miembro" && c?.sucursalId !== usuario.sucursalId) return null;
   return c ?? null;
 }
 
@@ -112,6 +114,7 @@ function recortar(v: unknown): string {
 
 export async function historialCompra(compraId: number) {
   await requireAcceso("compras");
+  if (!await getCompra(compraId)) return [];
   return db
     .select()
     .from(compraHistorial)
@@ -160,7 +163,10 @@ export async function cambiarEstadoCompra(compraId: number, estado: string) {
 export async function eliminarCompra(compraId: number) {
   await requireAcceso("compras");
   const compra = await getCompra(compraId);
-  if (compra?.imagen) await borrarArchivo(compra.imagen);
+  if (!compra) return { ok: false as const, error: "La compra no existe." };
+  const [aplicado] = await db.select({ id: compraItems.id }).from(compraItems).where(eq(compraItems.compraId, compraId)).limit(1);
+  if (aplicado && !compra.stockRevertido) return { ok: false as const, error: "Primero revertí la carga de stock desde Stock → Cargar stock." };
+  if (compra.imagen) await borrarArchivo(compra.imagen);
   // Se van el borrador y los items junto con la compra. El stock ya cargado NO
   // se revierte: borrar el papel no devuelve la mercadería al proveedor. Si hay
   // que descontarlo, se hace desde Stock.
@@ -299,17 +305,20 @@ async function cargarImagen(compra: Compra): Promise<ImagenEntrada> {
 
 async function getLinea(lineaId: number): Promise<CompraLinea | null> {
   const [l] = await db.select().from(compraLineas).where(eq(compraLineas.id, lineaId));
-  return l ?? null;
+  if (!l || !await getCompra(l.compraId)) return null;
+  return l;
 }
 
 /** Renglones del borrador, los pendientes primero y en el orden en que entraron. */
 export async function lineasCompra(compraId: number) {
   const usuario = await requireCargaStock();
+  if (!await getCompra(compraId)) throw new Error("La compra no existe.");
   const config = await leerReglasStock();
   const lineas = await db.select().from(compraLineas).where(eq(compraLineas.compraId, compraId)).orderBy(asc(compraLineas.id));
   return lineas.map(linea => ({ ...linea, multiplicador: multiplicadorProducto(config, linea.productoId), permitePrecioManual: usuario.rol === "admin" }));
 }
 async function pendientesDe(compraId: number) {
+  if (!await getCompra(compraId)) throw new Error("La compra no existe.");
   return db
     .select()
     .from(compraLineas)
@@ -338,7 +347,7 @@ async function guardarLectura(
       codigo: it.codigo,
       cantidad: it.cantidad,
       precioUnit: it.precioUnit,
-      precioVenta: it.estado === "nuevo" ? precioDesdeCosto(it.precioUnit, configPrecios.multiplicador ?? 2) : 0,
+      precioVenta: it.estado === "nuevo" ? (it.precioVenta ?? precioDesdeCosto(it.precioUnit, configPrecios.multiplicador ?? 2)) : 0,
       productoId: it.productoId,
       estado: it.estado,
       candidatos: JSON.stringify(it.candidatos),
@@ -549,7 +558,7 @@ export async function vincularLineaCompra(lineaId: number, productoId: number | 
 
   if (productoId !== null) {
     const [p] = await db.select().from(productos).where(eq(productos.id, productoId));
-    if (!p) return { ok: false as const, error: "Ese producto ya no existe." };
+    if (!p || !p.activo) return { ok: false as const, error: "Ese producto ya no está disponible." };
     await db
       .update(compraLineas)
       .set({
@@ -744,11 +753,11 @@ export async function importarArchivoCompra(compraId: number, formData: FormData
   if (!(archivo instanceof File)) return { ok: false as const, error: "Elegí un archivo." };
   try {
     const lectura = await extraerDocumentoStock(archivo);
-    if (!lectura.items.length || lectura.items.length > 500) throw new Error("Se permiten entre 1 y 500 productos por archivo.");
+    if (!lectura.items.length || lectura.items.length > 1000) throw new Error("Se permiten entre 1 y 1000 productos por archivo.");
     await guardarLectura(compraId, await clasificarItems(lectura.items), "agregar");
     await anotar(compraId, usuario, "Archivo importado", `${archivo.name}: ${lectura.items.length} renglones`);
     revalidatePath("/admin/compras");
-    return { ok: true as const, lineas: lectura.items.length };
+    return { ok: true as const, lineas: lectura.items.length, omitidos: lectura.omitidos ?? 0 };
   } catch (e) { return { ok: false as const, error: (e as Error).message }; }
 }
 

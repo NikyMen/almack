@@ -150,12 +150,12 @@ export function CompraRecepcion({ compra, onCambio }: { compra: Compra; onCambio
             try {
               const r = await importarArchivoCompra(compra.id, fd);
               if (!r.ok) setError(r.error);
-              else { await cargar(); setAviso(`${r.lineas} productos extraídos. Revisá los datos antes de confirmar.`); }
+              else { await cargar(); setAviso(`${r.lineas} productos con stock positivo extraídos. ${r.omitidos ? `${r.omitidos} filas con stock cero o negativo se omitieron; esta carga solo suma mercadería.` : ""} Revisá los datos antes de confirmar.`); }
             } catch { setError("No se pudo procesar el archivo. Intentá nuevamente."); }
             finally { setLeyendo(false); e.target.value = ""; }
           }} />
         </label>
-        <span className="mt-2 block text-xs font-normal text-slate-500">Foto, Excel (.xlsx), CSV, Word (.docx) o TXT · hasta 8 MB. Excel/CSV: Nombre, Código, Cantidad y Costo unitario. Cada archivo suma renglones al borrador.</span>
+        <span className="mt-2 block text-xs font-normal text-slate-500">Foto, Excel (.xlsx), CSV, Word (.docx) o TXT · hasta 8 MB. Excel/CSV: Nombre, Código, Cantidad y Costo unitario; también Producto, Stock actual y Precio de costo. Cada archivo suma renglones al borrador.</span>
       </div>
       <div className="flex flex-wrap gap-2">
         <button className="btn-ghost" disabled={!compra.imagen || leyendo} onClick={() => leer("imagen")}>

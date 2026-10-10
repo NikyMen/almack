@@ -1,5 +1,6 @@
 import { db, productos } from "@/db";
 import type { Producto } from "@/db/schema";
+import { eq } from "drizzle-orm";
 import {
   clasificar,
   normalizar,
@@ -67,13 +68,13 @@ export function clasificarItem(item: ItemRemito, catalogo: Producto[]): LineaCla
 }
 
 export async function clasificarItems(items: ItemRemito[]): Promise<LineaClasificada[]> {
-  const catalogo = await db.select().from(productos);
+  const catalogo = await db.select().from(productos).where(eq(productos.activo, true));
   return items.map((it) => clasificarItem(it, catalogo));
 }
 
 /** Reclasifica una descripción suelta (cuando se edita una línea a mano). */
 export async function reclasificar(item: ItemRemito): Promise<LineaClasificada> {
-  const catalogo = await db.select().from(productos);
+  const catalogo = await db.select().from(productos).where(eq(productos.activo, true));
   return clasificarItem(item, catalogo);
 }
 
@@ -81,7 +82,7 @@ export async function reclasificar(item: ItemRemito): Promise<LineaClasificada> 
 export async function buscarProductos(q: string, limite = 12): Promise<Candidato[]> {
   const texto = q.trim();
   if (!texto) return [];
-  const catalogo = await db.select().from(productos);
+  const catalogo = await db.select().from(productos).where(eq(productos.activo, true));
   const n = normalizar(texto);
   return catalogo
     .map((p) => {

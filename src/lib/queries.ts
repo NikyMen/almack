@@ -26,7 +26,7 @@ export async function getResumen(sucursalId: number | null) {
     .from(gastos)
     .where(sucursalId ? eq(gastos.sucursalId, sucursalId) : undefined);
 
-  const [clientesTot] = await db.select({ count: sql<number>`count(*)` }).from(clientes);
+  const [clientesTot] = await db.select({ count: sql<number>`count(*)` }).from(clientes).where(sucursalId ? sql`(${clientes.sucursalId} = ${sucursalId} or exists (select 1 from ventas v where v.cliente_id = ${clientes.id} and v.sucursal_id = ${sucursalId}))` : undefined);
 
   // Dentro de un local, "stock bajo" es lo que falta EN ESE LOCAL: un producto
   // puede estar sobrado en la casa central y agotado en la sucursal chica.
@@ -40,12 +40,12 @@ export async function getResumen(sucursalId: number | null) {
           and(eq(stockSucursal.productoId, productos.id), eq(stockSucursal.sucursalId, sucursalId))
         )
         .leftJoin(stockReglas, eq(stockReglas.productoId, productos.id))
-        .where(and(lt(cantidadLocal, productos.stockMinimo), sql`coalesce(${stockReglas.alertaActiva},1) = 1`))
+        .where(and(eq(productos.activo, true), lt(cantidadLocal, productos.stockMinimo), sql`coalesce(${stockReglas.alertaActiva},1) = 1`))
     : await db
         .select({ id: productos.id, nombre: productos.nombre, stock: productos.stock })
         .from(productos)
         .leftJoin(stockReglas, eq(stockReglas.productoId, productos.id))
-        .where(and(lt(productos.stock, productos.stockMinimo), sql`coalesce(${stockReglas.alertaActiva},1) = 1`));
+        .where(and(eq(productos.activo, true), lt(productos.stock, productos.stockMinimo), sql`coalesce(${stockReglas.alertaActiva},1) = 1`));
 
   const [valorStock] = sucursalId
     ? await db
@@ -54,7 +54,7 @@ export async function getResumen(sucursalId: number | null) {
         })
         .from(stockSucursal)
         .innerJoin(productos, eq(productos.id, stockSucursal.productoId))
-        .where(eq(stockSucursal.sucursalId, sucursalId))
+        .where(and(eq(stockSucursal.sucursalId, sucursalId), eq(productos.activo, true)))
     : await db
         .select({
           valor: sql<number>`coalesce(sum(${productos.stock} * ${productos.precioCompra}),0)`,
@@ -76,11 +76,13 @@ export async function getResumen(sucursalId: number | null) {
 export async function getContextoNegocio(): Promise<string> {
   const sucursalId = await getSucursalActivaId();
   const r = await getResumen(sucursalId);
-  const topProductos = await db
-    .select({ nombre: productos.nombre, stock: productos.stock, precio: productos.precioVenta })
-    .from(productos)
-    .orderBy(desc(productos.stock))
-    .limit(8);
+  const topProductos = sucursalId ? await db
+    .select({ nombre: productos.nombre, stock: stockSucursal.cantidad, precio: productos.precioVenta })
+    .from(stockSucursal).innerJoin(productos, eq(stockSucursal.productoId, productos.id))
+    .where(and(eq(stockSucursal.sucursalId, sucursalId), eq(productos.activo, true)))
+    .orderBy(desc(stockSucursal.cantidad)).limit(8)
+    : await db.select({ nombre: productos.nombre, stock: productos.stock, precio: productos.precioVenta })
+      .from(productos).where(eq(productos.activo, true)).orderBy(desc(productos.stock)).limit(8);
 
   return [
     `Ventas completadas: ${r.ventasCount} por un total de $${r.ventasTotal}.`,
@@ -139,12 +141,11 @@ export async function getMetricas(sucursalId: number | null) {
         .where(eq(ventas.estado, "completada"))
         .groupBy(ventas.sucursalId);
 
-  // Cuentas por cobrar (facturas emitidas, no pagadas). La facturación no
-  // distingue local, así que el número es el mismo en las dos vistas.
+  // Cuentas por cobrar de la sucursal activa.
   const [porCobrar] = await db
     .select({ total: sql<number>`coalesce(sum(${facturas.total}),0)`, count: sql<number>`count(*)` })
     .from(facturas)
-    .where(eq(facturas.estado, "emitida"));
+    .where(and(eq(facturas.estado, "emitida"), sucursalId ? sql`(${facturas.ventaId} in (select id from ventas where sucursal_id = ${sucursalId}) or (${facturas.ventaId} is null and ${facturas.clienteId} in (select id from clientes where sucursal_id = ${sucursalId})))` : undefined));
 
   // Top productos por valor de inventario
   const topInventario = sucursalId
@@ -156,7 +157,7 @@ export async function getMetricas(sucursalId: number | null) {
         })
         .from(stockSucursal)
         .innerJoin(productos, eq(productos.id, stockSucursal.productoId))
-        .where(eq(stockSucursal.sucursalId, sucursalId))
+        .where(and(eq(stockSucursal.sucursalId, sucursalId), eq(productos.activo, true)))
         .orderBy(desc(sql`${stockSucursal.cantidad} * ${productos.precioCompra}`))
         .limit(5)
     : await db
@@ -166,6 +167,7 @@ export async function getMetricas(sucursalId: number | null) {
           valor: sql<number>`${productos.stock} * ${productos.precioCompra}`,
         })
         .from(productos)
+        .where(eq(productos.activo, true))
         .orderBy(desc(sql`${productos.stock} * ${productos.precioCompra}`))
         .limit(5);
 
@@ -207,11 +209,12 @@ export const recientes = {
       .where(sucursalId ? eq(ventas.sucursalId, sucursalId) : undefined)
       .orderBy(desc(ventas.id))
       .limit(50),
-  facturas: () =>
+  facturas: (sucursalId: number | null = null) =>
     db
       .select({ id: facturas.id, numero: facturas.numero, total: facturas.total, tipo: facturas.tipo, estado: facturas.estado, fecha: facturas.fecha, cliente: clientes.nombre })
       .from(facturas)
       .leftJoin(clientes, eq(facturas.clienteId, clientes.id))
+      .where(sucursalId ? sql`(${facturas.ventaId} in (select id from ventas where sucursal_id = ${sucursalId}) or (${facturas.ventaId} is null and ${clientes.sucursalId} = ${sucursalId}))` : undefined)
       .orderBy(desc(facturas.fecha))
       .limit(20),
 };

@@ -11,7 +11,7 @@ const { eq } = await import('drizzle-orm');
 const extraer = (turnoId, monto, clave = 'secreta123', usuario = 'ana', solicitudId = randomUUID(), sucursalId = 1) => extraerEfectivo({ sucursalId, turnoId, monto, clave, usuario, responsable: usuario, motivo: 'Retiro autorizado', solicitudId });
 try {
   await client.executeMultiple(`CREATE TABLE sucursales(id INTEGER PRIMARY KEY, nombre TEXT NOT NULL, direccion TEXT DEFAULT '', telefono TEXT DEFAULT '', activo INTEGER DEFAULT 1, orden INTEGER DEFAULT 0, creado_en INTEGER);
-CREATE TABLE productos(id INTEGER PRIMARY KEY, sku TEXT, nombre TEXT, descripcion TEXT, categoria TEXT, precio_venta REAL, precio_compra REAL, stock INTEGER, stock_minimo INTEGER, imagen TEXT, publicado INTEGER, descripcion_web TEXT, creado_en INTEGER);
+CREATE TABLE productos(id INTEGER PRIMARY KEY, sku TEXT, nombre TEXT, descripcion TEXT, categoria TEXT, precio_venta REAL, precio_compra REAL, stock INTEGER, activo INTEGER NOT NULL DEFAULT 1, stock_minimo INTEGER, imagen TEXT, publicado INTEGER, descripcion_web TEXT, creado_en INTEGER);
 CREATE TABLE stock_sucursal(id INTEGER PRIMARY KEY, producto_id INTEGER, sucursal_id INTEGER, cantidad INTEGER);
 CREATE TABLE ventas(id INTEGER PRIMARY KEY, cliente_id INTEGER, sucursal_id INTEGER, caja_turno_id INTEGER, cajero TEXT, total REAL, estado TEXT, canal TEXT, medio_pago TEXT, referencia TEXT, facturada INTEGER, fecha INTEGER);
 CREATE TABLE venta_items(id INTEGER PRIMARY KEY, venta_id INTEGER, producto_id INTEGER, cantidad INTEGER, precio_unit REAL);`);
@@ -47,6 +47,9 @@ CREATE TABLE venta_items(id INTEGER PRIMARY KEY, venta_id INTEGER, producto_id I
   await assert.rejects(venderEnCaja(1,'Ana',[{productoId:1,cantidad:1},{productoId:999,cantidad:1}],'efectivo'));
   assert.equal((await db.select().from(ventas)).length,antes);
   assert.equal((await db.select().from(stockSucursal))[0].cantidad,6);
+  await db.update(productos).set({activo:false}).where(eq(productos.id,1));
+  await assert.rejects(venderEnCaja(1,'Ana',[{productoId:1,cantidad:1}],'efectivo'), /disponible/);
+  await db.update(productos).set({activo:true}).where(eq(productos.id,1));
   await assert.rejects(venderEnCaja(1,'Ana',[{productoId:1,cantidad:4},{productoId:1,cantidad:4}],'efectivo'));
   const cierre = await cerrarCaja(1,turno.id,'Ana',135,'Faltan cinco');
   assert.equal(cierre.diferencia,-5);

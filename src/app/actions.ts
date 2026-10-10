@@ -3,18 +3,17 @@ import { leerReglasStock, precioDesdeCosto } from "@/lib/reglas-stock";
 import { venderEnCaja } from "@/lib/caja";
 
 import { db, productos, clientes, compras, ventas, ventaItems, tiendaProductoMeta, sucursales, stockSucursal, stockTransito, stockMovimientos, cajaTurnos } from "@/db";
-import { eq, sql, inArray } from "drizzle-orm";
+import { eq, and, sql, inArray } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import {
   ajustarStockEnSucursal,
-  borrarStockDeProducto,
   descontarStock,
   fijarStockEnSucursal,
   stockDeSucursal,
 } from "@/lib/stock";
 import { COOKIE_SUCURSAL, TODAS, getSucursales, sucursalOperativaId } from "@/lib/sucursal";
-import { getUsuarioActual, requireAcceso } from "@/lib/auth";
+import { getUsuarioActual, requireAcceso, requireAdmin } from "@/lib/auth";
 import { esSuperAdmin } from "@/lib/permisos";
 import { MEDIOS_PAGO, type MedioPago } from "@/lib/medios-pago";
 import { esEstadoCompra } from "@/lib/compras";
@@ -237,7 +236,7 @@ export async function editarProducto(id: number, formData: FormData) {
   if (!d.nombre) return { ok: false as const, error: "El nombre es obligatorio." };
 
   const [previo] = await db.select().from(productos).where(eq(productos.id, id)).limit(1);
-  if (!previo) return { ok: false as const, error: "El producto no existe." };
+  if (!previo || !previo.activo) return { ok: false as const, error: "El producto no existe." };
 
   if (!esSuperAdmin(usuario)) { d.precioVenta = previo.precioVenta; d.stockMinimo = previo.stockMinimo; }
   const img = await resolverImagen(formData, previo.imagen ?? "");
@@ -261,16 +260,24 @@ export async function editarProducto(id: number, formData: FormData) {
 }
 
 export async function eliminarProducto(id: number) {
-  await requireAcceso("stock");
-  const [enTransito] = await db.select({ n: sql<number>`coalesce(sum(${stockTransito.cantidad}),0)` })
-    .from(stockTransito).where(eq(stockTransito.productoId, id));
-  if (Number(enTransito?.n ?? 0) > 0) return { ok: false as const, error: "No se puede eliminar un producto con stock en tránsito." };
-  const [previo] = await db.select().from(productos).where(eq(productos.id, id)).limit(1);
-  if (previo?.imagen) await borrarImagenProducto(previo.imagen);
-  await borrarStockDeProducto(id);
-  await db.delete(productos).where(eq(productos.id, id));
-  revalidatePath("/admin/stock");
-  revalidatePath("/");
+  await requireAdmin();
+  try {
+    await db.transaction(async tx => {
+      const [previo] = await tx.select().from(productos).where(eq(productos.id, id));
+      if (!previo || !previo.activo) throw new Error("El producto ya no está en el inventario.");
+      const [enTransito] = await tx.select({ n: sql<number>`coalesce(sum(${stockTransito.cantidad}),0)` })
+        .from(stockTransito).where(eq(stockTransito.productoId, id));
+      if (Number(enTransito?.n ?? 0) > 0) throw new Error("No se puede eliminar un producto con stock en tránsito.");
+      // Las ventas, compras y movimientos conservan la referencia al producto.
+      // El archivado retira su stock y lo oculta del catálogo en una sola transacción.
+      await tx.delete(stockSucursal).where(eq(stockSucursal.productoId, id));
+      await tx.update(productos).set({ activo: false, publicado: false, stock: 0 }).where(eq(productos.id, id));
+    });
+    for (const ruta of ["/admin/stock", "/admin/caja", "/admin/ventas", "/admin", "/tienda", "/tienda/productos"]) revalidatePath(ruta);
+    return { ok: true as const };
+  } catch (e) {
+    return { ok: false as const, error: e instanceof Error ? e.message : "No se pudo eliminar el producto." };
+  }
 }
 
 /**
@@ -280,6 +287,8 @@ export async function eliminarProducto(id: number) {
  */
 export async function ajustarStock(id: number, delta: number, sucursalId?: number | null) {
   const usuario = await requireAcceso("stock");
+  const [producto] = await db.select({ activo: productos.activo }).from(productos).where(eq(productos.id, id));
+  if (!producto?.activo) throw new Error("El producto ya no está disponible.");
   const lista = await getSucursales();
   const solicitada = lista.find((s) => s.id === sucursalId)?.id;
   const destino = esSuperAdmin(usuario) && solicitada ? solicitada : await sucursalOperativaId();
@@ -302,13 +311,15 @@ export async function togglePublicado(id: number) {
   await db
     .update(productos)
     .set({ publicado: sql`not ${productos.publicado}` })
-    .where(eq(productos.id, id));
+    .where(and(eq(productos.id, id), eq(productos.activo, true)));
   revalidatePath("/tienda");
   revalidatePath("/admin/stock");
 }
 
 export async function toggleOfertaTienda(id: number) {
   await requireAcceso("stock");
+  const [producto] = await db.select({ activo: productos.activo }).from(productos).where(eq(productos.id, id));
+  if (!producto?.activo) return;
   const [meta] = await db.select().from(tiendaProductoMeta).where(eq(tiendaProductoMeta.productoId, id)).limit(1);
   if (meta) {
     await db.update(tiendaProductoMeta).set({ ofertaDelDia: !meta.ofertaDelDia }).where(eq(tiendaProductoMeta.productoId, id));
@@ -327,10 +338,12 @@ export async function guardarDescripcionWeb(id: number, texto: string) {
 
 // --- Clientes ----------------------------------------------------------------
 export async function crearCliente(formData: FormData) {
+  await requireAcceso("clientes");
   const nombre = String(formData.get("nombre") || "").trim();
   if (!nombre) return;
   await db.insert(clientes).values({
     nombre,
+    sucursalId: await sucursalOperativaId(),
     email: String(formData.get("email") || ""),
     telefono: String(formData.get("telefono") || ""),
     cuit: String(formData.get("cuit") || ""),
@@ -363,6 +376,7 @@ export async function cobrarVenta(
 }
 // --- Compras -----------------------------------------------------------------
 export async function crearCompra(formData: FormData) {
+  await requireAcceso("compras");
   const proveedor = String(formData.get("proveedor") || "").trim();
   if (!proveedor) return;
   const estado = String(formData.get("estado") || "pedido");

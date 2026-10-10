@@ -122,6 +122,7 @@ export async function getUsuarioActual(): Promise<UsuarioActual | null> {
       nombre: u.nombre,
       usuario: u.usuario,
       rol: u.rol,
+      sucursalId: u.sucursalId,
       permisos: parsePermisos(u.permisos),
     };
   }
@@ -131,6 +132,7 @@ export async function getUsuarioActual(): Promise<UsuarioActual | null> {
       nombre: "Administrador",
       usuario: handle,
       rol: "admin",
+      sucursalId: null,
       permisos: MODULOS.map((m) => m.key),
     };
   }
@@ -141,6 +143,7 @@ export async function getUsuarioActual(): Promise<UsuarioActual | null> {
 export async function requireAcceso(modulo: ModuloKey): Promise<UsuarioActual> {
   const u = await getUsuarioActual();
   if (!u) redirect("/admin/login");
+  if (u.rol !== "admin" && !u.sucursalId) throw new Error("El administrador debe asignarte una sucursal.");
   if (!tieneAcceso(u, modulo)) redirect(primerModuloPermitido(u));
   return u;
 }

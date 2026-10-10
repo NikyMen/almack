@@ -53,7 +53,7 @@ export async function POST(req: Request) {
 
   for (const item of items) {
     const product = byId.get(item.productoId);
-    if (!product || !product.publicado) return NextResponse.json({ error: "Hay un producto que ya no está disponible." }, { status: 400 });
+    if (!product || !product.activo || !product.publicado) return NextResponse.json({ error: "Hay un producto que ya no está disponible." }, { status: 400 });
     if (product.stock < item.cantidad) return NextResponse.json({ error: `Sin stock suficiente de "${product.nombre}" (quedan ${product.stock}).` }, { status: 400 });
   }
 

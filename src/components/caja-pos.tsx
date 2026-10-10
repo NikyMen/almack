@@ -188,7 +188,7 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
   );
 
   return (
-    <div className="grid min-w-0 items-start gap-5 lg:grid-cols-[minmax(0,1fr)_340px] xl:grid-cols-[minmax(0,1fr)_380px]">
+    <div className="grid min-w-0 items-start gap-5 lg:grid-cols-[minmax(0,360px)_minmax(0,1fr)] xl:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
       {/* Catálogo + buscador */}
       <div className="card flex min-w-0 flex-col p-3 sm:p-4">
         <div className="mb-4 flex gap-2">
@@ -239,7 +239,7 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
 
         {/* Las filas conservan su altura natural: el scroll limita el catálogo,
             sin comprimir los nombres para hacer entrar todos los productos. */}
-        <div className="grid max-h-[58vh] min-w-0 grid-cols-[repeat(auto-fill,minmax(min(100%,13rem),1fr))] content-start gap-2 overflow-y-auto p-0.5">
+        <div className="grid max-h-[58vh] min-w-0 grid-cols-[repeat(auto-fill,minmax(min(100%,10rem),1fr))] content-start gap-2 overflow-y-auto p-0.5">
           {filtrados.map((p) => {
             const usado = enCarrito.get(p.id) ?? 0;
             const restante = p.stock - usado;
@@ -273,7 +273,7 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
       </div>
 
       {/* Pedido: columna fija en escritorio */}
-      <div className="card hidden h-fit min-w-0 flex-col p-4 lg:sticky lg:top-4 lg:flex">{panelPedido}</div>
+      <div className="card hidden min-h-[24rem] min-w-0 flex-col p-5 lg:sticky lg:top-4 lg:flex">{panelPedido}</div>
 
       {/* Pedido en mobile: barra resumen + hoja deslizante */}
       {carrito.length > 0 && !pedidoAbierto && (

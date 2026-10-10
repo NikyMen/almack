@@ -2,7 +2,7 @@
 
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
-import { db, gastos } from "@/db";
+import { db, gastos, stockMovimientos } from "@/db";
 import { requireAcceso } from "@/lib/auth";
 import { enviarTransferencia, verificarTransferencia, devolverTransferencia } from "@/lib/transferencias";
 import { getSucursales } from "@/lib/sucursal";
@@ -28,6 +28,7 @@ export async function registrarTraslado(datos: {
 }) {
   const usuario = await requireAcceso("movimientos");
 
+  if (usuario.rol === "miembro" && usuario.sucursalId !== datos.origenId) return { ok: false as const, error: "Solo podés mover stock desde tu sucursal." };
   const lista = await getSucursales();
   const origen = lista.find((s) => s.id === datos.origenId);
   const destino = lista.find((s) => s.id === datos.destinoId);
@@ -71,6 +72,8 @@ export async function registrarTraslado(datos: {
 
 export async function resolverTraslado(datos: { id: number; decision: "aceptar" | "rechazar"; cantidades: { itemId: number; cantidad: number }[]; nota: string }) {
   const usuario = await requireAcceso("movimientos");
+  const [m] = await db.select().from(stockMovimientos).where(eq(stockMovimientos.id, datos.id));
+  if (usuario.rol === "miembro" && m?.destinoId !== usuario.sucursalId) return { ok: false as const, error: "Este traslado no pertenece a tu sucursal." };
   try {
     const resultado = await verificarTransferencia({ ...datos, usuario });
     revalidatePath("/admin/movimientos");
@@ -86,6 +89,8 @@ export async function resolverTraslado(datos: { id: number; decision: "aceptar" 
 
 export async function confirmarDevolucion(datos: { id: number; cantidades: { itemId: number; cantidad: number }[]; nota: string }) {
   const usuario = await requireAcceso("movimientos");
+  const [m] = await db.select().from(stockMovimientos).where(eq(stockMovimientos.id, datos.id));
+  if (usuario.rol === "miembro" && m?.origenId !== usuario.sucursalId) return { ok: false as const, error: "Este traslado no pertenece a tu sucursal." };
   try {
     await devolverTransferencia({ ...datos, usuario });
     revalidatePath("/admin/movimientos");
@@ -106,7 +111,8 @@ export async function registrarGasto(datos: {
   categoria: string;
   monto: number;
 }) {
-  await requireAcceso("movimientos");
+  const usuario = await requireAcceso("movimientos");
+  if (usuario.rol === "miembro" && datos.sucursalId !== usuario.sucursalId) return { ok: false as const, error: "Solo podés registrar gastos de tu sucursal." };
   if (!(datos.monto > 0)) return { ok: false as const, error: "Poné el monto del gasto." };
   const concepto = datos.concepto.trim();
   if (!concepto) return { ok: false as const, error: "Escribí de qué es el gasto." };
@@ -127,7 +133,9 @@ export async function registrarGasto(datos: {
 }
 
 export async function eliminarGasto(id: number) {
-  await requireAcceso("movimientos");
+  const usuario = await requireAcceso("movimientos");
+  const [gasto] = await db.select().from(gastos).where(eq(gastos.id, id));
+  if (usuario.rol === "miembro" && gasto?.sucursalId !== usuario.sucursalId) return { ok: false as const, error: "Este gasto no pertenece a tu sucursal." };
   await db.delete(gastos).where(eq(gastos.id, id));
   revalidatePath("/admin/movimientos");
   revalidatePath("/admin/stock/mover");

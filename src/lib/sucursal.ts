@@ -13,6 +13,7 @@ import { cookies } from "next/headers";
 import { asc, eq } from "drizzle-orm";
 import { db, sucursales } from "@/db";
 import type { Sucursal } from "@/db/schema";
+import { getUsuarioActual } from "@/lib/auth";
 
 export const COOKIE_SUCURSAL = "almack_sucursal";
 export const TODAS = "todas";
@@ -41,7 +42,13 @@ export async function getSucursales(): Promise<Sucursal[]> {
 }
 
 export async function getContextoSucursal(): Promise<ContextoSucursal> {
-  const lista = await getSucursales();
+  const todas = await getSucursales();
+  const usuario = await getUsuarioActual();
+  if (usuario?.rol === "miembro") {
+    const activa = todas.find(s => s.id === usuario.sucursalId) ?? null;
+    return { lista: activa ? [activa] : [], activaId: activa?.id ?? null, activa };
+  }
+  const lista = todas;
   const store = await cookies();
   const crudo = store.get(COOKIE_SUCURSAL)?.value ?? TODAS;
   const activa = lista.find((s) => String(s.id) === crudo) ?? null;

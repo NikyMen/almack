@@ -21,7 +21,7 @@ export async function configurarProductoStock(id: number, datos: { stockMinimo: 
     if (!Number.isFinite(datos.precioVenta) || datos.precioVenta < 0 || datos.precioVenta > 1e12) throw new Error("Ingresá un precio de venta válido.");
     await db.transaction(async tx => {
       const [p] = await tx.select().from(productos).where(eq(productos.id,id));
-      if (!p) throw new Error("El producto ya no existe.");
+      if (!p || !p.activo) throw new Error("El producto ya no está disponible.");
       let precioVenta = Math.round(datos.precioVenta * 100) / 100;
       if (datos.calcularAhora) {
         const config = await leerReglasStock(tx);

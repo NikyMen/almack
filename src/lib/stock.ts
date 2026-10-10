@@ -25,8 +25,9 @@ async function recalcularTotal(tx: Tx, productoId: number) {
 }
 
 /**
- * Suma (o resta, con delta negativo) unidades en una sucursal. Nunca deja la
- * fila en negativo.
+ * Suma (o resta, con delta negativo) unidades en una sucursal. Un ingreso
+ * positivo conserva un saldo negativo elegido al revertir una carga; las
+ * salidas ordinarias no crean nuevos saldos negativos.
  *
  * Se exporta para los flujos que ya vienen con su propia transacción abierta
  * (la recepción de un remito, que además crea productos y compra_items).
@@ -37,7 +38,7 @@ export async function sumarStockEnTx(tx: Tx, productoId: number, sucursalId: num
     .values({ productoId, sucursalId, cantidad: Math.max(0, delta) })
     .onConflictDoUpdate({
       target: [stockSucursal.productoId, stockSucursal.sucursalId],
-      set: { cantidad: sql`max(0, ${stockSucursal.cantidad} + ${delta})` },
+      set: { cantidad: delta >= 0 ? sql`${stockSucursal.cantidad} + ${delta}` : sql`max(0, ${stockSucursal.cantidad} + ${delta})` },
     });
   await recalcularTotal(tx, productoId);
 }
@@ -84,6 +85,8 @@ export async function descontarStock(
 ) {
   await db.transaction(async (tx) => {
     for (const it of items) {
+      const [producto] = await tx.select({ activo: productos.activo }).from(productos).where(eq(productos.id, it.productoId));
+      if (!producto?.activo) throw new Error(`El producto ${it.productoId} ya no está disponible.`);
       if (sucursalId) {
         const r = await tx
           .update(stockSucursal)

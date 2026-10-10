@@ -1,4 +1,5 @@
-import { asc } from "drizzle-orm";
+import { asc, eq, or, sql } from "drizzle-orm";
+import { ventas as ventasTabla } from "@/db";
 import { db, productos, clientes } from "@/db";
 import { recientes } from "@/lib/queries";
 import { requireAcceso } from "@/lib/auth";
@@ -14,8 +15,8 @@ export default async function VentasPage() {
   // El alta manual necesita el catálogo y los clientes para armar la venta.
   const [ventas, catalogo, listaClientes] = await Promise.all([
     recientes.ventas(activaId),
-    db.select().from(productos).orderBy(asc(productos.nombre)),
-    db.select({ id: clientes.id, nombre: clientes.nombre }).from(clientes).orderBy(asc(clientes.nombre)),
+    db.select().from(productos).where(eq(productos.activo, true)).orderBy(asc(productos.nombre)),
+    db.select({ id: clientes.id, nombre: clientes.nombre }).from(clientes).where(activaId ? or(eq(clientes.sucursalId, activaId), sql`exists (select 1 from ${ventasTabla} where ${ventasTabla.clienteId} = ${clientes.id} and ${ventasTabla.sucursalId} = ${activaId})`) : undefined).orderBy(asc(clientes.nombre)),
   ]);
   const total = ventas.reduce((a, v) => a + (v.estado !== "cancelada" ? v.total : 0), 0);
 

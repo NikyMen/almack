@@ -47,6 +47,7 @@ const statements = [
     precio_venta REAL NOT NULL DEFAULT 0,
     precio_compra REAL NOT NULL DEFAULT 0,
     stock INTEGER NOT NULL DEFAULT 0,
+    activo INTEGER NOT NULL DEFAULT 1,
     stock_minimo INTEGER NOT NULL DEFAULT 5,
     imagen TEXT DEFAULT '',
     publicado INTEGER NOT NULL DEFAULT 0,
@@ -55,6 +56,7 @@ const statements = [
   )`,
   `CREATE TABLE IF NOT EXISTS clientes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sucursal_id INTEGER REFERENCES sucursales(id),
     nombre TEXT NOT NULL,
     email TEXT DEFAULT '',
     telefono TEXT DEFAULT '',
@@ -111,6 +113,7 @@ const statements = [
     proveedor TEXT NOT NULL DEFAULT '',
     total REAL NOT NULL DEFAULT 0,
     estado TEXT NOT NULL DEFAULT 'pedido',
+    stock_revertido INTEGER NOT NULL DEFAULT 0,
     imagen TEXT NOT NULL DEFAULT '',
     detalle TEXT NOT NULL DEFAULT '',
     fecha INTEGER DEFAULT (strftime('%s','now'))
@@ -182,6 +185,7 @@ const statements = [
     email TEXT NOT NULL DEFAULT '',
     password_hash TEXT NOT NULL DEFAULT '',
     rol TEXT NOT NULL DEFAULT 'miembro',
+    sucursal_id INTEGER REFERENCES sucursales(id),
     permisos TEXT NOT NULL DEFAULT '[]',
     activo INTEGER NOT NULL DEFAULT 1,
     creado_en INTEGER DEFAULT (strftime('%s','now'))
@@ -299,6 +303,10 @@ const alters = [
   `ALTER TABLE compras ADD COLUMN detalle TEXT NOT NULL DEFAULT ''`,
   `ALTER TABLE ventas ADD COLUMN sucursal_id INTEGER REFERENCES sucursales(id)`,
   `ALTER TABLE compras ADD COLUMN sucursal_id INTEGER REFERENCES sucursales(id)`,
+  `ALTER TABLE usuarios ADD COLUMN sucursal_id INTEGER REFERENCES sucursales(id)`,
+  `ALTER TABLE clientes ADD COLUMN sucursal_id INTEGER REFERENCES sucursales(id)`,
+  `ALTER TABLE compras ADD COLUMN stock_revertido INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE productos ADD COLUMN activo INTEGER NOT NULL DEFAULT 1`,
   `ALTER TABLE stock_movimientos ADD COLUMN estado TEXT NOT NULL DEFAULT 'recibido'`,
   `ALTER TABLE stock_movimientos ADD COLUMN recibido_por TEXT NOT NULL DEFAULT ''`,
   `ALTER TABLE stock_movimientos ADD COLUMN recepcion_nota TEXT NOT NULL DEFAULT ''`,
@@ -405,12 +413,13 @@ async function migrate() {
   );
   const sucursalBase = Number(base[0]?.id ?? 0);
   if (sucursalBase) {
+    await client.execute({ sql: "UPDATE usuarios SET sucursal_id = ? WHERE rol = 'miembro' AND sucursal_id IS NULL", args: [sucursalBase] });
     // Backfill del desglose: todo producto sin filas por sucursal arranca con
     // su stock total en la sucursal base.
     await client.execute({
       sql: `INSERT INTO stock_sucursal (producto_id, sucursal_id, cantidad)
             SELECT p.id, ?, p.stock FROM productos p
-            WHERE NOT EXISTS (SELECT 1 FROM stock_sucursal s WHERE s.producto_id = p.id)`,
+            WHERE p.activo = 1 AND NOT EXISTS (SELECT 1 FROM stock_sucursal s WHERE s.producto_id = p.id)`,
       args: [sucursalBase],
     });
     await client.execute({
@@ -422,6 +431,8 @@ async function migrate() {
       args: [sucursalBase],
     });
   }
+
+  await client.execute("UPDATE clientes SET sucursal_id = (SELECT v.sucursal_id FROM ventas v WHERE v.cliente_id = clientes.id AND v.sucursal_id IS NOT NULL ORDER BY v.id DESC LIMIT 1) WHERE sucursal_id IS NULL AND EXISTS (SELECT 1 FROM ventas v WHERE v.cliente_id = clientes.id AND v.sucursal_id IS NOT NULL)");
 
   // Sembrar usuario admin si la tabla está vacía (login DB desde el arranque;
   // el admin por env sigue funcionando como respaldo)

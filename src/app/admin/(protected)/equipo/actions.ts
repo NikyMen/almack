@@ -3,7 +3,7 @@
 import { hashClaveAdministrador } from "@/lib/clave-admin";
 import { cajaSeguridad } from "@/db/schema";
 import { db } from "@/db";
-import { usuarios, waContactos } from "@/db/schema";
+import { usuarios, waContactos, sucursales } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { requireAdmin, hashPassword } from "@/lib/auth";
@@ -14,6 +14,7 @@ export type UsuarioInput = {
   usuario: string;
   email: string;
   rol: "admin" | "miembro";
+  sucursalId: number | null;
   permisos: string[];
   activo: boolean;
   password?: string;
@@ -27,15 +28,23 @@ function limpiar(input: UsuarioInput) {
     usuario: input.usuario.trim().toLowerCase(),
     email: input.email.trim(),
     rol: input.rol === "admin" ? "admin" : "miembro",
+    sucursalId: input.rol === "admin" ? null : Number(input.sucursalId) || null,
     permisos: input.permisos.filter((p) => MODULO_KEYS.includes(p)),
     activo: Boolean(input.activo),
   };
+}
+
+async function sucursalValida(id: number | null) {
+  if (!id) return false;
+  const [s] = await db.select().from(sucursales).where(eq(sucursales.id, id));
+  return Boolean(s?.activo);
 }
 
 export async function crearUsuario(input: UsuarioInput) {
   await requireAdmin();
   const d = limpiar(input);
   if (!d.nombre || !d.usuario) return { ok: false as const, error: "Completá nombre y usuario." };
+  if (d.rol === "miembro" && !await sucursalValida(d.sucursalId)) return { ok: false as const, error: "Elegí una sucursal activa para el miembro." };
   if (!input.password || input.password.length < 4)
     return { ok: false as const, error: "La contraseña debe tener al menos 4 caracteres." };
 
@@ -48,6 +57,7 @@ export async function crearUsuario(input: UsuarioInput) {
     email: d.email,
     passwordHash: hashPassword(input.password),
     rol: d.rol,
+    sucursalId: d.sucursalId,
     permisos: JSON.stringify(d.permisos),
     activo: d.activo,
   });
@@ -59,6 +69,7 @@ export async function actualizarUsuario(id: number, input: UsuarioInput) {
   await requireAdmin();
   const d = limpiar(input);
   if (!d.nombre || !d.usuario) return { ok: false as const, error: "Completá nombre y usuario." };
+  if (d.rol === "miembro" && !await sucursalValida(d.sucursalId)) return { ok: false as const, error: "Elegí una sucursal activa para el miembro." };
 
   // El handle debe seguir siendo único (salvo el propio registro)
   const [existe] = await db.select().from(usuarios).where(eq(usuarios.usuario, d.usuario));
@@ -70,6 +81,7 @@ export async function actualizarUsuario(id: number, input: UsuarioInput) {
     usuario: d.usuario,
     email: d.email,
     rol: d.rol,
+    sucursalId: d.sucursalId,
     permisos: JSON.stringify(d.permisos),
     activo: d.activo,
   };

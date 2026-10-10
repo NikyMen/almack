@@ -1,6 +1,6 @@
 import { tieneAcceso } from "@/lib/permisos";
 import Link from "next/link";
-import { db, compras, compraLineas } from "@/db";
+import { db, compras, compraLineas, compraItems } from "@/db";
 import { desc, eq, and, sql } from "drizzle-orm";
 import { requireCargaStock } from "@/lib/auth";
 import { getContextoSucursal } from "@/lib/sucursal";
@@ -17,5 +17,10 @@ export default async function CargaStockPage() {
     activaId ? eq(compras.sucursalId, activaId) : undefined,
     sql`exists (select 1 from ${compraLineas} where ${compraLineas.compraId} = ${compras.id} and ${compraLineas.aplicado} = 0)`
   )).orderBy(desc(compras.id));
-  return <><Link href="/admin/stock" className="btn-ghost mb-4">← Opciones de stock</Link><PageHeader title="Carga de stock" subtitle="Del comprobante al inventario, con revisión de productos y precios." /><CargaStock permiteCompras={tieneAcceso(usuario,"compras")} sucursales={lista} activaId={activaId} borradores={borradores} /></>;
+  const cargas = usuario.rol === "admin" ? await db.select().from(compras).where(and(
+    activaId ? eq(compras.sucursalId, activaId) : undefined,
+    eq(compras.stockRevertido, false),
+    sql`exists (select 1 from ${compraItems} where ${compraItems.compraId} = ${compras.id})`
+  )).orderBy(desc(compras.id)) : [];
+  return <><Link href="/admin/stock" className="btn-ghost mb-4">← Opciones de stock</Link><PageHeader title="Carga de stock" subtitle="Del comprobante al inventario, con revisión de productos y precios." /><CargaStock permiteCompras={tieneAcceso(usuario,"compras")} sucursales={lista} activaId={activaId} borradores={borradores} cargas={cargas} /></>;
 }

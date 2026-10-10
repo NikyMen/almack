@@ -33,6 +33,7 @@ export default async function WhatsappPage() {
   const prods = await db
     .select({ id: productos.id, nombre: productos.nombre, precioVenta: productos.precioVenta })
     .from(productos)
+    .where(eq(productos.activo, true))
     .orderBy(asc(productos.nombre));
 
   const snap = getManager().snapshot();

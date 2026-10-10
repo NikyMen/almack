@@ -32,6 +32,7 @@ export const productos = sqliteTable("productos", {
   precioVenta: real("precio_venta").notNull().default(0),
   precioCompra: real("precio_compra").notNull().default(0),
   stock: integer("stock").notNull().default(0),
+  activo: integer("activo", { mode: "boolean" }).notNull().default(true),
   stockMinimo: integer("stock_minimo").notNull().default(5),
   imagen: text("imagen").default(""),
   // Tienda online
@@ -118,6 +119,7 @@ export const gastos = sqliteTable("gastos", {
 // ---------------------------------------------------------------------------
 export const clientes = sqliteTable("clientes", {
   id: integer("id").primaryKey({ autoIncrement: true }),
+  sucursalId: integer("sucursal_id").references(() => sucursales.id),
   nombre: text("nombre").notNull(),
   email: text("email").default(""),
   telefono: text("telefono").default(""),
@@ -192,6 +194,7 @@ export const compras = sqliteTable("compras", {
   total: real("total").notNull().default(0),
   // pedido | falta_controlar | verificado (legacy: recibida | pendiente)
   estado: text("estado").notNull().default("pedido"),
+  stockRevertido: integer("stock_revertido", { mode: "boolean" }).notNull().default(false),
   // Foto del remito/factura del proveedor (ruta pública en /uploads/compras)
   imagen: text("imagen").notNull().default(""),
   // Detalle en texto: se puede escribir a mano o transcribir la imagen con IA
@@ -295,6 +298,7 @@ export const usuarios = sqliteTable("usuarios", {
   email: text("email").notNull().default(""),
   passwordHash: text("password_hash").notNull().default(""), // scrypt: salt:hash
   rol: text("rol").notNull().default("miembro"), // admin | miembro
+  sucursalId: integer("sucursal_id").references(() => sucursales.id),
   permisos: text("permisos").notNull().default("[]"), // JSON: módulos permitidos
   activo: integer("activo", { mode: "boolean" }).notNull().default(true),
   creadoEn: integer("creado_en", { mode: "timestamp" }).default(now),

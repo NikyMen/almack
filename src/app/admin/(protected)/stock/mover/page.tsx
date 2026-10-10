@@ -22,6 +22,7 @@ export default async function MovimientosPage({ searchParams }: { searchParams: 
     db
       .select({ id: productos.id, nombre: productos.nombre, sku: productos.sku })
       .from(productos)
+      .where(eq(productos.activo, true))
       .orderBy(productos.nombre),
     desgloseStock(),
   ]);
@@ -60,7 +61,7 @@ export default async function MovimientosPage({ searchParams }: { searchParams: 
 
   const catalogoVista: ProductoTraslado[] = catalogo.map((p) => {
     const porSucursal: Record<number, number> = {};
-    for (const d of desglose.get(p.id) ?? []) porSucursal[d.sucursalId] = d.cantidad;
+    for (const d of desglose.get(p.id) ?? []) if (esSuperAdmin(usuario) || d.sucursalId === activaId) porSucursal[d.sucursalId] = d.cantidad;
     return { ...p, porSucursal };
   });
 

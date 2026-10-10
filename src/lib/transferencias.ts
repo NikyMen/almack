@@ -37,7 +37,7 @@ export async function enviarTransferencia(datos: {
     }).returning({ id: stockMovimientos.id });
 
     for (const it of datos.items) {
-      const [producto] = await tx.select({ nombre: productos.nombre }).from(productos).where(eq(productos.id, it.productoId));
+      const [producto] = await tx.select({ nombre: productos.nombre }).from(productos).where(and(eq(productos.id, it.productoId), eq(productos.activo, true)));
       if (!producto) throw new Error(`El producto ${it.productoId} ya no existe.`);
       const salida = await tx.update(stockSucursal)
         .set({ cantidad: sql`${stockSucursal.cantidad} - ${it.cantidad}` })
@@ -54,7 +54,7 @@ export async function enviarTransferencia(datos: {
         });
       await tx.update(productos).set({
         stock: sql`(select coalesce(sum(cantidad), 0) from stock_sucursal where producto_id = ${it.productoId})`,
-      }).where(eq(productos.id, it.productoId));
+      }).where(and(eq(productos.id, it.productoId), eq(productos.activo, true)));
       await tx.insert(stockMovimientoItems).values({
         movimientoId: mov.id, productoId: it.productoId, descripcion: producto.nombre,
         cantidad: it.cantidad, cantidadRecibida: 0,

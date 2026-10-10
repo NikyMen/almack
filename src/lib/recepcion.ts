@@ -32,12 +32,14 @@ export type ItemRemito = {
   codigo: string;
   cantidad: number;
   precioUnit: number;
+  precioVenta?: number;
 };
 
 export type LecturaRemito = {
   proveedor: string;
   total: number;
   items: ItemRemito[];
+  omitidos?: number;
 };
 
 // Producto candidato a ser el de la línea, con qué tanto se parece (0 a 1).
