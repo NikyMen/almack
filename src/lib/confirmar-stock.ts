@@ -29,8 +29,8 @@ export async function confirmarStockEnTransaccion({ compraId, pendientes, sucurs
 
       const multiplicador = multiplicadorProducto(config, productoId);
       if ((impacto.multiplicador ?? null) !== multiplicador) throw new Error("El multiplicador cambió. Revisá y confirmá nuevamente.");
-      if (multiplicador !== null && linea.precioUnit <= 0) throw new Error("Ingresá un costo positivo para aplicar el multiplicador.");
-      const precioNuevo = multiplicador !== null ? precioDesdeCosto(linea.precioUnit, multiplicador) : linea.precioVenta;
+      const calcularPrecio = multiplicador !== null && linea.precioUnit > 0;
+      const precioNuevo = calcularPrecio ? precioDesdeCosto(linea.precioUnit, multiplicador) : linea.precioVenta;
       if (productoId === null) {
         if (impacto.stockAnterior !== 0) throw new Error("El stock de un producto nuevo debe partir de 0. Revisá nuevamente.");
         if (impacto.ventaNueva !== undefined && impacto.ventaNueva !== precioNuevo) throw new Error("El precio de venta cambió. Revisá nuevamente.");
@@ -65,7 +65,7 @@ export async function confirmarStockEnTransaccion({ compraId, pendientes, sucurs
         const stockNuevo = stockDespues(stockAnterior, linea.cantidad, linea.modoStock as ModoStock);
         const revisado = opciones.impactos?.find(i => i.lineaId === linea.id);
         if (!revisado || revisado.costoAnterior !== costoAnterior || revisado.ventaAnterior !== actual.precioVenta || revisado.costoNuevo !== linea.precioUnit || revisado.stockAnterior !== stockAnterior || revisado.stockNuevo !== stockNuevo || revisado.nombre !== actual.nombre || revisado.codigo !== actual.sku) throw new Error("Los precios cambiaron. Revisá y confirmá nuevamente.");
-        const revalorizar = multiplicador !== null || Boolean(opciones.revalorizar?.includes(linea.id));
+        const revalorizar = linea.precioUnit > 0 && (calcularPrecio || Boolean(opciones.revalorizar?.includes(linea.id)));
         if (revalorizar && diferencia.sugerido === null) throw new Error("No hay margen anterior para calcular el precio sugerido.");
         const set: { stock?: SQL | number; precioCompra?: number; precioVenta?: number; unidadMedida?: string } = {};
         if (linea.unidadMedida === "kg") set.unidadMedida = "kg";

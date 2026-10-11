@@ -191,7 +191,7 @@ export function CompraRecepcion({ compra, onCambio, onCancelar }: { compra: Comp
             finally { setLeyendo(false); e.target.value = ""; }
           }} />
         </label>
-        <span className="mt-2 block text-xs font-normal text-slate-500">Foto, Excel (.xlsx), CSV, Word (.docx) o TXT · hasta 8 MB. Excel/CSV: Nombre, Código, Cantidad y Costo unitario. Si dice “Stock actual”, fija el saldo final de cada producto; los negativos pasan a 0. Nada se aplica sin confirmar.</span>
+        <span className="mt-2 block text-xs font-normal text-slate-500">Foto, Excel (.xlsx), CSV, Word (.docx) o TXT · hasta 8 MB. Excel/CSV: Nombre, Código y Cantidad; Costo unitario es opcional. Si dice “Stock actual”, fija el saldo final de cada producto; los negativos pasan a 0. Nada se aplica sin confirmar.</span>
       </div>
       <div className="flex flex-wrap gap-2">
         <button className="btn-ghost" disabled={!compra.imagen || ocupado} onClick={() => leer("imagen")}>
@@ -345,6 +345,7 @@ function Fila({
   const [modoStock, setModoStock] = useState(linea.modoStock);
   const [precioUnit, setPrecioUnit] = useState(String(linea.precioUnit || ""));
   const recomendado = Math.round(Number(precioUnit || 0) * (linea.multiplicador ?? 2) * 100) / 100;
+  const calculaAutomatico = linea.multiplicador != null && Number(precioUnit) > 0;
   const [ventaManual, setVentaManual] = useState(linea.precioVenta > 0 && linea.precioVenta !== Math.round(linea.precioUnit * (linea.multiplicador ?? 2) * 100) / 100);
   const [precioVenta, setPrecioVenta] = useState(String(linea.precioVenta || (linea.estado === "nuevo" ? linea.precioUnit * (linea.multiplicador ?? 2) : "")));
   const [buscando, setBuscando] = useState(false);
@@ -383,7 +384,7 @@ function Fila({
         unidadMedida: unidadMedida as "unidad" | "kg",
         modoStock: modoStock as "sumar" | "fijar",
         precioUnit: Number(precioUnit),
-        precioVenta: linea.multiplicador != null ? recomendado : Number(precioVenta),
+        precioVenta: calculaAutomatico ? recomendado : Number(precioVenta),
       });
       if (!r.ok) { onError(r.error); return false; }
       ultimoGuardado.current = snapshot;
@@ -435,7 +436,7 @@ function Fila({
           step="0.01"
           inputMode="decimal"
           value={precioUnit}
-          onChange={(e) => { setPrecioUnit(e.target.value); if (!ventaManual && estado === "nuevo") setPrecioVenta(String(Math.round(Number(e.target.value) * 2 * 100) / 100)); }}
+          onChange={(e) => { setPrecioUnit(e.target.value); if (!ventaManual && estado === "nuevo" && Number(e.target.value) > 0) setPrecioVenta(String(Math.round(Number(e.target.value) * (linea.multiplicador ?? 2) * 100) / 100)); }}
 
           placeholder="Costo"
           aria-label="Costo unitario"
@@ -460,6 +461,7 @@ function Fila({
 
       <div className="mt-2 flex flex-wrap gap-3 text-xs"><label>Se vende por <select className="input mt-1" disabled={bloqueado || guardando} value={unidadMedida} onChange={e => setUnidadMedida(e.target.value)}><option value="unidad">Unidad</option><option value="kg">Peso (kg)</option></select></label><label>Cómo aplicar <select className="input mt-1" disabled={bloqueado || guardando} value={modoStock} onChange={e => setModoStock(e.target.value)}><option value="sumar">Sumar cantidad</option><option value="fijar">Fijar saldo final</option></select></label></div>
       {modoStock === "fijar" && Number(cantidad) <= 0 && <p className="mt-2 rounded-lg bg-amber-50 p-2 text-xs text-amber-900">{Number(cantidad) < 0 ? `Stock negativo (${cantidad}): la cantidad en stock se pasará a 0 al confirmar la carga.` : "Stock en 0: quedará sin disponibilidad para vender."}</p>}
+      {Number(precioUnit) === 0 && <p className="mt-2 rounded-lg bg-amber-50 p-2 text-xs text-amber-900">Precio de costo no cargado. Se podrá cargar el stock sin calcular el precio de venta por multiplicador.</p>}
       {repetidas > 1 && <p className="mt-2 rounded-lg bg-amber-50 p-2 text-xs text-amber-800">Este código aparece en {repetidas} renglones. Al continuar se agrupan como un solo producto y se suman sus unidades. Si repetiste la foto, eliminá los renglones de más.</p>}
       <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
         <span className={`badge ${ESTILO_LINEA[estado]}`}>{ETIQUETA_LINEA[estado]}</span>
@@ -506,17 +508,17 @@ function Fila({
         <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
           <span>Se va a crear sin publicar. Precio de venta ($):</span>
           <input
-            className="input w-28 py-1" disabled={bloqueado || guardando || linea.multiplicador != null || !linea.permitePrecioManual}
+            className="input w-28 py-1" disabled={bloqueado || guardando || calculaAutomatico || !linea.permitePrecioManual}
             type="number"
             step="0.01"
             inputMode="decimal"
-            value={linea.multiplicador != null ? recomendado : precioVenta}
+            value={calculaAutomatico ? recomendado : precioVenta}
             onChange={(e) => { setVentaManual(true); setPrecioVenta(e.target.value); }}
 
             placeholder="0"
             aria-label="Precio de venta del producto nuevo"
           />
-          <button type="button" className="btn-ghost px-2 py-1 text-xs" disabled={bloqueado || guardando} onClick={() => { setVentaManual(false); setPrecioVenta(String(recomendado)); }}>Usar recomendado: {money(recomendado)} (costo × {linea.multiplicador ?? 2})</button>
+          <button type="button" className="btn-ghost px-2 py-1 text-xs" disabled={bloqueado || guardando || Number(precioUnit) <= 0} onClick={() => { setVentaManual(false); setPrecioVenta(String(recomendado)); }}>Usar recomendado: {money(recomendado)} (costo × {linea.multiplicador ?? 2})</button>
         </div>
       )}
 
@@ -648,8 +650,9 @@ function ConfirmarCarga({
               <p className="font-semibold">{i.nombre} <span className="font-mono text-xs text-slate-400">{i.codigo}</span></p>
               <p className="mt-1 text-xs text-slate-500">Stock en destino: {i.stockAnterior} → {i.stockNuevo} {i.unidadMedida === "kg" ? "kg" : "u"} · {i.modoStock === "fijar" ? "saldo final" : "ingreso"} · Costo: {money(i.costoAnterior)} → {money(i.costoNuevo)}</p>
               {i.modoStock === "fijar" && (i.cantidad ?? 0) < 0 && <p className="mt-2 text-xs text-amber-900">Stock negativo en el archivo ({i.cantidad}): se guardará en 0.</p>}
-              {i.multiplicador != null && <p className="mt-2 rounded-lg bg-lime/15 p-2 text-sm font-medium text-navy">Precio automático: {money(i.costoNuevo)} × {i.multiplicador} = {money(i.ventaNueva ?? 0)}. Se aplicará al cargar.</p>}
-              {i.multiplicador == null && i.ventaAnterior === 0 && i.ventaNueva !== undefined && <p className="mt-2 text-sm">Precio de venta al crear: {money(i.ventaNueva)}</p>}
+              {i.costoNuevo === 0 && <p className="mt-2 text-xs text-amber-900">Precio de costo no cargado. Se conserva el precio de venta mostrado, sin aplicar el multiplicador.</p>}
+              {i.multiplicador != null && i.costoNuevo > 0 && <p className="mt-2 rounded-lg bg-lime/15 p-2 text-sm font-medium text-navy">Precio automático: {money(i.costoNuevo)} × {i.multiplicador} = {money(i.ventaNueva ?? 0)}. Se aplicará al cargar.</p>}
+              {(i.multiplicador == null || i.costoNuevo === 0) && i.ventaAnterior === 0 && i.ventaNueva !== undefined && <p className="mt-2 text-sm">Precio de venta al crear: {money(i.ventaNueva)}</p>}
               {i.multiplicador == null && i.porcentaje !== null && Math.abs(i.porcentaje) > 0.000001 && <>
                 <p className={`mt-2 text-sm ${i.porcentaje > 0 ? "text-amber-700" : "text-emerald-700"}`}>
                   {i.porcentaje > 0 ? "Aumentó" : "Bajó"} un {Math.abs(i.porcentaje).toFixed(2)} % respecto de la anterior carga.

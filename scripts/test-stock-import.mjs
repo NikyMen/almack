@@ -25,6 +25,13 @@ try {
   const xlsx = await extraerDocumentoStock(new File([await workbook.xlsx.writeBuffer()], "ticket.xlsx"));
   assert.equal(xlsx.items[0].precioUnit, 110);
   assert.equal(xlsx.items[0].codigo, "00123");
+  const sinCosto = leerTablaStock([["Nombre", "Stock actual"], ["Sin costo", "3"]]);
+  assert.equal(sinCosto.items[0].precioUnit, 0);
+  const costoVacio = leerTablaStock([["Nombre", "Cantidad", "Costo"], ["Vacío", "2", ""], ["Cero", "1", "0"]]);
+  assert.deepEqual(costoVacio.items.map(i => i.precioUnit), [0, 0]);
+  assert.throws(() => leerTablaStock([["Nombre", "Cantidad", "Costo"], ["Inválido", "1", "-10"]]));
+  assert.throws(() => leerTablaStock([["Nombre", "Cantidad", "Costo"], ["Inválido", "1", "abc"]]));
+  assert.equal(diferenciaCosto(60, 0, 180, 3).sugerido, null);
   assert.throws(() => leerTablaStock([["Nombre", "Cantidad", "Costo"], ["Milka", "-2", "100"]]));
   const fraccion = leerTablaStock([["Nombre", "Cantidad", "Costo"], ["Queso", "1.5", "100"]]);
   assert.equal(fraccion.items[0].cantidad, 1.5);
@@ -164,8 +171,18 @@ try {
   const [n]=await db.select().from(productos).where(eq(productos.sku,"AUTO-NUEVO"));
   assert.equal(n.precioVenta,100);
   const cero=await autoLinea(0);
-  await assert.rejects(()=>confirmarAuto(cero,vistaAuto(cero,60,180,4,3)),/costo positivo/);
-  assert.equal((await db.select().from(productos).where(eq(productos.id,auto.id)))[0].stock,4);
+  const vistaCero = { ...vistaAuto(cero,60,180,4,3), ventaNueva: 180 };
+  await confirmarAuto(cero,vistaCero);
+  const [sinCambioPrecio] = await db.select().from(productos).where(eq(productos.id,auto.id));
+  assert.equal(sinCambioPrecio.stock,5);
+  assert.equal(sinCambioPrecio.precioCompra,60);
+  assert.equal(sinCambioPrecio.precioVenta,180);
+  const [nuevoSinCosto] = await db.insert(compraLineas).values({compraId:autoCompra.id,descripcion:"Sin costo conocido",codigo:"SIN-COSTO",cantidad:3,precioUnit:0,precioVenta:250,estado:"nuevo"}).returning();
+  await confirmarAuto(nuevoSinCosto, {lineaId:nuevoSinCosto.id,nombre:nuevoSinCosto.descripcion,codigo:nuevoSinCosto.codigo,stockAnterior:0,stockNuevo:3,costoAnterior:0,costoNuevo:0,ventaAnterior:0,multiplicador:2.5,ventaNueva:250,...diferenciaCosto(0,0,0,2.5)});
+  const [sinCostoCreado] = await db.select().from(productos).where(eq(productos.sku,"SIN-COSTO"));
+  assert.equal(sinCostoCreado.stock,3);
+  assert.equal(sinCostoCreado.precioCompra,0);
+  assert.equal(sinCostoCreado.precioVenta,250);
   console.log("Reglas: costo × multiplicador general, prioridad por producto, reglas obsoletas, costo cero, alertas activas/desactivadas y productos nuevos OK.");  console.log("Duplicados: un solo producto, suma de unidades, venta costo × 2 y rollback de precios incompatibles OK.");
   console.log("Stock: CSV/XLSX, códigos, validación, subas/bajas, margen, revalorización, idempotencia, precios obsoletos y rollback OK.");
 } finally { await client.close(); }

@@ -20,9 +20,9 @@ export function leerTablaStock(filas: string[][]): LecturaRemito {
   };
   const encabezado = filas.findIndex(f => {
     const c = f.map(normalizar);
-    return ["descripcion", "cantidad", "precioUnit"].every(k => c.some(v => alias[k as keyof typeof alias].includes(v)));
+    return ["descripcion", "cantidad"].every(k => c.some(v => alias[k as keyof typeof alias].includes(v)));
   });
-  if (encabezado < 0) throw new Error("No se encontró el encabezado. Usá Producto, Stock actual y Precio de costo, o Nombre, Cantidad y Costo unitario.");
+  if (encabezado < 0) throw new Error("No se encontró el encabezado. Usá Producto y Stock actual, o Nombre y Cantidad. El costo es opcional.");
   const cab = filas[encabezado].map(normalizar);
   const indice = (key: keyof typeof alias) => cab.findIndex(c => alias[key].includes(c));
   const esInventario = cab.includes("stock actual");

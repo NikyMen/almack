@@ -138,6 +138,7 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium">{l.producto.nombre}</p>
                 <p className="text-xs text-slate-400">{money(l.producto.precioVenta)} / {l.producto.unidadMedida === "kg" ? "kg" : "u"}</p>
+                {l.producto.precioCompra <= 0 && <p className="text-xs text-amber-700">Precio de costo no cargado</p>}
               </div>
               <div className="flex items-center gap-1">
                 <button className="btn-ghost px-2 py-1.5" onClick={() => agregar(l.producto, l.producto.unidadMedida === "kg" ? -0.1 : -1)} aria-label={l.producto.unidadMedida === "kg" ? "Quitar 100 gramos" : "Quitar una unidad"}>
@@ -253,6 +254,7 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
               >
                 <span className="min-h-10 shrink-0 break-words text-sm font-medium leading-5">{p.nombre}</span>
                 <span className="mt-1 shrink-0 break-all font-mono text-[11px] leading-4 text-slate-400">{p.sku}</span>
+                {p.precioCompra <= 0 && <span className="mt-1 text-xs text-amber-700">Precio de costo no cargado</span>}
                 <div className="mt-auto flex shrink-0 flex-wrap items-end justify-between gap-2 pt-3">
                   <span className={`text-[11px] leading-tight ${agotado ? "text-rose-500" : "text-slate-400"}`}>
                     {agotado ? "sin stock" : `stock ${restante} ${p.unidadMedida === "kg" ? "kg" : "u"}`}

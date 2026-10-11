@@ -89,6 +89,7 @@ export function NuevaVentaModal({
                     >
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-medium">{p.nombre}</p>
+                        {p.precioCompra <= 0 && <p className="text-xs text-amber-700">Precio de costo no cargado</p>}
                         <p className="font-mono text-[11px] text-slate-400">
                           {p.sku} · {restante <= 0 ? "sin stock" : `stock ${restante}`}
                         </p>
@@ -120,6 +121,7 @@ export function NuevaVentaModal({
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium">{l.producto.nombre}</p>
                       <p className="text-xs text-slate-400">{money(l.producto.precioVenta)} c/u</p>
+                      {l.producto.precioCompra <= 0 && <p className="text-xs text-amber-700">Precio de costo no cargado</p>}
                     </div>
                     <div className="flex items-center gap-1">
                       <button className="btn-ghost px-2 py-1.5" onClick={() => agregar(l.producto, -1)} aria-label="Quitar una unidad">
