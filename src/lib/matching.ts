@@ -28,17 +28,18 @@ function candidato(p: Producto, score: number): Candidato {
 
 /**
  * Compara un renglón del remito contra el catálogo. Primero por código (si el
- * remito lo trae y coincide con un SKU, es exacto), después por parecido de
- * nombre. Nunca decide sola cuando la cosa está pareja: devuelve "duda" y los
+ * remito lo trae y coincide con un SKU, es exacto). Un SKU distinto es nuevo;
+ * sin código compara por nombre. Cuando la cosa está pareja devuelve "duda" y los
  * candidatos para que se elija a mano.
  */
 export function clasificarItem(item: ItemRemito, catalogo: Producto[]): LineaClasificada {
-  const codigo = normalizar(item.codigo);
+  const codigo = item.codigo.trim();
   if (codigo) {
-    const porCodigo = catalogo.find((p) => normalizar(p.sku) === codigo);
+    const porCodigo = catalogo.find((p) => p.sku.trim() === codigo);
     if (porCodigo) {
       return { ...item, unidadMedida: porCodigo.unidadMedida === "kg" ? "kg" : item.unidadMedida, productoId: porCodigo.id, estado: "match", candidatos: [candidato(porCodigo, 1)] };
     }
+    return { ...item, productoId: null, estado: "nuevo", candidatos: [] };
   }
 
   const puntuados = catalogo

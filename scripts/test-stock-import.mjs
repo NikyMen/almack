@@ -10,6 +10,8 @@ const { db, client, productos, compras, compraLineas, stockSucursal, diferencias
 const { extraerDocumentoStock, leerTablaStock } = await import("../src/lib/documento-stock.ts");
 const { diferenciaCosto } = await import("../src/lib/precios-stock.ts");
 const { confirmarStockEnTransaccion } = await import("../src/lib/confirmar-stock.ts");
+const { stockDespues } = await import("../src/lib/cantidades.ts");
+const { clasificarItem } = await import("../src/lib/matching.ts");
 
 try {
   const csv = new File(['Nombre;Código;Cantidad;Costo unitario\n"Alfajor; Milka";00123;5;"1.234,56"'], "ticket.csv");
@@ -36,6 +38,14 @@ try {
 
   const sucursalId = Number((await client.execute("SELECT id FROM sucursales LIMIT 1")).rows[0].id);
   const [producto] = await db.insert(productos).values({ sku: "00123", nombre: "Milka", stock: 10, precioCompra: 100, precioVenta: 200 }).returning();
+  const item = { descripcion: "Milka", codigo: "OTRO-SKU", cantidad: 1, precioUnit: 100 };
+  assert.equal(clasificarItem(item, [producto]).estado, "nuevo");
+  assert.equal(clasificarItem(item, [producto]).productoId, null);
+  assert.equal(clasificarItem({ ...item, codigo: "00123" }, [producto]).productoId, producto.id);
+  assert.equal(clasificarItem({ ...item, codigo: "" }, [producto]).productoId, producto.id);
+  assert.equal(clasificarItem({ ...item, codigo: "A B" }, [{ ...producto, sku: "A-B" }]).estado, "nuevo");
+  assert.equal(stockDespues(14, -2, "fijar"), 0);
+  assert.equal(stockDespues(14, 0.375, "fijar"), 0.375);
   await db.insert(stockSucursal).values({ productoId: producto.id, sucursalId, cantidad: 10 });
   const [compra] = await db.insert(compras).values({ proveedor: "Prueba", sucursalId }).returning();
   const usuario = { id: 0, nombre: "Tester" };
@@ -101,23 +111,28 @@ try {
     { compraId: inventarioCompra.id, productoId: producto.id, descripcion: "Milka", codigo: "00123", cantidad: -2, modoStock: "fijar", precioUnit: 100, estado: "match" },
     { compraId: inventarioCompra.id, descripcion: "Sin existencias", codigo: "CERO", cantidad: 0, modoStock: "fijar", precioUnit: 100, precioVenta: 200, confirmado: true, estado: "nuevo" },
     { compraId: inventarioCompra.id, descripcion: "Queso a peso", codigo: "PESO", cantidad: 0.375, modoStock: "fijar", unidadMedida: "kg", precioUnit: 100, precioVenta: 200, confirmado: true, estado: "nuevo" },
+    { compraId: inventarioCompra.id, descripcion: "Nuevo negativo", codigo: "NEGATIVO", cantidad: -3, modoStock: "fijar", precioUnit: 100, precioVenta: 200, estado: "nuevo" },
   ]).returning();
   const vistas = saldos.map((l, i) => ({
     lineaId: l.id, nombre: l.descripcion, codigo: l.codigo,
-    stockAnterior: i === 0 ? 14 : 0, stockNuevo: l.cantidad,
+    stockAnterior: i === 0 ? 14 : 0, stockNuevo: Math.max(0, l.cantidad),
     costoAnterior: i === 0 ? 99 : 0, costoNuevo: 100,
     ventaAnterior: i === 0 ? 220 : 0, ventaNueva: i === 0 ? 220 : 200,
     ...diferenciaCosto(i === 0 ? 99 : 0, 100, i === 0 ? 220 : 0),
   }));
+  await assert.rejects(() => confirmarStockEnTransaccion({ compraId: inventarioCompra.id, pendientes: saldos.slice(0, 2), sucursalId, usuario, opciones: { impactos: vistas.map(v => v.lineaId === saldos[0].id ? { ...v, stockNuevo: -2 } : v) } }), /borrador cambió/);
   await confirmarStockEnTransaccion({ compraId: inventarioCompra.id, pendientes: saldos.slice(0, 2), sucursalId, usuario, opciones: { impactos: vistas } });
-  assert.equal((await db.select().from(compraLineas).where(eq(compraLineas.compraId, inventarioCompra.id))).filter(l => !l.aplicado).length, 1);
+  assert.equal((await db.select().from(compraLineas).where(eq(compraLineas.compraId, inventarioCompra.id))).filter(l => !l.aplicado).length, 2);
   await confirmarStockEnTransaccion({ compraId: inventarioCompra.id, pendientes: saldos.slice(2), sucursalId, usuario, opciones: { impactos: vistas } });
-  assert.equal((await db.select().from(productos).where(eq(productos.id, producto.id)))[0].stock, -2);
+  assert.equal((await db.select().from(productos).where(eq(productos.id, producto.id)))[0].stock, 0);
+  const [negativoNuevo] = await db.select().from(productos).where(eq(productos.sku, "NEGATIVO"));
+  assert.equal(negativoNuevo.stock, 0);
+  assert.equal((await db.select().from(stockSucursal).where(eq(stockSucursal.productoId, negativoNuevo.id)))[0].cantidad, 0);
   assert.equal((await db.select().from(productos).where(eq(productos.sku, "CERO")))[0].stock, 0);
   const [porPeso] = await db.select().from(productos).where(eq(productos.sku, "PESO"));
   assert.equal(porPeso.stock, 0.375); assert.equal(porPeso.unidadMedida, "kg");
   const movimientosInventario = await db.select().from(compraItems).where(eq(compraItems.compraId, inventarioCompra.id));
-  assert.deepEqual(movimientosInventario.map(i => i.cantidad), [-16, 0, 0.375]);
+  assert.deepEqual(movimientosInventario.map(i => i.cantidad), [-14, 0, 0.375, 0]);
   const { precioDesdeCosto, validarMultiplicador } = await import("../src/lib/reglas-stock.ts");
   assert.equal(precioDesdeCosto(123.45,1.8),222.21);
   for (const factor of [0,-1,NaN,Infinity,1001,1.12345]) assert.throws(()=>validarMultiplicador(factor));

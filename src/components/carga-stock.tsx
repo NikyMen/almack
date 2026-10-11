@@ -85,7 +85,7 @@ export function CargaStock({ sucursales, activaId, borradores, cargas, permiteCo
       {borradores.length > 0 && <div className="rounded-xl border border-slate-200 bg-white p-5"><h2 className="font-semibold">Retomar una carga pendiente</h2><div className="mt-3 flex flex-wrap gap-2">{borradores.map(c => <button className="btn-ghost" key={c.id} onClick={() => setCompra(c)}>#{c.id} · {c.proveedor}</button>)}</div></div>}
     </> : <div className="rounded-xl bg-white p-4">
       <div className="mb-4 flex items-center justify-between gap-3"><h2 className="font-semibold">Carga #{compra.id} · {compra.proveedor} · {sucursales.find(s => s.id === compra.sucursalId)?.nombre}</h2><button className="btn-ghost" onClick={() => setCompra(null)}>Otra carga</button></div>
-      <CompraRecepcion compra={compra} onCambio={() => {}} />
+      <CompraRecepcion key={compra.id} compra={compra} onCambio={() => router.refresh()} onCancelar={() => setCompra(null)} />
     </div>}
   </div>;
 }

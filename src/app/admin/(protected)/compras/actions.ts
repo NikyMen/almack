@@ -589,8 +589,7 @@ export async function vincularLineaCompra(lineaId: number, productoId: number | 
     return { ok: true as const };
   }
 
-  // Pasa a "nuevo": vuelve a pedir confirmación, porque crear un producto de
-  // más es el error caro de todo este flujo.
+  // La creación se revisa en la confirmación general de la carga.
   await db
     .update(compraLineas)
     .set({ productoId: null, estado: "nuevo", confirmado: false })
@@ -635,6 +634,21 @@ export async function eliminarLineaCompra(lineaId: number) {
   return { ok: true as const };
 }
 
+export async function cancelarCargaStock(compraId: number) {
+  const usuario = await requireCargaStock();
+  if (!await getCompra(compraId)) return { ok: false as const, error: "La carga no existe." };
+  try {
+    await db.transaction(async tx => {
+      const r = await tx.delete(compraLineas).where(and(eq(compraLineas.compraId, compraId), eq(compraLineas.aplicado, false)));
+      await tx.insert(compraHistorial).values({ compraId, usuarioId: usuario.id || null,
+        usuarioNombre: usuario.nombre, campo: "Carga cancelada", antes: "", despues: `${r.rowsAffected} renglones pendientes descartados` });
+    });
+    revalidatePath("/admin/stock/carga");
+    revalidatePath("/admin/compras");
+    return { ok: true as const };
+  } catch { return { ok: false as const, error: "No se pudo cancelar la carga. Intentá nuevamente." }; }
+}
+
 export async function buscarProductosCompra(q: string) {
   await requireCargaStock();
   return buscarProductos(q);
@@ -643,7 +657,8 @@ export async function buscarProductosCompra(q: string) {
 function armarResumen(pendientes: CompraLinea[]): ResumenRecepcion {
   const conProducto = pendientes.filter((l) => l.productoId !== null);
   const sinProducto = pendientes.filter((l) => l.productoId === null);
-  const suma = (ls: CompraLinea[]) => ls.reduce((a, l) => a + l.cantidad, 0);
+  const cantidad = (l: CompraLinea) => l.modoStock === "fijar" ? stockDespues(0, l.cantidad, "fijar") : l.cantidad;
+  const suma = (ls: CompraLinea[]) => ls.reduce((a, l) => a + cantidad(l), 0);
   return {
     pendientes: pendientes.length,
     existentes: { lineas: conProducto.length, unidades: suma(conProducto) },
@@ -653,8 +668,8 @@ function armarResumen(pendientes: CompraLinea[]): ResumenRecepcion {
       nombres: sinProducto.map((l) => l.descripcion),
     },
     dudas: pendientes.filter((l) => l.estado === "duda" && !l.confirmado).length,
-    sinConfirmar: sinProducto.filter((l) => !l.confirmado).length,
-    costo: pendientes.reduce((a, l) => a + l.cantidad * l.precioUnit, 0),
+    sinConfirmar: sinProducto.filter((l) => l.estado !== "nuevo" && !l.confirmado).length,
+    costo: pendientes.reduce((a, l) => a + cantidad(l) * l.precioUnit, 0),
     inventario: pendientes.filter(l => l.modoStock === "fijar").length,
     noPositivos: pendientes.filter(l => l.modoStock === "fijar" && l.cantidad <= 0).length,
   };

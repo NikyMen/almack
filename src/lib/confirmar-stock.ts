@@ -32,6 +32,7 @@ export async function confirmarStockEnTransaccion({ compraId, pendientes, sucurs
       if (multiplicador !== null && linea.precioUnit <= 0) throw new Error("Ingresá un costo positivo para aplicar el multiplicador.");
       const precioNuevo = multiplicador !== null ? precioDesdeCosto(linea.precioUnit, multiplicador) : linea.precioVenta;
       if (productoId === null) {
+        if (impacto.stockAnterior !== 0) throw new Error("El stock de un producto nuevo debe partir de 0. Revisá nuevamente.");
         if (impacto.ventaNueva !== undefined && impacto.ventaNueva !== precioNuevo) throw new Error("El precio de venta cambió. Revisá nuevamente.");
         if (linea.codigo) {
           const [duplicado] = await tx.select().from(productos).where(and(eq(productos.sku, linea.codigo), eq(productos.activo, true)));
@@ -43,7 +44,7 @@ export async function confirmarStockEnTransaccion({ compraId, pendientes, sucurs
             nombre: linea.descripcion,
             sku: linea.codigo || `SKU-${Date.now()}-${linea.id}`,
             categoria: "General",
-            stock: linea.cantidad,
+            stock: impacto.stockNuevo,
             unidadMedida: linea.unidadMedida,
             precioCompra: linea.precioUnit,
             precioVenta: precioNuevo,
@@ -51,8 +52,8 @@ export async function confirmarStockEnTransaccion({ compraId, pendientes, sucurs
           })
           .returning({ id: productos.id });
         productoId = nuevo.id;
-        creados.push(`${linea.descripcion} (#${productoId}) +${linea.cantidad}`);
-        if (sucursalId) await (linea.modoStock === "fijar" ? fijarStockEnTx(tx, productoId, sucursalId, linea.cantidad) : sumarStockEnTx(tx, productoId, sucursalId, linea.cantidad));
+        creados.push(`${linea.descripcion} (#${productoId}) ${linea.modoStock === "fijar" ? "saldo" : "+"}${impacto.stockNuevo}`);
+        if (sucursalId) await (linea.modoStock === "fijar" ? fijarStockEnTx(tx, productoId, sucursalId, impacto.stockNuevo) : sumarStockEnTx(tx, productoId, sucursalId, linea.cantidad));
       } else {
         const [actual] = await tx.select().from(productos).where(eq(productos.id, productoId));
         if (!actual || !actual.activo) throw new Error("El producto ya no está disponible.");

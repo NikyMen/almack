@@ -12,5 +12,5 @@ export function redondearCantidad(valor: number): number {
 }
 
 export function stockDespues(anterior: number, cantidad: number, modo: ModoStock): number {
-  return redondearCantidad(modo === "fijar" ? cantidad : anterior + cantidad);
+  return redondearCantidad(modo === "fijar" ? Math.max(0, cantidad) : anterior + cantidad);
 }
