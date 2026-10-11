@@ -2,9 +2,10 @@
 import { Overlay } from "@/components/overlay";
 
 import { ConfigProductoStock } from "@/components/stock-configuracion";
-import { useId, useState, useTransition } from "react";
-import { Sparkles, Loader2, Plus, Pencil, Trash2, Eye, EyeOff, ScanLine, Store, Settings2, Tag } from "lucide-react";
+import { useId, useRef, useState, useTransition, type ReactNode } from "react";
+import { Sparkles, Loader2, Plus, Pencil, Trash2, Eye, EyeOff, ScanLine, Store, Settings2, Tag, ChevronDown } from "lucide-react";
 import type { Producto, Sucursal } from "@/db/schema";
+import { vaciarStock } from "@/app/admin/(protected)/stock/actions";
 import { money } from "@/lib/format";
 import { FilterableTable, Col } from "@/components/filterable-table";
 import { BarcodeScanner } from "@/components/barcode-scanner";
@@ -39,6 +40,7 @@ export function StockManager({
 }: { items: ProductoConStock[] } & Contexto) {
   const [configurando, setConfigurando] = useState<ProductoConStock | null>(null);
   const [open, setOpen] = useState(false);
+  const [vaciando, setVaciando] = useState(false);
   const [error, setError] = useState("");
   const [editando, setEditando] = useState<ProductoConStock | null>(null);
   const [ocultos, setOcultos] = useState<Set<number>>(new Set());
@@ -79,6 +81,19 @@ export function StockManager({
     });
   }
 
+  function acciones(p: ProductoConStock) {
+    return <AccionesStock nombre={p.nombre}>
+      <button className="btn-ghost w-full justify-start" onClick={() => ajustar(p, -1)}>− Quitar 1</button>
+      <button className="btn-ghost w-full justify-start" onClick={() => ajustar(p, 1)}>+ Sumar 1</button>
+      {administrador && <button className="btn-ghost w-full justify-start" onClick={() => setConfigurando(p)}><Settings2 className="h-4 w-4" /> Precio y alertas</button>}
+      <button className="btn-ghost w-full justify-start" onClick={() => setEditando(p)}><Pencil className="h-4 w-4" /> Editar</button>
+      <button className="btn-ghost w-full justify-start" onClick={() => startTransition(() => togglePublicado(p.id))}><Store className="h-4 w-4" /> {p.publicado ? "Ocultar de la tienda" : "Publicar en la tienda"}</button>
+      <button className="btn-ghost w-full justify-start" onClick={() => startTransition(() => toggleOfertaTienda(p.id))}><Tag className="h-4 w-4" /> Alternar oferta</button>
+      <button className="btn-ghost w-full justify-start" onClick={() => toggleOculto(p.id)}>{ocultos.has(p.id) ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />} {ocultos.has(p.id) ? "Mostrar fila" : "Ocultar fila"}</button>
+      {administrador && <button className="btn-ghost w-full justify-start text-rose-600" onClick={() => borrar(p)}><Trash2 className="h-4 w-4" /> Eliminar producto</button>}
+    </AccionesStock>;
+  }
+
   const cols: Col<ProductoConStock>[] = [
     { key: "sku", head: "SKU", cell: (p) => <span className="font-mono text-xs text-slate-500">{p.sku}</span>, value: (p) => p.sku },
     { key: "nombre", head: "Producto", className: "min-w-48 max-w-72", cell: (p) => <span className="font-medium">{p.nombre}</span>, value: (p) => p.nombre },
@@ -106,42 +121,13 @@ export function StockManager({
           } satisfies Col<ProductoConStock>,
         ]
       : []),
-    // La columna "Tienda" (publicar/despublicar) se sacó junto con el módulo de
-    // Tienda online. El dato `publicado` sigue en la DB intacto.
-    {
-      key: "acciones", head: "Acciones",
-      cell: (p) => (
-        <div className="flex min-w-72 flex-nowrap items-center gap-1">
-          <button className="btn-ghost px-2 py-1" title="Quitar 1" onClick={() => ajustar(p, -1)}>−</button>
-          <button className="btn-ghost px-2 py-1" title="Sumar 1" onClick={() => ajustar(p, 1)}>+</button>
-          {administrador && <button className="btn-ghost px-2 py-1" title="Precio y alertas" aria-label={`Precio y alertas de ${p.nombre}`} onClick={() => setConfigurando(p)}><Settings2 className="h-3.5 w-3.5" /></button>}
-          <button className="btn-ghost px-2 py-1" title="Editar" onClick={() => setEditando(p)}><Pencil className="h-3.5 w-3.5" /></button>
-          <button className="btn-ghost px-2 py-1" title={p.publicado ? "Ocultar de la tienda" : "Publicar en la tienda"} aria-label={p.publicado ? "Ocultar de la tienda" : "Publicar en la tienda"} onClick={() => startTransition(() => togglePublicado(p.id))}><Store className={`h-3.5 w-3.5 ${p.publicado ? "text-emerald-600" : ""}`} /></button>
-          <button className="btn-ghost px-2 py-1" title="Alternar oferta" aria-label="Alternar oferta" onClick={() => startTransition(() => toggleOfertaTienda(p.id))}><Tag className="h-3.5 w-3.5" /></button>
-          {administrador && <button className="btn-ghost px-2 py-1 text-rose-600" title="Eliminar" onClick={() => borrar(p)}><Trash2 className="h-3.5 w-3.5" /></button>}
-        </div>
-      ),
-    },
-    {
-      key: "ocultar", head: "",
-      cell: (p) => {
-        const oculto = ocultos.has(p.id);
-        return (
-          <button
-            className="btn-ghost px-2 py-1"
-            title={oculto ? "Mostrar fila" : "Ocultar fila"}
-            onClick={() => toggleOculto(p.id)}
-          >
-            {oculto ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-          </button>
-        );
-      },
-    },
+    { key: "acciones", head: "Acciones", cell: (p) => acciones(p) },
   ];
 
   return (
     <>
-      <div className="mb-4 flex justify-end">
+      <div className="mb-4 flex flex-wrap justify-end gap-2">
+        {administrador && <button className="btn-ghost text-rose-600" disabled={!items.length} onClick={() => setVaciando(true)}><Trash2 className="h-4 w-4" /> Vaciar stock</button>}
         <button className="btn-primary" onClick={() => setOpen((v) => !v)}>
           {open ? "Cerrar" : <><Plus className="h-4 w-4" /> Nuevo producto</>}
         </button>
@@ -183,28 +169,14 @@ export function StockManager({
                   {bajo && " · bajo"}
                   {p.transitoLocal > 0 && ` · tránsito ${p.transitoLocal}`}
                 </span>
-                <div className="flex flex-wrap items-center gap-1">
-                  <button className="btn-ghost px-2.5 py-1.5" aria-label="Quitar una unidad" onClick={() => ajustar(p, -1)}>−</button>
-                  <button className="btn-ghost px-2.5 py-1.5" aria-label="Sumar una unidad" onClick={() => ajustar(p, 1)}>+</button>
-                  {administrador && <button className="btn-ghost px-2 py-1 text-xs" onClick={() => setConfigurando(p)}>Precio y alertas</button>}
-                  <button className="btn-ghost px-2.5 py-1.5" aria-label="Editar producto" onClick={() => setEditando(p)}>
-                    <Pencil className="h-3.5 w-3.5" />
-                  </button>
-                  <button className="btn-ghost px-2.5 py-1.5 text-xs" aria-label="Publicar u ocultar en tienda" onClick={() => startTransition(() => togglePublicado(p.id))}>{p.publicado ? "Ocultar" : "Publicar"}</button>
-                  {administrador && <button
-                    className="btn-ghost px-2.5 py-1.5 text-rose-600"
-                    aria-label="Eliminar producto"
-                    onClick={() => borrar(p)}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>}
-                </div>
+                {acciones(p)}
               </div>
             </div>
           );
         }}
       />
 
+      {vaciando && <VaciarStock cantidad={items.length} cerrar={() => setVaciando(false)} />}
       {configurando && <ConfigProductoStock producto={configurando} global={multiplicadorGeneral} cerrar={() => setConfigurando(null)} />}
       {editando && <EditarProducto producto={editando} ctx={ctx} onDone={() => setEditando(null)} />}
 
@@ -223,6 +195,51 @@ export function StockManager({
       )}
     </>
   );
+}
+
+function AccionesStock({ nombre, children }: { nombre: string; children: ReactNode }) {
+  const id = useId();
+  const menu = useRef<HTMLDivElement>(null);
+  return <>
+    <button className="btn-ghost whitespace-nowrap px-3" popoverTarget={id} aria-label={"Acciones de " + nombre} onClick={e => {
+      const rect = e.currentTarget.getBoundingClientRect();
+      if (menu.current) {
+        menu.current.style.left = Math.max(8, Math.min(rect.right - 240, window.innerWidth - 248)) + "px";
+        menu.current.style.top = Math.max(8, Math.min(rect.bottom + 4, window.innerHeight - 408)) + "px";
+      }
+    }}>Acciones <ChevronDown className="h-4 w-4" /></button>
+    <div id={id} ref={menu} popover="auto" className="fixed inset-auto m-0 w-60 max-w-[calc(100vw-16px)] overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 text-sm shadow-xl" style={{ maxHeight: "calc(100dvh - 16px)" }} onClickCapture={e => {
+      if (e.target instanceof Element && e.target.closest("button")) menu.current?.hidePopover();
+    }}>{children}</div>
+  </>;
+}
+
+function VaciarStock({ cantidad, cerrar }: { cantidad: number; cerrar: () => void }) {
+  const [confirmacion, setConfirmacion] = useState("");
+  const [error, setError] = useState("");
+  const [pendiente, iniciar] = useTransition();
+  return <Overlay className="overlay" onClick={() => { if (!pendiente) cerrar(); }} onKeyDown={e => { if (e.key === "Escape" && !pendiente) cerrar(); }}>
+    <form className="sheet p-6 sm:max-w-md" onClick={e => e.stopPropagation()} onSubmit={e => {
+      e.preventDefault(); setError("");
+      iniciar(async () => {
+        try {
+          const resultado = await vaciarStock(confirmacion, cantidad);
+          if (!resultado.ok) setError(resultado.error); else cerrar();
+        } catch { setError("No se pudo confirmar el vaciado. Actualizá la página antes de intentar nuevamente."); }
+      });
+    }}>
+      <h3 className="text-lg font-semibold">Vaciar todo el stock</h3>
+      <p className="mt-3 text-sm">Se retirarán los {cantidad} productos activos, incluidos los que tienen cantidad 0, y se eliminarán sus existencias de todas las sucursales. Incluye productos fuera de los filtros actuales.</p>
+      <p className="mt-2 text-sm text-slate-500">Primero se guardará un respaldo en Stock → Respaldos. Las ventas, compras y movimientos conservarán su historial. Restaurar el respaldo no es automático.</p>
+      <label className="label mt-4" htmlFor="confirmar-vaciado">Escribí VACIAR para confirmar</label>
+      <input id="confirmar-vaciado" className="input" autoComplete="off" value={confirmacion} onChange={e => setConfirmacion(e.target.value)} disabled={pendiente} />
+      {error && <p role="alert" className="mt-3 text-sm text-rose-600">{error}</p>}
+      <div className="mt-5 flex flex-wrap gap-2">
+        <button className="btn-primary" disabled={pendiente || confirmacion !== "VACIAR"}>{pendiente ? "Vaciando…" : "Vaciar todo el stock"}</button>
+        <button type="button" className="btn-ghost" disabled={pendiente} onClick={cerrar}>Cancelar</button>
+      </div>
+    </form>
+  </Overlay>;
 }
 
 function Desglose({ producto, sucursales }: { producto: ProductoConStock; sucursales: Sucursal[] }) {
