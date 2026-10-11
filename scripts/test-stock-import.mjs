@@ -6,12 +6,13 @@ import { eq } from "drizzle-orm";
 if (!process.env.TURSO_DATABASE_URL?.startsWith("file:stock-import-test-")) throw new Error("Se requiere una base temporal.");
 const migration = spawnSync(process.execPath, ["--import", "tsx", "src/db/migrate.ts"], { env: process.env, encoding: "utf8" });
 assert.equal(migration.status, 0, migration.stderr || migration.stdout);
-const { db, client, productos, compras, compraLineas, stockSucursal, diferenciasPrecios, compraItems, stockConfiguracion, stockReglas } = await import("../src/db/index.ts");
+const { db, client, productos, compras, compraLineas, compraHistorial, stockSucursal, diferenciasPrecios, compraItems, stockConfiguracion, stockReglas } = await import("../src/db/index.ts");
 const { extraerDocumentoStock, leerTablaStock } = await import("../src/lib/documento-stock.ts");
 const { diferenciaCosto } = await import("../src/lib/precios-stock.ts");
 const { confirmarStockEnTransaccion } = await import("../src/lib/confirmar-stock.ts");
 const { stockDespues } = await import("../src/lib/cantidades.ts");
 const { clasificarItem } = await import("../src/lib/matching.ts");
+const { eliminarCompraEnTransaccion } = await import("../src/lib/eliminar-compra.ts");
 
 try {
   const csv = new File(['Nombre;Código;Cantidad;Costo unitario\n"Alfajor; Milka";00123;5;"1.234,56"'], "ticket.csv");
@@ -183,6 +184,42 @@ try {
   assert.equal(sinCostoCreado.stock,3);
   assert.equal(sinCostoCreado.precioCompra,0);
   assert.equal(sinCostoCreado.precioVenta,250);
+  // Eliminar una compra aplicada con un producto archivado y un borrador
+  // parcialmente eliminado no altera el inventario ni otras compras.
+  const [paraBorrar] = await db.insert(compras).values({proveedor:"Eliminar aplicada",sucursalId}).returning();
+  const [archivado] = await db.insert(productos).values({sku:"ARCHIVADO",nombre:"Eliminado individualmente",activo:false,stock:0}).returning();
+  await db.insert(compraItems).values([
+    {compraId:paraBorrar.id,productoId:auto.id,cantidad:2,precioUnit:60},
+    {compraId:paraBorrar.id,productoId:archivado.id,cantidad:1,precioUnit:0},
+  ]);
+  const borradorEliminar = await db.insert(compraLineas).values([
+    {compraId:paraBorrar.id,productoId:auto.id,descripcion:auto.nombre,aplicado:true},
+    {compraId:paraBorrar.id,descripcion:"Pendiente"},
+  ]).returning();
+  await db.delete(compraLineas).where(eq(compraLineas.id,borradorEliminar[1].id));
+  await db.insert(compraHistorial).values({compraId:paraBorrar.id,campo:"Carga al stock"});
+  await db.insert(diferenciasPrecios).values({compraId:paraBorrar.id,productoId:auto.id,nombre:auto.nombre,codigo:auto.sku,costoAnterior:50,costoNuevo:60,porcentaje:20,ventaAnterior:150,ventaNueva:180,usuarioNombre:"Tester"});
+  const stockAntesBorrar = await db.select().from(stockSucursal);
+  const productosAntesBorrar = await db.select().from(productos);
+  const otrasCompras = await db.select().from(compraItems).where(eq(compraItems.compraId,autoCompra.id));
+  await client.execute(`CREATE TRIGGER impedir_eliminacion_prueba BEFORE DELETE ON compras WHEN OLD.id = ${paraBorrar.id} BEGIN SELECT RAISE(ABORT, 'fallo de prueba'); END`);
+  await assert.rejects(()=>eliminarCompraEnTransaccion(paraBorrar.id));
+  assert.equal((await db.select().from(compraItems).where(eq(compraItems.compraId,paraBorrar.id))).length,2);
+  assert.equal((await db.select().from(compraLineas).where(eq(compraLineas.compraId,paraBorrar.id))).length,1);
+  assert.equal((await db.select().from(compraHistorial).where(eq(compraHistorial.compraId,paraBorrar.id))).length,1);
+  assert.equal((await db.select().from(diferenciasPrecios).where(eq(diferenciasPrecios.compraId,paraBorrar.id))).length,1);
+  await client.execute("DROP TRIGGER impedir_eliminacion_prueba");
+  await eliminarCompraEnTransaccion(paraBorrar.id);
+  for (const tabla of [compraItems,compraLineas,compraHistorial,diferenciasPrecios]) assert.equal((await db.select().from(tabla).where(eq(tabla.compraId,paraBorrar.id))).length,0);
+  assert.equal((await db.select().from(compras).where(eq(compras.id,paraBorrar.id))).length,0);
+  assert.deepEqual(await db.select().from(stockSucursal),stockAntesBorrar);
+  assert.deepEqual(await db.select().from(productos),productosAntesBorrar);
+  assert.deepEqual(await db.select().from(compraItems).where(eq(compraItems.compraId,autoCompra.id)),otrasCompras);
+  assert.equal(await eliminarCompraEnTransaccion(paraBorrar.id),null);
+  const [vacia] = await db.insert(compras).values({proveedor:"Borrador vacío",sucursalId}).returning();
+  await eliminarCompraEnTransaccion(vacia.id);
+  assert.equal((await db.select().from(compras).where(eq(compras.id,vacia.id))).length,0);
+  console.log("Eliminación de compras: aplicada, producto archivado, filas eliminadas, dependencias, rollback, reintentos y conservación del stock OK.");
   console.log("Reglas: costo × multiplicador general, prioridad por producto, reglas obsoletas, costo cero, alertas activas/desactivadas y productos nuevos OK.");  console.log("Duplicados: un solo producto, suma de unidades, venta costo × 2 y rollback de precios incompatibles OK.");
   console.log("Stock: CSV/XLSX, códigos, validación, subas/bajas, margen, revalorización, idempotencia, precios obsoletos y rollback OK.");
 } finally { await client.close(); }

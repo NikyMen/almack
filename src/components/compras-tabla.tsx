@@ -182,6 +182,7 @@ function DetalleCompra({
   const [editando, setEditando] = useState(false);
   const [historial, setHistorial] = useState<CompraHistorial[] | null>(null);
   const [error, setError] = useState("");
+  const [errorEliminar, setErrorEliminar] = useState("");
   const [aviso, setAviso] = useState("");
   const [ocupado, startTransition] = useTransition();
   const [subiendo, setSubiendo] = useState(false);
@@ -243,17 +244,20 @@ function DetalleCompra({
   }
 
   function borrar() {
-    if (!confirm(`¿Eliminar la compra #${compra.id} de ${compra.proveedor}? No se puede deshacer.`)) return;
+    if (!confirm(`¿Eliminar la compra #${compra.id} de ${compra.proveedor} y sus registros? No se puede deshacer.\n\nEl stock actual y las ventas se conservan. Para descontar esta carga, primero revertila desde Stock → Cargar stock.`)) return;
+    setErrorEliminar("");
     startTransition(async () => {
-      const r = await eliminarCompra(compra.id);
-      if (!r.ok) return setError(r.error);
-      onCambio();
-      onClose();
+      try {
+        const r = await eliminarCompra(compra.id);
+        if (!r.ok) return setErrorEliminar(r.error);
+        onCambio();
+        onClose();
+      } catch { setErrorEliminar("No se pudo completar la eliminación. Revisá la conexión e intentá nuevamente."); }
     });
   }
 
   return (
-    <Overlay className="overlay" onClick={onClose}>
+    <Overlay className="overlay" onClick={() => !ocupado && !subiendo && onClose()}>
       <div className="sheet sm:max-w-2xl" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
         <div className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-slate-100 bg-white px-5 py-4">
           <div className="min-w-0">
@@ -262,7 +266,7 @@ function DetalleCompra({
               Compra #{compra.id} · {fecha(compra.fecha)} · {money(compra.total)}
             </p>
           </div>
-          <button className="btn-ghost px-2 py-1.5" onClick={onClose} aria-label="Cerrar">
+          <button className="btn-ghost px-2 py-1.5" disabled={ocupado || subiendo} onClick={onClose} aria-label="Cerrar">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -432,7 +436,9 @@ function DetalleCompra({
             )}
           </section>
 
-          <button className="btn-ghost w-full justify-center text-rose-600" disabled={ocupado} onClick={borrar}>
+          {errorEliminar && <p role="alert" className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-600">{errorEliminar}</p>}
+          <p className="text-xs text-slate-500">Eliminar compra borra el comprobante y su historial. Conserva los productos, el stock actual y las ventas.</p>
+          <button className="btn-ghost w-full justify-center text-rose-600" disabled={ocupado || subiendo} onClick={borrar}>
             <Trash2 className="h-4 w-4" /> Eliminar compra
           </button>
         </div>

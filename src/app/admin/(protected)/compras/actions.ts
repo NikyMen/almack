@@ -1,6 +1,7 @@
 "use server";
 
 import { unificarBorrador } from "@/lib/unificar-borrador";
+import { eliminarCompraEnTransaccion } from "@/lib/eliminar-compra";
 import { cantidadValida, stockDespues, type UnidadMedida, type ModoStock } from "@/lib/cantidades";
 import { confirmarStockEnTransaccion } from "@/lib/confirmar-stock";
 import { extraerDocumentoStock } from "@/lib/documento-stock";
@@ -164,19 +165,15 @@ export async function cambiarEstadoCompra(compraId: number, estado: string) {
 export async function eliminarCompra(compraId: number) {
   await requireAcceso("compras");
   const compra = await getCompra(compraId);
-  if (!compra) return { ok: false as const, error: "La compra no existe." };
-  const [aplicado] = await db.select({ id: compraItems.id }).from(compraItems).where(eq(compraItems.compraId, compraId)).limit(1);
-  if (aplicado && !compra.stockRevertido) return { ok: false as const, error: "Primero revertí la carga de stock desde Stock → Cargar stock." };
-  if (compra.imagen) await borrarArchivo(compra.imagen);
-  // Se van el borrador y los items junto con la compra. El stock ya cargado NO
-  // se revierte: borrar el papel no devuelve la mercadería al proveedor. Si hay
-  // que descontarlo, se hace desde Stock.
-  await db.delete(compraLineas).where(eq(compraLineas.compraId, compraId));
-  await db.delete(compraItems).where(eq(compraItems.compraId, compraId));
-  await db.delete(compraHistorial).where(eq(compraHistorial.compraId, compraId));
-  await db.delete(compras).where(eq(compras.id, compraId));
-  revalidatePath("/admin/compras");
-  revalidatePath("/");
+  if (!compra) return { ok: true as const };
+  let eliminada: Compra | null;
+  try {
+    eliminada = await eliminarCompraEnTransaccion(compraId);
+  } catch {
+    return { ok: false as const, error: "No se pudo eliminar la compra. No se borró ningún registro; intentá nuevamente." };
+  }
+  if (eliminada?.imagen) await borrarArchivo(eliminada.imagen);
+  for (const ruta of ["/admin/compras", "/admin/compras/diferencias-precios", "/admin/stock/carga", "/"]) revalidatePath(ruta);
   return { ok: true as const };
 }
 
