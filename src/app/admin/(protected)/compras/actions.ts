@@ -1,7 +1,7 @@
 "use server";
 
 import { unificarBorrador } from "@/lib/unificar-borrador";
-import { eliminarCompraEnTransaccion } from "@/lib/eliminar-compra";
+import { eliminarCompraEnTransaccion, deshacerCargaEnTransaccion } from "@/lib/eliminar-compra";
 import { cantidadValida, stockDespues, type UnidadMedida, type ModoStock } from "@/lib/cantidades";
 import { confirmarStockEnTransaccion } from "@/lib/confirmar-stock";
 import { extraerDocumentoStock } from "@/lib/documento-stock";
@@ -21,7 +21,7 @@ import {
   type Compra,
   type CompraLinea,
 } from "@/db/schema";
-import { getUsuarioActual, requireAcceso, requireCargaStock } from "@/lib/auth";
+import { getUsuarioActual, requireAcceso, requireCargaStock, requireAdmin } from "@/lib/auth";
 import {
   transcribirImagen,
   leerRemitoImagen,
@@ -163,17 +163,25 @@ export async function cambiarEstadoCompra(compraId: number, estado: string) {
 }
 
 export async function eliminarCompra(compraId: number) {
-  await requireAcceso("compras");
+  const usuario = await requireAcceso("compras");
   const compra = await getCompra(compraId);
   if (!compra) return { ok: true as const };
+  const [aplicada] = await db.select({ id: compraItems.id }).from(compraItems).where(eq(compraItems.compraId, compraId)).limit(1);
+  if (aplicada && !compra.stockRevertido) {
+    await requireAdmin();
+    try { await deshacerCargaEnTransaccion(compraId, usuario); }
+    catch (e) { return { ok: false as const, error: e instanceof Error ? e.message : "No se pudo deshacer la carga." }; }
+    for (const ruta of ["/admin/compras", "/admin/stock", "/admin/stock/carga", "/admin/stock/respaldos", "/admin/caja", "/admin/ventas", "/tienda", "/tienda/productos", "/"]) revalidatePath(ruta);
+    return { ok: true as const };
+  }
   let eliminada: Compra | null;
   try {
-    eliminada = await eliminarCompraEnTransaccion(compraId);
+    eliminada = await eliminarCompraEnTransaccion(compraId, usuario.nombre);
   } catch {
     return { ok: false as const, error: "No se pudo eliminar la compra. No se borró ningún registro; intentá nuevamente." };
   }
   if (eliminada?.imagen) await borrarArchivo(eliminada.imagen);
-  for (const ruta of ["/admin/compras", "/admin/compras/diferencias-precios", "/admin/stock/carga", "/"]) revalidatePath(ruta);
+  for (const ruta of ["/admin/compras", "/admin/compras/diferencias-precios", "/admin/stock/carga", "/admin/stock/respaldos", "/"]) revalidatePath(ruta);
   return { ok: true as const };
 }
 

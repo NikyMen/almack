@@ -12,7 +12,7 @@ import { desgloseStock, desgloseTransito } from "@/lib/stock";
 import { getContextoSucursal } from "@/lib/sucursal";
 import { StockTransitoView, type LineaEnTransito } from "@/components/stock-transito-view";
 import { SectionCards } from "@/components/section-cards";
-import { Boxes, ArrowLeftRight, Truck, TriangleAlert, PackagePlus } from "lucide-react";
+import { Boxes, ArrowLeftRight, Truck, TriangleAlert, PackagePlus, Archive } from "lucide-react";
 
 export default async function StockPage({ searchParams }: { searchParams: Promise<{ sucursal?: string; vista?: string }> }) {
   const usuario = await requireAcceso("stock");
@@ -21,6 +21,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
     return <>
       <PageHeader title="Stock" subtitle="Elegí cómo querés gestionar el inventario." />
       <SectionCards items={[
+        ...(usuario.rol === "admin" ? [{ href: "/admin/stock/respaldos", title: "Respaldos", description: "Guardá y descargá copias del inventario y de las cargas. Solo admin.", icon: Archive }] : []),
         { href: "/admin/stock/carga", title: "Cargar stock", description: "Ingresá comprobantes y revisá cantidades, costos y precios antes de cargar.", icon: PackagePlus },
         { href: "/admin/stock?vista=alertas", title: "Alertas de stock", description: "Revisá faltantes y configurá los mínimos y precios de los productos.", icon: TriangleAlert },
         { href: "/admin/stock?vista=inventario", title: "Ver stock", description: "Consultá productos y existencias de cada sucursal.", icon: Boxes },

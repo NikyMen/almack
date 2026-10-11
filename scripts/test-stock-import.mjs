@@ -6,13 +6,13 @@ import { eq } from "drizzle-orm";
 if (!process.env.TURSO_DATABASE_URL?.startsWith("file:stock-import-test-")) throw new Error("Se requiere una base temporal.");
 const migration = spawnSync(process.execPath, ["--import", "tsx", "src/db/migrate.ts"], { env: process.env, encoding: "utf8" });
 assert.equal(migration.status, 0, migration.stderr || migration.stdout);
-const { db, client, productos, compras, compraLineas, compraHistorial, stockSucursal, diferenciasPrecios, compraItems, stockConfiguracion, stockReglas } = await import("../src/db/index.ts");
+const { db, client, productos, compras, compraLineas, compraHistorial, stockSucursal, diferenciasPrecios, compraItems, stockConfiguracion, stockReglas, stockRespaldos } = await import("../src/db/index.ts");
 const { extraerDocumentoStock, leerTablaStock } = await import("../src/lib/documento-stock.ts");
 const { diferenciaCosto } = await import("../src/lib/precios-stock.ts");
 const { confirmarStockEnTransaccion } = await import("../src/lib/confirmar-stock.ts");
 const { stockDespues } = await import("../src/lib/cantidades.ts");
 const { clasificarItem } = await import("../src/lib/matching.ts");
-const { eliminarCompraEnTransaccion } = await import("../src/lib/eliminar-compra.ts");
+const { eliminarCompraEnTransaccion, deshacerCargaEnTransaccion } = await import("../src/lib/eliminar-compra.ts");
 
 try {
   const csv = new File(['Nombre;Código;Cantidad;Costo unitario\n"Alfajor; Milka";00123;5;"1.234,56"'], "ticket.csv");
@@ -184,9 +184,9 @@ try {
   assert.equal(sinCostoCreado.stock,3);
   assert.equal(sinCostoCreado.precioCompra,0);
   assert.equal(sinCostoCreado.precioVenta,250);
-  // Eliminar una compra aplicada con un producto archivado y un borrador
+  // Eliminar una compra ya revertida con un producto archivado y un borrador
   // parcialmente eliminado no altera el inventario ni otras compras.
-  const [paraBorrar] = await db.insert(compras).values({proveedor:"Eliminar aplicada",sucursalId}).returning();
+  const [paraBorrar] = await db.insert(compras).values({proveedor:"Eliminar ya revertida",sucursalId,stockRevertido:true}).returning();
   const [archivado] = await db.insert(productos).values({sku:"ARCHIVADO",nombre:"Eliminado individualmente",activo:false,stock:0}).returning();
   await db.insert(compraItems).values([
     {compraId:paraBorrar.id,productoId:auto.id,cantidad:2,precioUnit:60},
@@ -219,6 +219,51 @@ try {
   const [vacia] = await db.insert(compras).values({proveedor:"Borrador vacío",sucursalId}).returning();
   await eliminarCompraEnTransaccion(vacia.id);
   assert.equal((await db.select().from(compras).where(eq(compras.id,vacia.id))).length,0);
+  const [deshacer] = await db.insert(compras).values({proveedor:"Deshacer carga",sucursalId}).returning();
+  const [creadoRetirar] = await db.insert(productos).values({sku:"RETIRAR-CARGA",nombre:"Creado por carga",stock:3}).returning();
+  const [creadoCero] = await db.insert(productos).values({sku:"RETIRAR-CERO",nombre:"Creado sin stock",stock:0}).returning();
+  await db.insert(stockSucursal).values({productoId:creadoRetirar.id,sucursalId,cantidad:3});
+  await db.insert(compraItems).values([
+    {compraId:deshacer.id,productoId:creadoRetirar.id,cantidad:3},
+    {compraId:deshacer.id,productoId:creadoCero.id,cantidad:0},
+    {compraId:deshacer.id,productoId:auto.id,cantidad:2},
+    {compraId:deshacer.id,productoId:archivado.id,cantidad:1},
+  ]);
+  await db.insert(compraHistorial).values([creadoRetirar,creadoCero].map(p=>({compraId:deshacer.id,campo:"Producto creado",despues:`${p.nombre} (#${p.id}) saldo${p.stock}`})));
+  await assert.rejects(()=>eliminarCompraEnTransaccion(deshacer.id),/Deshacé la carga/);
+  const cantidadRespaldosAntes = (await db.select().from(stockRespaldos)).length;
+  await client.execute(`CREATE TRIGGER impedir_deshacer_prueba BEFORE UPDATE ON compras WHEN OLD.id = ${deshacer.id} BEGIN SELECT RAISE(ABORT, 'fallo de prueba'); END`);
+  await assert.rejects(()=>deshacerCargaEnTransaccion(deshacer.id,usuario));
+  assert.equal((await db.select().from(productos).where(eq(productos.id,creadoRetirar.id)))[0].activo,true);
+  assert.equal((await db.select().from(productos).where(eq(productos.id,creadoRetirar.id)))[0].stock,3);
+  assert.equal((await db.select().from(stockRespaldos)).length,cantidadRespaldosAntes);
+  await client.execute("DROP TRIGGER impedir_deshacer_prueba");
+  await deshacerCargaEnTransaccion(deshacer.id,usuario);
+  for(const id of [creadoRetirar.id,creadoCero.id]) assert.equal((await db.select().from(productos).where(eq(productos.id,id)))[0].activo,false);
+  const [existenteTrasDeshacer] = await db.select().from(productos).where(eq(productos.id,auto.id));
+  assert.equal(existenteTrasDeshacer.activo,true); assert.equal(existenteTrasDeshacer.stock,3);
+  assert.equal((await db.select().from(compras).where(eq(compras.id,deshacer.id)))[0].stockRevertido,true);
+  assert.equal((await db.select().from(compraItems).where(eq(compraItems.compraId,deshacer.id))).length,4);
+  const respaldosUndo = await db.select().from(stockRespaldos).where(eq(stockRespaldos.compraId,deshacer.id));
+  const snapshotUndo = JSON.parse(respaldosUndo[0].datos);
+  assert.equal(snapshotUndo.productos.find(p=>p.id===creadoRetirar.id).stock,3);
+  assert.equal(snapshotUndo.carga.items.length,4);
+  await deshacerCargaEnTransaccion(deshacer.id,usuario);
+  assert.equal((await db.select().from(productos).where(eq(productos.id,auto.id)))[0].stock,3);
+  const [conflictoUndo] = await db.insert(compras).values({proveedor:"Movimiento posterior",sucursalId}).returning();
+  await db.insert(compraItems).values({compraId:conflictoUndo.id,productoId:auto.id,cantidad:10});
+  await assert.rejects(()=>deshacerCargaEnTransaccion(conflictoUndo.id,usuario),/stock cambió/);
+  assert.equal((await db.select().from(productos).where(eq(productos.id,auto.id)))[0].stock,3);
+  assert.equal((await db.select().from(compras).where(eq(compras.id,conflictoUndo.id)))[0].stockRevertido,false);
+  const [cargaConUso] = await db.insert(compras).values({proveedor:"Producto usado posteriormente",sucursalId}).returning();
+  const [conUso] = await db.insert(productos).values({sku:"CON-USO-POSTERIOR",nombre:"Producto con otra carga",stock:0}).returning();
+  await db.insert(compraItems).values([{compraId:cargaConUso.id,productoId:conUso.id,cantidad:0},{compraId:conflictoUndo.id,productoId:conUso.id,cantidad:0}]);
+  await db.insert(compraHistorial).values({compraId:cargaConUso.id,campo:"Producto creado",despues:`${conUso.nombre} (#${conUso.id}) saldo0`});
+  await deshacerCargaEnTransaccion(cargaConUso.id,usuario);
+  assert.equal((await db.select().from(productos).where(eq(productos.id,conUso.id)))[0].activo,true);
+  const backupPrimera = await db.select().from(stockRespaldos).where(eq(stockRespaldos.compraId,compra.id));
+  assert.equal(JSON.parse(backupPrimera[0].datos).productos.find(p=>p.id===producto.id).stock,10);
+  console.log("Deshacer: retiros de productos nuevos en cero o positivos, producto archivado, conservación del historial, respaldo previo, rollback y stock posterior protegido OK.");
   console.log("Eliminación de compras: aplicada, producto archivado, filas eliminadas, dependencias, rollback, reintentos y conservación del stock OK.");
   console.log("Reglas: costo × multiplicador general, prioridad por producto, reglas obsoletas, costo cero, alertas activas/desactivadas y productos nuevos OK.");  console.log("Duplicados: un solo producto, suma de unidades, venta costo × 2 y rollback de precios incompatibles OK.");
   console.log("Stock: CSV/XLSX, códigos, validación, subas/bajas, margen, revalorización, idempotencia, precios obsoletos y rollback OK.");

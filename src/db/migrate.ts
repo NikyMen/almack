@@ -1,7 +1,8 @@
 import { stockDDL } from "./stock-config-schema";
 import { cajaDDL } from "./caja-ddl";
 import { randomBytes, scryptSync } from "node:crypto";
-import { client } from "./index";
+import { client, db } from "./index";
+import { guardarRespaldoStock } from "../lib/respaldos-stock";
 
 // Hash de contraseña (scrypt nativo, sin dependencias). Mismo formato salt:hash
 // que verifyPassword en src/lib/usuarios.ts.
@@ -17,6 +18,11 @@ const MODULOS = [
 ];
 
 const statements = [
+  `CREATE TABLE IF NOT EXISTS stock_respaldos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, motivo TEXT NOT NULL, compra_id INTEGER,
+    usuario_nombre TEXT NOT NULL, productos INTEGER NOT NULL, datos TEXT NOT NULL,
+    creado_en INTEGER DEFAULT (strftime('%s','now'))
+  )`,
   ...cajaDDL,
   ...stockDDL,
   `CREATE TABLE IF NOT EXISTS diferencias_precios (
@@ -451,6 +457,11 @@ async function migrate() {
       sql: "INSERT INTO usuarios (nombre, usuario, password_hash, rol, permisos, activo) VALUES (?, ?, ?, 'admin', ?, 1)",
       args: ["Administrador", handle, hashPassword(pass), JSON.stringify(MODULOS)],
     });
+  }
+
+  const { rows: respaldos } = await client.execute("SELECT COUNT(*) AS n FROM stock_respaldos");
+  if (Number(respaldos[0]?.n ?? 0) === 0) {
+    await db.transaction(tx => guardarRespaldoStock(tx, "Respaldo inicial", "Sistema"));
   }
 
   console.log("Esquema de base de datos listo.");

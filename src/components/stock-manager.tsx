@@ -3,7 +3,7 @@ import { Overlay } from "@/components/overlay";
 
 import { ConfigProductoStock } from "@/components/stock-configuracion";
 import { useId, useState, useTransition } from "react";
-import { Sparkles, Loader2, Plus, Pencil, Trash2, Eye, EyeOff, ScanLine, Store } from "lucide-react";
+import { Sparkles, Loader2, Plus, Pencil, Trash2, Eye, EyeOff, ScanLine, Store, Settings2, Tag } from "lucide-react";
 import type { Producto, Sucursal } from "@/db/schema";
 import { money } from "@/lib/format";
 import { FilterableTable, Col } from "@/components/filterable-table";
@@ -81,11 +81,11 @@ export function StockManager({
 
   const cols: Col<ProductoConStock>[] = [
     { key: "sku", head: "SKU", cell: (p) => <span className="font-mono text-xs text-slate-500">{p.sku}</span>, value: (p) => p.sku },
-    { key: "nombre", head: "Producto", cell: (p) => <span className="font-medium">{p.nombre}</span>, value: (p) => p.nombre },
+    { key: "nombre", head: "Producto", className: "min-w-48 max-w-72", cell: (p) => <span className="font-medium">{p.nombre}</span>, value: (p) => p.nombre },
     { key: "categoria", head: "Categoría", cell: (p) => <span className="text-slate-500">{p.categoria}</span>, value: (p) => p.categoria ?? "General", filter: true },
-    { key: "precio", head: "Precio", cell: (p) => <>{money(p.precioVenta)} / {p.unidadMedida === "kg" ? "kg" : "u"}</>, value: (p) => p.precioVenta, sort: true },
+    { key: "precio", head: "Precio", className: "whitespace-nowrap", cell: (p) => <>{money(p.precioVenta)} / {p.unidadMedida === "kg" ? "kg" : "u"}</>, value: (p) => p.precioVenta, sort: true },
     {
-      key: "stock", head: sucursalActivaId ? "Stock acá" : "Stock total", value: (p) => p.stockLocal, sort: true,
+      key: "stock", head: sucursalActivaId ? "Stock acá" : "Stock total", className: "whitespace-nowrap", value: (p) => p.stockLocal, sort: true,
       cell: (p) => {
         const bajo = p.alertaActiva && p.stockLocal < p.stockMinimo;
         return (
@@ -111,13 +111,13 @@ export function StockManager({
     {
       key: "acciones", head: "Acciones",
       cell: (p) => (
-        <div className="flex flex-wrap items-center gap-1">
+        <div className="flex min-w-72 flex-nowrap items-center gap-1">
           <button className="btn-ghost px-2 py-1" title="Quitar 1" onClick={() => ajustar(p, -1)}>−</button>
           <button className="btn-ghost px-2 py-1" title="Sumar 1" onClick={() => ajustar(p, 1)}>+</button>
-          {administrador && <button className="btn-ghost px-2 py-1 text-xs" onClick={() => setConfigurando(p)}>Precio y alertas</button>}
+          {administrador && <button className="btn-ghost px-2 py-1" title="Precio y alertas" aria-label={`Precio y alertas de ${p.nombre}`} onClick={() => setConfigurando(p)}><Settings2 className="h-3.5 w-3.5" /></button>}
           <button className="btn-ghost px-2 py-1" title="Editar" onClick={() => setEditando(p)}><Pencil className="h-3.5 w-3.5" /></button>
-          <button className="btn-ghost px-2 py-1 text-xs" title={p.publicado ? "Ocultar de la tienda" : "Publicar en la tienda"} onClick={() => startTransition(() => togglePublicado(p.id))}>{p.publicado ? "Ocultar" : "Publicar"}</button>
-          <button className="btn-ghost px-2 py-1 text-xs" title="Alternar oferta" onClick={() => startTransition(() => toggleOfertaTienda(p.id))}>Oferta</button>
+          <button className="btn-ghost px-2 py-1" title={p.publicado ? "Ocultar de la tienda" : "Publicar en la tienda"} aria-label={p.publicado ? "Ocultar de la tienda" : "Publicar en la tienda"} onClick={() => startTransition(() => togglePublicado(p.id))}><Store className={`h-3.5 w-3.5 ${p.publicado ? "text-emerald-600" : ""}`} /></button>
+          <button className="btn-ghost px-2 py-1" title="Alternar oferta" aria-label="Alternar oferta" onClick={() => startTransition(() => toggleOfertaTienda(p.id))}><Tag className="h-3.5 w-3.5" /></button>
           {administrador && <button className="btn-ghost px-2 py-1 text-rose-600" title="Eliminar" onClick={() => borrar(p)}><Trash2 className="h-3.5 w-3.5" /></button>}
         </div>
       ),
@@ -227,7 +227,7 @@ export function StockManager({
 
 function Desglose({ producto, sucursales }: { producto: ProductoConStock; sucursales: Sucursal[] }) {
   return (
-    <span className="flex flex-wrap gap-1">
+    <span className="flex min-w-36 flex-col gap-1 whitespace-nowrap">
       {sucursales.map((s) => {
         const n = producto.porSucursal[s.id] ?? 0;
         return (

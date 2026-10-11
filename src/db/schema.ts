@@ -5,6 +5,16 @@ import { sql } from "drizzle-orm";
 
 const now = sql`(strftime('%s','now'))`;
 
+export const stockRespaldos = sqliteTable("stock_respaldos", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  motivo: text("motivo").notNull(),
+  compraId: integer("compra_id"),
+  usuarioNombre: text("usuario_nombre").notNull(),
+  productos: integer("productos").notNull(),
+  datos: text("datos").notNull(),
+  creadoEn: integer("creado_en", { mode: "timestamp" }).default(now),
+});
+
 // ---------------------------------------------------------------------------
 // Sucursales (locales)
 // ---------------------------------------------------------------------------

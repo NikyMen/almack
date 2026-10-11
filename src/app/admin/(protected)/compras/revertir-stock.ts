@@ -3,6 +3,7 @@ import { db, compras, compraItems, compraHistorial, productos, stockSucursal } f
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { requireAdmin } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
+import { guardarRespaldoStock } from "@/lib/respaldos-stock";
 
 export type LineaReversion = {
   productoId: number; nombre: string; cargado: number; actual: number; quedaria: number;
@@ -42,6 +43,7 @@ export async function revertirCargaStock(compraId: number, decisiones: DecisionR
     const resultado = await db.transaction(async tx => {
       // La lectura y la escritura ocurren dentro de una transacción para no aplicar una vista previa vieja.
       const { compra, lineas } = await detalle(compraId, tx);
+      await guardarRespaldoStock(tx, "Antes de revertir carga", usuario.nombre, compraId);
       if (decisiones.length !== lineas.length || new Set(decisiones.map(d => d.productoId)).size !== lineas.length)
         throw new Error("Volvé a revisar la carga antes de confirmar.");
       const finales = lineas.map(linea => {

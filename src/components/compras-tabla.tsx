@@ -58,7 +58,7 @@ export function ComprasTabla({
         ),
     },
     { key: "proveedor", head: "Proveedor", cell: (c) => <span className="font-medium">{c.proveedor}</span>, value: (c) => c.proveedor, filter: true },
-    { key: "estado", head: "Estado", cell: (c) => <Estado value={c.estado} />, value: (c) => ETIQUETA_ESTADO[c.estado] ?? c.estado, filter: true },
+    { key: "estado", head: "Estado", cell: (c) => c.stockRevertido ? <span className="badge bg-amber-50 text-amber-800">Carga deshecha</span> : <Estado value={c.estado} />, value: (c) => c.stockRevertido ? "Carga deshecha" : ETIQUETA_ESTADO[c.estado] ?? c.estado, filter: true },
     { key: "fecha", head: "Fecha", cell: (c) => <span className="text-slate-500">{fecha(c.fecha)}</span>, value: (c) => (c.fecha instanceof Date ? c.fecha.getTime() : Number(c.fecha)), sort: true },
     { key: "total", head: "Total", cell: (c) => <span className="font-semibold tabular-nums">{money(c.total)}</span>, value: (c) => c.total, sort: true, className: "font-semibold" },
   ];
@@ -244,7 +244,7 @@ function DetalleCompra({
   }
 
   function borrar() {
-    if (!confirm(`¿Eliminar la compra #${compra.id} de ${compra.proveedor} y sus registros? No se puede deshacer.\n\nEl stock actual y las ventas se conservan. Para descontar esta carga, primero revertila desde Stock → Cargar stock.`)) return;
+    if (!confirm(`¿Deshacer o eliminar la compra #${compra.id} de ${compra.proveedor}?\n\nSi tiene stock aplicado, se revierte esa carga y se retiran los productos nuevos sin movimientos posteriores. Se guarda un respaldo y se conserva el historial. Los productos existentes y las ventas no se eliminan.`)) return;
     setErrorEliminar("");
     startTransition(async () => {
       try {
@@ -437,9 +437,9 @@ function DetalleCompra({
           </section>
 
           {errorEliminar && <p role="alert" className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-600">{errorEliminar}</p>}
-          <p className="text-xs text-slate-500">Eliminar compra borra el comprobante y su historial. Conserva los productos, el stock actual y las ventas.</p>
-          <button className="btn-ghost w-full justify-center text-rose-600" disabled={ocupado || subiendo} onClick={borrar}>
-            <Trash2 className="h-4 w-4" /> Eliminar compra
+          <p className="text-xs text-slate-500">Una compra aplicada se deshace con respaldo: se revierte el stock y se retiran los productos creados por ella que no tengan movimientos posteriores. El historial se conserva.</p>
+          <button className="btn-ghost w-full justify-center text-rose-600" disabled={ocupado || subiendo || historial === null} onClick={borrar}>
+            <Trash2 className="h-4 w-4" /> {compra.stockRevertido ? "Eliminar comprobante ya deshecho" : historial?.some(h => h.campo === "Carga al stock") ? "Deshacer carga de stock" : "Eliminar compra"}
           </button>
         </div>
       </div>

@@ -5,6 +5,7 @@ import { and, eq, asc, desc, sql, type SQL } from "drizzle-orm";
 import { fijarStockEnTx, sumarStockEnTx } from "@/lib/stock";
 import { stockDespues, type ModoStock } from "@/lib/cantidades";
 import { diferenciaCosto, type ImpactoLinea } from "@/lib/precios-stock";
+import { guardarRespaldoStock } from "@/lib/respaldos-stock";
 
 export async function confirmarStockEnTransaccion({ compraId, pendientes, sucursalId, usuario, opciones }: {
   compraId: number; pendientes: CompraLinea[]; sucursalId: number | null;
@@ -17,6 +18,8 @@ export async function confirmarStockEnTransaccion({ compraId, pendientes, sucurs
   await db.transaction(async (tx) => {
     const [compra] = await tx.select().from(compras).where(eq(compras.id, compraId));
     if (!compra || compra.stockRevertido) throw new Error("Esta carga fue revertida y no se puede volver a aplicar.");
+    const [aplicada] = await tx.select({ id: compraLineas.id }).from(compraLineas).where(and(eq(compraLineas.compraId, compraId), eq(compraLineas.aplicado, true))).limit(1);
+    if (!aplicada) await guardarRespaldoStock(tx, "Antes de aplicar carga", usuario.nombre, compraId);
     const config = await leerReglasStock(tx);
     const vigentes = await tx.select().from(compraLineas).where(and(eq(compraLineas.compraId, compraId), eq(compraLineas.aplicado, false))).orderBy(asc(compraLineas.id));
     if (JSON.stringify(vigentes.slice(0, pendientes.length)) !== JSON.stringify(pendientes)) throw new Error("El borrador cambió. Volvé a revisar la carga.");
