@@ -365,9 +365,9 @@ type ItemCaja = { productoId: number; cantidad: number };
 export async function cobrarVenta(
   items: ItemCaja[],
   medioPago: MedioPago = "efectivo",
-  opts?: { clienteId?: number | null; canal?: string }
+  opts?: { clienteId?: number | null; canal?: string; permitirSinStock?: boolean }
 ) {
-  const usuario = await requireAcceso(opts ? "ventas" : "caja");
+  const usuario = await requireAcceso(opts && ("clienteId" in opts || "canal" in opts) ? "ventas" : "caja");
   const sucursalId = await sucursalOperativaId();
   if (!sucursalId) return { ok: false as const, error: "Creá una sucursal antes de cobrar." };
   try {

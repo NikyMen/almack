@@ -12,7 +12,7 @@ const extraer = (turnoId, monto, clave = 'secreta123', usuario = 'ana', solicitu
 try {
   await client.executeMultiple(`CREATE TABLE sucursales(id INTEGER PRIMARY KEY, nombre TEXT NOT NULL, direccion TEXT DEFAULT '', telefono TEXT DEFAULT '', activo INTEGER DEFAULT 1, orden INTEGER DEFAULT 0, creado_en INTEGER);
 CREATE TABLE productos(id INTEGER PRIMARY KEY, sku TEXT, nombre TEXT, descripcion TEXT, categoria TEXT, precio_venta REAL, precio_compra REAL, stock REAL, unidad_medida TEXT NOT NULL DEFAULT 'unidad', activo INTEGER NOT NULL DEFAULT 1, stock_minimo INTEGER, imagen TEXT, publicado INTEGER, descripcion_web TEXT, creado_en INTEGER);
-CREATE TABLE stock_sucursal(id INTEGER PRIMARY KEY, producto_id INTEGER, sucursal_id INTEGER, cantidad INTEGER);
+CREATE TABLE stock_sucursal(id INTEGER PRIMARY KEY, producto_id INTEGER, sucursal_id INTEGER, cantidad INTEGER, UNIQUE(producto_id, sucursal_id));
 CREATE TABLE ventas(id INTEGER PRIMARY KEY, cliente_id INTEGER, sucursal_id INTEGER, caja_turno_id INTEGER, cajero TEXT, total REAL, estado TEXT, canal TEXT, medio_pago TEXT, referencia TEXT, facturada INTEGER, fecha INTEGER);
 CREATE TABLE venta_items(id INTEGER PRIMARY KEY, venta_id INTEGER, producto_id INTEGER, cantidad INTEGER, precio_unit REAL);`);
   for (const ddl of cajaDDL) await client.execute(ddl);
@@ -89,6 +89,15 @@ CREATE TABLE venta_items(id INTEGER PRIMARY KEY, venta_id INTEGER, producto_id I
   assert.equal((await saldoUltimoCierre(1)).disponible,39);
   await assert.rejects(extraer(nuevo.id,-1,'nuevaClave123'));
   await assert.rejects(extraer(nuevo.id,0,'nuevaClave123'));
+  await db.insert(productos).values({id:3,sku:'SIN',nombre:'Sin carga',precioVenta:50,stock:0});
+  await abrirCaja(1,'Ana',0);
+  await assert.rejects(venderEnCaja(1,'Ana',[{productoId:3,cantidad:1}],'efectivo'), /Sin stock/);
+  await assert.rejects(venderEnCaja(1,'Ana',[{productoId:3,cantidad:1}],'efectivo',{permitirSinStock:true,canal:'online'}), /Sin stock/);
+  await venderEnCaja(1,'Ana',[{productoId:3,cantidad:2}],'efectivo',{permitirSinStock:true});
+  await venderEnCaja(1,'Ana',[{productoId:3,cantidad:1}],'efectivo',{permitirSinStock:true});
+  assert.equal((await db.select().from(stockSucursal).where(eq(stockSucursal.productoId,3)))[0].cantidad,-3);
+  assert.equal((await db.select().from(productos).where(eq(productos.id,3)))[0].stock,-3);
+  await assert.rejects(venderEnCaja(1,'Ana',[{productoId:3,cantidad:1}],'efectivo'), /Sin stock/);
   console.log('Caja: apertura, aislamiento por sucursal, cobros, movimientos, arqueo, reapertura y rollback OK.');
 } finally {
   client.close();

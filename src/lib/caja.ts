@@ -64,7 +64,7 @@ export async function cerrarCaja(sucursalId: number, turnoId: number, responsabl
     return { esperado: resumen.esperado, contado, diferencia };
   });
 }
-export async function venderEnCaja(sucursalId: number, cajero: string, items: { productoId: number; cantidad: number }[], medioPago: string, opts?: { clienteId?: number | null; canal?: string }) {
+export async function venderEnCaja(sucursalId: number, cajero: string, items: { productoId: number; cantidad: number }[], medioPago: string, opts?: { clienteId?: number | null; canal?: string; permitirSinStock?: boolean }) {
   if (!items.length || !["efectivo", "qr", "tarjeta"].includes(medioPago)) throw new Error("Revisá los productos y el medio de pago.");
   const cantidades = new Map<number, number>();
   for (const item of items) {
@@ -81,8 +81,14 @@ export async function venderEnCaja(sucursalId: number, cajero: string, items: { 
       if (!p || !p.activo) throw new Error("Hay un producto que ya no está disponible.");
       if (!cantidadValida(cantidad, p.unidadMedida as "unidad" | "kg")) throw new Error(`Cantidad inválida de "${p.nombre}". Usá unidades enteras o kg con hasta tres decimales.`);
       validarMonto(p.precioVenta);
-      const r = await tx.update(stockSucursal).set({ cantidad: sql`round(${stockSucursal.cantidad} - ${cantidad}, 3)` }).where(and(eq(stockSucursal.productoId, productoId), eq(stockSucursal.sucursalId, sucursalId), sql`${stockSucursal.cantidad} >= ${cantidad}`));
-      if (!r.rowsAffected) throw new Error(`Sin stock suficiente de "${p.nombre}".`);
+      const permitirSinStock = opts?.permitirSinStock === true && opts.canal !== "online";
+      if (permitirSinStock) {
+        await tx.insert(stockSucursal).values({ productoId, sucursalId, cantidad: -cantidad })
+          .onConflictDoUpdate({ target: [stockSucursal.productoId, stockSucursal.sucursalId], set: { cantidad: sql`round(${stockSucursal.cantidad} - ${cantidad}, 3)` } });
+      } else {
+        const r = await tx.update(stockSucursal).set({ cantidad: sql`round(${stockSucursal.cantidad} - ${cantidad}, 3)` }).where(and(eq(stockSucursal.productoId, productoId), eq(stockSucursal.sucursalId, sucursalId), sql`${stockSucursal.cantidad} >= ${cantidad}`));
+        if (!r.rowsAffected) throw new Error(`Sin stock suficiente de "${p.nombre}".`);
+      }
       await tx.update(productos).set({ stock: sql`(select coalesce(sum(cantidad),0) from stock_sucursal where producto_id = ${productoId})` }).where(eq(productos.id, productoId));
       lineas.push({ productoId, cantidad, precioUnit: p.precioVenta });
       total += p.precioVenta * cantidad;

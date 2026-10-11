@@ -23,6 +23,7 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
   const [eligiendoPago, setEligiendoPago] = useState(false);
   const [escaneando, setEscaneando] = useState(false);
   const [pedidoAbierto, setPedidoAbierto] = useState(false);
+  const [permitirSinStock, setPermitirSinStock] = useState(false);
   const [pendiente, startTransition] = useTransition();
   const inputRef = useRef<HTMLInputElement>(null);
   const params = useSearchParams();
@@ -31,7 +32,7 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
   const {
     carrito, error, setError, enCarrito, total, unidades,
     agregar, cambiarCantidad, quitar, vaciar, buscar, agregarPorCodigo, items,
-  } = useCarrito(productos);
+  } = useCarrito(productos, permitirSinStock);
 
   const filtrados = buscar(busqueda);
 
@@ -96,10 +97,11 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
     const pedido = items();
     const unidadesPedido = unidades;
     startTransition(async () => {
-      const r = await cobrarVenta(pedido, medioPago);
+      const r = await cobrarVenta(pedido, medioPago, { permitirSinStock });
       if (!r.ok) return setError(r.error);
       setTicket({ ventaId: r.ventaId, total: r.total, items: unidadesPedido, medioPago });
       vaciar();
+      setPermitirSinStock(false);
       setBusqueda("");
       setEligiendoPago(false);
       setPedidoAbierto(false);
@@ -161,6 +163,11 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
       )}
 
       {error && <p className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-600">{error}</p>}
+
+      <label className="mt-3 flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">
+        <input type="checkbox" className="mt-1" checked={permitirSinStock} onChange={e => setPermitirSinStock(e.target.checked)} disabled={pendiente} />
+        <span>Permitir vender sin stock <span className="block text-xs">El saldo de esta sucursal puede quedar negativo.</span></span>
+      </label>
 
       <div className="mt-4 border-t border-slate-100 pt-3">
         <div className="mb-3 flex items-end justify-between">
@@ -244,7 +251,7 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
           {filtrados.map((p) => {
             const usado = enCarrito.get(p.id) ?? 0;
             const restante = p.stock - usado;
-            const agotado = restante <= 0;
+            const agotado = !permitirSinStock && restante <= 0;
             return (
               <button
                 key={p.id}
@@ -257,7 +264,7 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
                 {p.precioCompra <= 0 && <span className="mt-1 text-xs text-amber-700">Precio de costo no cargado</span>}
                 <div className="mt-auto flex shrink-0 flex-wrap items-end justify-between gap-2 pt-3">
                   <span className={`text-[11px] leading-tight ${agotado ? "text-rose-500" : "text-slate-400"}`}>
-                    {agotado ? "sin stock" : `stock ${restante} ${p.unidadMedida === "kg" ? "kg" : "u"}`}
+                    {restante <= 0 ? `stock ${restante}` : `stock ${restante} ${p.unidadMedida === "kg" ? "kg" : "u"}`}
                   </span>
                   <span className="text-right text-base font-bold tabular-nums leading-none text-navy">
                     {money(p.precioVenta)} / {p.unidadMedida === "kg" ? "kg" : "u"}

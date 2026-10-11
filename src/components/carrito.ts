@@ -1,8 +1,7 @@
 "use client";
 
 // Lógica de carrito compartida entre la Caja (POS) y el alta manual de venta.
-// Mantiene la validación de stock contra lo que ya está cargado, que es lo que
-// evita vender dos veces la última unidad.
+// Normalmente valida stock contra lo que ya está cargado.
 
 import { useCallback, useMemo, useState } from "react";
 import type { Producto } from "@/db/schema";
@@ -10,7 +9,7 @@ import { cantidadValida, redondearCantidad } from "@/lib/cantidades";
 
 export type Linea = { producto: Producto; cantidad: number };
 
-export function useCarrito(productos: Producto[]) {
+export function useCarrito(productos: Producto[], permitirSinStock = false) {
   const [carrito, setCarrito] = useState<Linea[]>([]);
   const [error, setError] = useState("");
 
@@ -29,7 +28,7 @@ export function useCarrito(productos: Producto[]) {
       const existe = prev.find((l) => l.producto.id === p.id);
       const actual = existe?.cantidad ?? 0;
       const siguiente = redondearCantidad(actual + delta);
-      if (siguiente > p.stock) {
+      if (!permitirSinStock && siguiente > p.stock) {
         setError(`Sin stock suficiente de "${p.nombre}" (quedan ${p.stock}).`);
         return prev;
       }
@@ -37,14 +36,14 @@ export function useCarrito(productos: Producto[]) {
       if (existe) return prev.map((l) => (l.producto.id === p.id ? { ...l, cantidad: siguiente } : l));
       return [...prev, { producto: p, cantidad: siguiente }];
     });
-  }, []);
+  }, [permitirSinStock]);
 
   const cambiarCantidad = useCallback((p: Producto, cantidad: number) => {
     setError("");
     if (!cantidadValida(cantidad, p.unidadMedida as "unidad" | "kg")) { setError("Ingresá unidades enteras o kilos con hasta tres decimales."); return; }
-    if (cantidad > p.stock) { setError(`Sin stock suficiente de "${p.nombre}" (quedan ${p.stock}).`); return; }
+    if (!permitirSinStock && cantidad > p.stock) { setError(`Sin stock suficiente de "${p.nombre}" (quedan ${p.stock}).`); return; }
     setCarrito(prev => prev.map(l => l.producto.id === p.id ? { ...l, cantidad: redondearCantidad(cantidad) } : l));
-  }, []);
+  }, [permitirSinStock]);
 
   const quitar = useCallback((id: number) => {
     setCarrito((prev) => prev.filter((l) => l.producto.id !== id));

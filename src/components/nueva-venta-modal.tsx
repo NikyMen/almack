@@ -26,11 +26,12 @@ export function NuevaVentaModal({
   const [busqueda, setBusqueda] = useState("");
   const [clienteId, setClienteId] = useState("");
   const [medio, setMedio] = useState<MedioPago>("efectivo");
+  const [permitirSinStock, setPermitirSinStock] = useState(false);
   const [guardando, startTransition] = useTransition();
   const router = useRouter();
 
   const { carrito, error, setError, enCarrito, total, unidades, agregar, quitar, buscar, items } =
-    useCarrito(productos);
+    useCarrito(productos, permitirSinStock);
 
   const resultados = buscar(busqueda, 8);
 
@@ -41,6 +42,7 @@ export function NuevaVentaModal({
     startTransition(async () => {
       const r = await cobrarVenta(pedido, medio, {
         clienteId: clienteId ? Number(clienteId) : null,
+        permitirSinStock,
       });
       if (!r.ok) return setError(r.error);
       router.refresh();
@@ -83,7 +85,7 @@ export function NuevaVentaModal({
                   return (
                     <button
                       key={p.id}
-                      disabled={restante <= 0}
+                      disabled={!permitirSinStock && restante <= 0}
                       onClick={() => agregar(p)}
                       className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition hover:bg-lime/5 disabled:opacity-40"
                     >
@@ -91,7 +93,7 @@ export function NuevaVentaModal({
                         <p className="truncate text-sm font-medium">{p.nombre}</p>
                         {p.precioCompra <= 0 && <p className="text-xs text-amber-700">Precio de costo no cargado</p>}
                         <p className="font-mono text-[11px] text-slate-400">
-                          {p.sku} · {restante <= 0 ? "sin stock" : `stock ${restante}`}
+                          {p.sku} · stock {restante}
                         </p>
                       </div>
                       <span className="text-sm font-semibold tabular-nums">{money(p.precioVenta)}</span>
@@ -172,6 +174,11 @@ export function NuevaVentaModal({
               </div>
             </div>
           </div>
+
+          <label className="flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            <input type="checkbox" className="mt-1" checked={permitirSinStock} onChange={e => setPermitirSinStock(e.target.checked)} disabled={guardando} />
+            <span>Permitir vender sin stock <span className="block text-xs">El saldo de esta sucursal puede quedar negativo.</span></span>
+          </label>
 
           {error && <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-600">{error}</p>}
 
