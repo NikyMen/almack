@@ -16,7 +16,10 @@ export type Col<T> = {
   /** activa orden asc/desc (fecha, total…) */
   sort?: boolean;
   className?: string;
+  width?: number;
 };
+
+type SortOption<T> = { key: string; label: string; direction: "asc" | "desc"; compare?: (a: T, b: T) => number };
 
 export function FilterableTable<T>({
   rows,
@@ -27,6 +30,8 @@ export function FilterableTable<T>({
   rowClassName,
   mobileCard,
   onRowClick,
+  compact = false,
+  sortOptions,
 }: {
   rows: T[];
   cols: Col<T>[];
@@ -42,6 +47,8 @@ export function FilterableTable<T>({
    */
   mobileCard?: (row: T) => ReactNode;
   onRowClick?: (row: T) => void;
+  compact?: boolean;
+  sortOptions?: SortOption<T>[];
 }) {
   const [q, setQ] = useState("");
   const [filters, setFilters] = useState<Record<string, Set<string>>>({});
@@ -71,16 +78,17 @@ export function FilterableTable<T>({
     }
     if (sortKey) {
       const c = cols.find((x) => x.key === sortKey);
-      if (c) {
+      const custom = sortOptions?.find(o => o.key === sortKey)?.compare;
+      if (c || custom) {
         out = [...out].sort((a, b) => {
-          const va = valOf(c, a), vb = valOf(c, b);
-          const cmp = typeof va === "number" && typeof vb === "number" ? va - vb : String(va).localeCompare(String(vb));
+          const va = c ? valOf(c, a) : 0, vb = c ? valOf(c, b) : 0;
+          const cmp = custom ? custom(a, b) : typeof va === "number" && typeof vb === "number" ? va - vb : String(va).localeCompare(String(vb));
           return sortDir === "asc" ? cmp : -cmp;
         });
       }
     }
     return out;
-  }, [rows, q, filters, sortKey, sortDir, cols, search]);
+  }, [rows, q, filters, sortKey, sortDir, cols, search, sortOptions]);
 
   function toggleFiltro(key: string, val: string) {
     setFilters((f) => {
@@ -114,6 +122,17 @@ export function FilterableTable<T>({
             />
           </div>
         )}
+
+        {sortOptions && <label className="flex items-center gap-2 text-xs text-slate-500">
+          Ordenar
+          <select className="input w-auto max-w-full" value={sortKey ? `${sortKey}:${sortDir}` : ""} onChange={e => {
+            const opcion = sortOptions.find(o => `${o.key}:${o.direction}` === e.target.value);
+            setSortKey(opcion?.key ?? null); setSortDir(opcion?.direction ?? "desc");
+          }}>
+            <option value="">Sin ordenar</option>
+            {sortOptions.map(o => <option key={`${o.key}:${o.direction}`} value={`${o.key}:${o.direction}`}>{o.label}</option>)}
+          </select>
+        </label>}
 
         {/* En mobile los filtros de las cabeceras no existen: van a una hoja */}
         {mobileCard && (cols.some((c) => c.filter || c.sort)) && (
@@ -157,14 +176,15 @@ export function FilterableTable<T>({
 
       {/* Tabla (escritorio, y también mobile si no hay render de tarjeta) */}
       <div className={`card overflow-x-auto ${mobileCard ? "hidden xl:block" : ""}`}>
-        <table className="w-full text-sm">
+        <table className={`w-full ${compact ? "table-fixed text-xs" : "text-sm"}`}>
+          {compact && <colgroup>{cols.map(c => <col key={c.key} style={c.width ? { width: `${c.width}%` } : undefined} />)}</colgroup>}
           <thead className="border-b border-slate-200 bg-slate-50/80 text-left text-xs uppercase tracking-wide text-slate-500">
             <tr>
               {cols.map((c) => {
                 const sel = filters[c.key];
                 const active = (sel && sel.size > 0) || sortKey === c.key;
                 return (
-                  <th key={c.key} className="relative px-4 py-3 font-medium">
+                  <th key={c.key} className={`relative py-3 font-medium ${compact ? "break-words px-2" : "px-4"}`}>
                     {c.filter || c.sort ? (
                       <button
                         className={`flex items-center gap-1 hover:text-navy ${active ? "text-navy" : ""}`}
@@ -177,8 +197,8 @@ export function FilterableTable<T>({
                           }
                         }}
                       >
-                        {c.head}
-                        {c.filter ? <Filter className="h-3 w-3" /> : <ArrowUpDown className="h-3 w-3" />}
+                        <span className={compact ? "min-w-0 break-words" : undefined}>{c.head}</span>
+                        {c.filter ? <Filter className="h-3 w-3 shrink-0" /> : <ArrowUpDown className="h-3 w-3 shrink-0" />}
                         {sel && sel.size > 0 && <span className="rounded-full bg-navy px-1.5 text-[9px] text-white">{sel.size}</span>}
                       </button>
                     ) : (
@@ -216,7 +236,7 @@ export function FilterableTable<T>({
                 className={`hover:bg-slate-50 ${onRowClick ? "cursor-pointer" : ""} ${rowClassName?.(r) ?? ""}`}
               >
                 {cols.map((c) => (
-                  <td key={c.key} className={`px-4 py-3 ${c.className ?? ""}`}>{c.cell(r)}</td>
+                  <td key={c.key} className={`py-3 ${compact ? "break-words px-2 [overflow-wrap:anywhere]" : "px-4"} ${c.className ?? ""}`}>{c.cell(r)}</td>
                 ))}
               </tr>
             ))}

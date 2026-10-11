@@ -3,7 +3,7 @@ import { Overlay } from "@/components/overlay";
 
 import { ConfigProductoStock } from "@/components/stock-configuracion";
 import { useId, useRef, useState, useTransition, type ReactNode } from "react";
-import { Sparkles, Loader2, Plus, Pencil, Trash2, Eye, EyeOff, ScanLine, Store, Settings2, Tag, ChevronDown } from "lucide-react";
+import { Sparkles, Loader2, Plus, Pencil, Trash2, Eye, EyeOff, ScanLine, Store, Settings2, Tag, Ellipsis } from "lucide-react";
 import type { Producto, Sucursal } from "@/db/schema";
 import { vaciarStock } from "@/app/admin/(protected)/stock/actions";
 import { money } from "@/lib/format";
@@ -95,33 +95,33 @@ export function StockManager({
   }
 
   const cols: Col<ProductoConStock>[] = [
-    { key: "sku", head: "SKU", cell: (p) => <span className="font-mono text-xs text-slate-500">{p.sku}</span>, value: (p) => p.sku },
-    { key: "nombre", head: "Producto", className: "min-w-48 max-w-72", cell: (p) => <span className="font-medium">{p.nombre}</span>, value: (p) => p.nombre },
-    { key: "categoria", head: "Categoría", cell: (p) => <span className="text-slate-500">{p.categoria}</span>, value: (p) => p.categoria ?? "General", filter: true },
-    { key: "precio", head: "Precio", className: "whitespace-nowrap", cell: (p) => <>{money(p.precioVenta)} / {p.unidadMedida === "kg" ? "kg" : "u"}</>, value: (p) => p.precioVenta, sort: true },
+    { key: "sku", head: "SKU", width: 13, cell: (p) => <span className="font-mono text-xs text-slate-500">{p.sku}</span>, value: (p) => p.sku },
+    { key: "nombre", head: "Producto", width: 21, cell: (p) => <span className="font-medium">{p.nombre}</span>, value: (p) => p.nombre },
+    { key: "categoria", head: "Categoría", width: 10, cell: (p) => <span className="text-slate-500">{p.categoria}</span>, value: (p) => p.categoria ?? "General", filter: true },
+    { key: "precio", head: "Costo / venta", width: 17, cell: (p) => <PreciosStock producto={p} />, value: (p) => p.precioVenta, sort: true },
     {
-      key: "stock", head: sucursalActivaId ? "Stock acá" : "Stock total", className: "whitespace-nowrap", value: (p) => p.stockLocal, sort: true,
+      key: "stock", head: sucursalActivaId ? "Stock acá" : "Stock total", width: 10, value: (p) => p.stockLocal, sort: true,
       cell: (p) => {
         const bajo = p.alertaActiva && p.stockLocal < p.stockMinimo;
         return (
           <span className={bajo ? "font-semibold text-rose-600" : "font-medium"}>
-            {p.stockLocal} {p.unidadMedida === "kg" ? "kg" : "u"}{bajo && <span className="ml-2 text-xs text-rose-500">bajo</span>}
+            {p.stockLocal} {p.unidadMedida === "kg" ? "kg" : "u"}{bajo && <span className="block text-xs text-rose-500">bajo</span>}
           </span>
         );
       },
     },
-    { key: "transito", head: "En tránsito", value: (p) => p.transitoLocal, sort: true,
+    { key: "transito", head: "En tránsito", width: 8, value: (p) => p.transitoLocal, sort: true,
       cell: (p) => <span className={p.transitoLocal ? "rounded-lg bg-amber-50 px-2 py-1 font-semibold text-amber-800" : "text-slate-400"}>{p.transitoLocal}</span> },
     ...(mostrarDesglose
       ? [
           {
-            key: "desglose", head: "Por sucursal",
+            key: "desglose", head: "Por sucursal", width: 12,
             cell: (p: ProductoConStock) => <Desglose producto={p} sucursales={sucursales} />,
             value: (p: ProductoConStock) => p.stockLocal,
           } satisfies Col<ProductoConStock>,
         ]
       : []),
-    { key: "acciones", head: "Acciones", cell: (p) => acciones(p) },
+    { key: "acciones", head: "Acciones", width: 9, cell: (p) => acciones(p) },
   ];
 
   return (
@@ -137,6 +137,16 @@ export function StockManager({
       {error && <p role="alert" className="mb-3 rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
 
       <FilterableTable
+        compact
+        sortOptions={[
+          { key: "bajo", label: "Stock bajo primero", direction: "asc", compare: (a, b) => Number(!(a.alertaActiva && a.stockLocal < a.stockMinimo)) - Number(!(b.alertaActiva && b.stockLocal < b.stockMinimo)) || a.stockLocal - b.stockLocal },
+          { key: "stock", label: "Menor stock primero", direction: "asc" },
+          { key: "stock", label: "Mayor stock primero", direction: "desc" },
+          { key: "precio", label: "Menor precio de venta", direction: "asc" },
+          { key: "precio", label: "Mayor precio de venta", direction: "desc" },
+          { key: "transito", label: "Mayor stock en tránsito", direction: "desc" },
+          { key: "transito", label: "Menor stock en tránsito", direction: "asc" },
+        ]}
         rows={items}
         cols={cols}
         rowKey={(p) => p.id}
@@ -154,8 +164,8 @@ export function StockManager({
                     {p.sku} · {p.categoria}
                   </p>
                 </div>
-                <span className="shrink-0 text-sm font-semibold tabular-nums">{money(p.precioVenta)}</span>
               </div>
+              <div className="mt-2"><PreciosStock producto={p} /></div>
               {mostrarDesglose && (
                 <p className="mt-1 truncate text-[11px] text-slate-400">
                   {sucursales
@@ -201,13 +211,13 @@ function AccionesStock({ nombre, children }: { nombre: string; children: ReactNo
   const id = useId();
   const menu = useRef<HTMLDivElement>(null);
   return <>
-    <button className="btn-ghost whitespace-nowrap px-3" popoverTarget={id} aria-label={"Acciones de " + nombre} onClick={e => {
+    <button className="btn-ghost px-2" popoverTarget={id} title={"Acciones de " + nombre} aria-label={"Acciones de " + nombre} onClick={e => {
       const rect = e.currentTarget.getBoundingClientRect();
       if (menu.current) {
         menu.current.style.left = Math.max(8, Math.min(rect.right - 240, window.innerWidth - 248)) + "px";
         menu.current.style.top = Math.max(8, Math.min(rect.bottom + 4, window.innerHeight - 408)) + "px";
       }
-    }}>Acciones <ChevronDown className="h-4 w-4" /></button>
+    }}><Ellipsis className="h-4 w-4" /></button>
     <div id={id} ref={menu} popover="auto" className="fixed inset-auto m-0 w-60 max-w-[calc(100vw-16px)] overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 text-sm shadow-xl" style={{ maxHeight: "calc(100dvh - 16px)" }} onClickCapture={e => {
       if (e.target instanceof Element && e.target.closest("button")) menu.current?.hidePopover();
     }}>{children}</div>
@@ -242,16 +252,24 @@ function VaciarStock({ cantidad, cerrar }: { cantidad: number; cerrar: () => voi
   </Overlay>;
 }
 
+function PreciosStock({ producto: p }: { producto: ProductoConStock }) {
+  const unidad = p.unidadMedida === "kg" ? "kg" : "u";
+  return <div className="space-y-1 text-xs tabular-nums">
+    <p><span className="text-slate-500">Costo: </span><span className={p.precioCompra > 0 ? "" : "text-amber-700"}>{p.precioCompra > 0 ? `${money(p.precioCompra)} / ${unidad}` : "Sin cargar"}</span></p>
+    <p><span className="text-slate-500">Venta: </span><span className="font-semibold">{money(p.precioVenta)} / {unidad}</span></p>
+  </div>;
+}
+
 function Desglose({ producto, sucursales }: { producto: ProductoConStock; sucursales: Sucursal[] }) {
   return (
-    <span className="flex min-w-36 flex-col gap-1 whitespace-nowrap">
+    <span className="flex min-w-0 flex-col items-start gap-1">
       {sucursales.map((s) => {
         const n = producto.porSucursal[s.id] ?? 0;
         return (
           <span
             key={s.id}
             title={s.nombre}
-            className={`badge ${n > 0 ? "bg-slate-100 text-slate-600" : "bg-slate-50 text-slate-300"}`}
+            className={`max-w-full text-xs ${n > 0 ? "text-slate-600" : "text-slate-400"}`}
           >
             {s.nombre}: <b className="ml-1 tabular-nums">{n}</b>
           </span>
