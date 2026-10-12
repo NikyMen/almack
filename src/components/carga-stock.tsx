@@ -13,6 +13,7 @@ export function CargaStock({ sucursales, activaId, borradores, cargas, permiteCo
   const router = useRouter();
   const [reversion, setReversion] = useState<{ id: number; lineas: LineaReversion[] } | null>(null);
   const [decisiones, setDecisiones] = useState<Record<number, { modo: DecisionReversion["modo"] | ""; cantidad: string }>>({});
+  const [modoGeneral, setModoGeneral] = useState<"negativo" | "cero" | "">("");
   const [revirtiendo, setRevirtiendo] = useState(false);
   const [errorReversion, setErrorReversion] = useState("");
   async function revisar(id: number) {
@@ -21,11 +22,18 @@ export function CargaStock({ sucursales, activaId, borradores, cargas, permiteCo
     if (!r.ok) { setErrorReversion(r.error); return; }
     setReversion({ id, lineas: r.lineas });
     setDecisiones({});
+    setModoGeneral("");
+  }
+  function aplicarATodos(modo: "negativo" | "cero" | "") {
+    if (!reversion) return;
+    setModoGeneral(modo);
+    setDecisiones(Object.fromEntries(reversion.lineas.filter(l => l.quedaria < 0).map(l => [l.productoId, { modo, cantidad: "" }])));
+    setErrorReversion("");
   }
   async function revertir() {
     if (!reversion) return;
     const faltantes = reversion.lineas.filter(l => l.quedaria < 0 && !decisiones[l.productoId]?.modo);
-    if (faltantes.length) { setErrorReversion("Elegí qué hacer con cada producto que quedaría en negativo."); return; }
+    if (faltantes.length) { setErrorReversion(`Elegí qué hacer con los ${faltantes.length} productos que quedarían en negativo.`); return; }
     setRevirtiendo(true); setErrorReversion("");
     const r = await revertirCargaStock(reversion.id, reversion.lineas.map(l => ({
       productoId: l.productoId, actual: l.actual,
@@ -39,6 +47,7 @@ export function CargaStock({ sucursales, activaId, borradores, cargas, permiteCo
   const [compra, setCompra] = useState<Compra | null>(null);
   const [error, setError] = useState("");
   const [creando, setCreando] = useState(false);
+  const negativos = reversion?.lineas.filter(l => l.quedaria < 0) ?? [];
   return <div className="space-y-5">
     <div className="flex flex-wrap items-center gap-3 text-sm">
       {permiteCompras && <Link className="btn-ghost" href="/admin/compras/diferencias-precios">Diferencias de precios</Link>}
@@ -69,14 +78,20 @@ export function CargaStock({ sucursales, activaId, borradores, cargas, permiteCo
       {reversion && <div className="rounded-xl border border-amber-300 bg-amber-50 p-5">
         <h2 className="font-semibold">Revertir carga #{reversion.id}</h2>
         <p className="mt-1 text-sm">Se descontarán {reversion.lineas.reduce((n,l) => n+l.cargado,0)} unidades de {reversion.lineas.length} productos. Las ventas no se borran.</p>
-        {reversion.lineas.filter(l => l.quedaria < 0).length > 0 && <>
-          <p className="mt-3 font-medium text-amber-900">Estos productos quedarían en negativo por movimientos posteriores. Elegí el saldo final de cada uno:</p>
-          <div className="mt-2 max-h-72 space-y-2 overflow-y-auto">{reversion.lineas.filter(l => l.quedaria < 0).map(l => <div key={l.productoId} className="rounded-lg bg-white p-3 text-sm">
+        {negativos.length > 0 && <>
+          <p className="mt-3 font-medium text-amber-900">{negativos.length} productos quedarían en negativo por movimientos posteriores. Elegí qué hacer con todos:</p>
+          <label className="mt-2 block text-sm font-medium">Aplicar a todos los saldos negativos
+            <select className="input mt-1 max-w-sm" value={modoGeneral} onChange={e => aplicarATodos(e.target.value as "negativo" | "cero" | "")}>
+              <option value="">Elegí una opción</option><option value="negativo">Dejar el saldo negativo calculado</option><option value="cero">Dejar 0</option>
+            </select>
+          </label>
+          <details className="mt-3"><summary className="cursor-pointer text-sm font-medium text-amber-900">Ver productos y cambiar casos individuales ({negativos.length})</summary>
+          <div className="mt-2 max-h-72 space-y-2 overflow-y-auto">{negativos.map(l => <div key={l.productoId} className="rounded-lg bg-white p-3 text-sm">
             <div className="font-medium">{l.nombre} · actual {l.actual} − carga {l.cargado} = {l.quedaria}</div>
             <div className="mt-2 flex flex-wrap gap-2"><select className="input max-w-52" value={decisiones[l.productoId]?.modo ?? ""} onChange={e => setDecisiones(v => ({ ...v, [l.productoId]: { modo: e.target.value as DecisionReversion["modo"], cantidad: v[l.productoId]?.cantidad ?? "" } }))}>
               <option value="">Elegí una opción</option><option value="negativo">Dejar {l.quedaria}</option><option value="cero">Dejar 0</option><option value="manual">Otra cantidad</option>
             </select>{decisiones[l.productoId]?.modo === "manual" && <input className="input max-w-32" type="number" min="0" step="1" placeholder="Cantidad" value={decisiones[l.productoId]?.cantidad ?? ""} onChange={e => setDecisiones(v => ({ ...v, [l.productoId]: { modo: "manual", cantidad: e.target.value } }))} />}</div>
-          </div>)}</div>
+          </div>)}</div></details>
         </>}
         {errorReversion && <p role="alert" className="mt-3 text-sm text-rose-600">{errorReversion}</p>}
         <div className="mt-4 flex gap-2"><button className="btn-primary" disabled={revirtiendo} onClick={revertir}>{revirtiendo ? "Revirtiendo…" : "Confirmar reversión"}</button><button className="btn-ghost" onClick={() => setReversion(null)}>Cancelar</button></div>
