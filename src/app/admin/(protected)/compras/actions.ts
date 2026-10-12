@@ -276,6 +276,7 @@ type DatosLinea = {
   cantidad?: number;
   precioUnit?: number;
   precioVenta?: number;
+  precioVentaExplicito?: boolean;
   unidadMedida?: UnidadMedida;
   modoStock?: ModoStock;
 };
@@ -355,7 +356,8 @@ async function guardarLectura(
       modoStock: it.modoStock ?? "sumar",
       unidadMedida: it.unidadMedida ?? "unidad",
       precioUnit: it.precioUnit,
-      precioVenta: it.estado === "nuevo" ? (it.precioVenta ?? precioDesdeCosto(it.precioUnit, configPrecios.multiplicador ?? 2)) : 0,
+      precioVenta: it.precioVenta ?? (it.estado === "nuevo" ? precioDesdeCosto(it.precioUnit, configPrecios.multiplicador ?? 2) : 0),
+      precioVentaExplicito: it.precioVenta !== undefined,
       productoId: it.productoId,
       estado: it.estado,
       candidatos: JSON.stringify(it.candidatos),
@@ -498,6 +500,7 @@ export async function agregarLineaCompra(compraId: number, datos: DatosLinea) {
       unidadMedida: item.unidadMedida ?? "unidad",
       precioUnit: item.precioUnit,
       precioVenta: usuario.rol === "admin" ? montoPositivo(datos.precioVenta) : precioDesdeCosto(item.precioUnit, (await leerReglasStock()).multiplicador ?? 2),
+      precioVentaExplicito: usuario.rol === "admin" && datos.precioVenta !== undefined,
       productoId: item.productoId,
       estado: item.estado,
       candidatos: JSON.stringify(item.candidatos),
@@ -531,6 +534,7 @@ export async function actualizarLineaCompra(lineaId: number, datos: DatosLinea) 
     unidadMedida: UnidadMedida;
     precioUnit: number;
     precioVenta: number;
+    precioVentaExplicito?: boolean;
     productoId?: number | null;
     estado?: string;
     candidatos?: string;
@@ -544,7 +548,8 @@ export async function actualizarLineaCompra(lineaId: number, datos: DatosLinea) 
     precioVenta: datos.precioVenta !== undefined ? montoPositivo(datos.precioVenta) : linea.precioVenta,
   };
 
-  if (usuario.rol !== "admin") cambios.precioVenta = cambios.precioUnit > 0 ? precioDesdeCosto(cambios.precioUnit, (await leerReglasStock()).multiplicador ?? 2) : linea.precioVenta;
+  if (usuario.rol === "admin" && datos.precioVentaExplicito !== undefined) cambios.precioVentaExplicito = datos.precioVentaExplicito;
+  if (usuario.rol !== "admin") cambios.precioVenta = linea.precioVentaExplicito ? linea.precioVenta : cambios.precioUnit > 0 ? precioDesdeCosto(cambios.precioUnit, (await leerReglasStock()).multiplicador ?? 2) : linea.precioVenta;
   // Si cambió lo que identifica al producto, la clasificación anterior ya no
   // vale. Salvo que alguien haya elegido el producto a mano: ahí manda la
   // persona, no el algoritmo.
@@ -790,7 +795,7 @@ export async function impactosRecepcion(compraId: number): Promise<ImpactoLinea[
     const anterior = sucursalId ? (local?.cantidad ?? 0) : (p?.stock ?? 0);
     const costoAnterior = ultima?.precioUnit ?? p?.precioCompra ?? 0;
     const multiplicador = multiplicadorProducto(configPrecios, linea.productoId);
-    resultado.push({ cantidad: linea.cantidad, modoStock: linea.modoStock as ModoStock, unidadMedida: linea.unidadMedida as UnidadMedida, multiplicador, ventaNueva: multiplicador !== null && linea.precioUnit > 0 ? precioDesdeCosto(linea.precioUnit, multiplicador) : p?.precioVenta ?? linea.precioVenta, lineaId: linea.id, nombre: p?.nombre ?? linea.descripcion, codigo: p?.sku ?? linea.codigo,
+    resultado.push({ cantidad: linea.cantidad, modoStock: linea.modoStock as ModoStock, unidadMedida: linea.unidadMedida as UnidadMedida, multiplicador, precioExplicito: linea.precioVentaExplicito, ventaNueva: linea.precioVentaExplicito ? linea.precioVenta : multiplicador !== null && linea.precioUnit > 0 ? precioDesdeCosto(linea.precioUnit, multiplicador) : p?.precioVenta ?? linea.precioVenta, lineaId: linea.id, nombre: p?.nombre ?? linea.descripcion, codigo: p?.sku ?? linea.codigo,
       stockAnterior: anterior, stockNuevo: stockDespues(anterior, linea.cantidad, linea.modoStock as ModoStock), costoAnterior,
       costoNuevo: linea.precioUnit, ventaAnterior: p?.precioVenta ?? 0,
       ...diferenciaCosto(costoAnterior, linea.precioUnit, p?.precioVenta ?? 0, multiplicador) });

@@ -241,9 +241,8 @@ export const compraLineas = sqliteTable("compra_lineas", {
   modoStock: text("modo_stock").notNull().default("sumar"), // sumar | fijar (inventario)
   unidadMedida: text("unidad_medida").notNull().default("unidad"), // unidad | kg
   precioUnit: real("precio_unit").notNull().default(0), // costo unitario
-  // Solo se usa al crear un producto nuevo; en los existentes no se toca nada
-  // del precio de venta.
   precioVenta: real("precio_venta").notNull().default(0),
+  precioVentaExplicito: integer("precio_venta_explicito", { mode: "boolean" }).notNull().default(false),
   productoId: integer("producto_id").references(() => productos.id),
   // match | duda | nuevo (ver src/lib/recepcion.ts)
   estado: text("estado").notNull().default("nuevo"),

@@ -15,13 +15,13 @@ export async function unificarBorrador(compraId: number) {
     for (const grupo of grupos.values()) {
       if (grupo.length < 2) continue;
       const primera = grupo[0];
-      const ventas = new Set(grupo.map(l => l.precioVenta).filter(p => p > 0));
+      const ventas = new Set(grupo.filter(l => l.precioVentaExplicito || l.precioVenta > 0).map(l => l.precioVenta));
       if (new Set(grupo.map(l => l.precioUnit)).size > 1 || ventas.size > 1) throw new Error(`El código ${primera.codigo || primera.descripcion} tiene precios distintos. Igualá los precios antes de continuar.`);
       if (grupo.some(l => l.modoStock === "fijar")) throw new Error(`El código ${primera.codigo || primera.descripcion} aparece varias veces en el inventario. Revisá cuál saldo conservar.`);
       if (new Set(grupo.map(l => l.unidadMedida)).size > 1) throw new Error("Hay unidades de medida distintas para el mismo producto.");
       const cantidad = grupo.reduce((n, l) => n + l.cantidad, 0);
       if (!cantidadValida(cantidad, primera.unidadMedida as UnidadMedida)) throw new Error("La cantidad agrupada no es válida.");
-      await tx.update(compraLineas).set({ cantidad, precioVenta: [...ventas][0] ?? 0, confirmado: grupo.every(l => l.confirmado) }).where(eq(compraLineas.id, primera.id));
+      await tx.update(compraLineas).set({ cantidad, precioVenta: [...ventas][0] ?? 0, precioVentaExplicito: grupo.some(l => l.precioVentaExplicito), confirmado: grupo.every(l => l.confirmado) }).where(eq(compraLineas.id, primera.id));
       for (const extra of grupo.slice(1)) await tx.delete(compraLineas).where(eq(compraLineas.id, extra.id));
       unificadas += grupo.length - 1;
     }

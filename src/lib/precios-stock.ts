@@ -7,7 +7,7 @@ export function diferenciaCosto(anterior: number, nuevo: number, venta: number, 
 }
 
 export type ImpactoLinea = {
-  multiplicador?: number | null; ventaNueva?: number;
+  multiplicador?: number | null; ventaNueva?: number; precioExplicito?: boolean;
   lineaId: number; nombre: string; codigo: string; cantidad: number; modoStock: "sumar" | "fijar"; unidadMedida: "unidad" | "kg"; stockAnterior: number;
   stockNuevo: number; costoAnterior: number; costoNuevo: number;
   ventaAnterior: number; porcentaje: number | null; sugerido: number | null;

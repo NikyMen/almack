@@ -31,7 +31,8 @@ export function leerTablaStock(filas: string[][]): LecturaRemito {
     const descripcion = f[indice("descripcion")]?.trim() ?? "";
     const cantidad = numeroDocumento(f[indice("cantidad")] ?? "");
     const precioUnit = numeroDocumento(f[indice("precioUnit")] ?? "");
-    const precioVenta = indice("precioVenta") >= 0 ? numeroDocumento(f[indice("precioVenta")] ?? "") : undefined;
+    const ventaCelda = indice("precioVenta") >= 0 ? f[indice("precioVenta")]?.trim() : undefined;
+    const precioVenta = ventaCelda ? numeroDocumento(ventaCelda) : undefined;
     if (!descripcion || !Number.isFinite(cantidad) || Math.abs(cantidad) > 1_000_000 || Math.abs(cantidad * 1000 - Math.round(cantidad * 1000)) > 0.000001 || !Number.isFinite(precioUnit) || precioUnit < 0 ||
       (precioVenta !== undefined && (!Number.isFinite(precioVenta) || precioVenta < 0)))
       throw new Error(`Revisá la fila ${encabezado + i + 2}: producto, stock (hasta 3 decimales) y precios válidos son obligatorios.`);

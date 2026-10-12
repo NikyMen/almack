@@ -345,27 +345,27 @@ function Fila({
   const [modoStock, setModoStock] = useState(linea.modoStock);
   const [precioUnit, setPrecioUnit] = useState(String(linea.precioUnit || ""));
   const recomendado = Math.round(Number(precioUnit || 0) * (linea.multiplicador ?? 2) * 100) / 100;
-  const calculaAutomatico = linea.multiplicador != null && Number(precioUnit) > 0;
-  const [ventaManual, setVentaManual] = useState(linea.precioVenta > 0 && linea.precioVenta !== Math.round(linea.precioUnit * (linea.multiplicador ?? 2) * 100) / 100);
-  const [precioVenta, setPrecioVenta] = useState(String(linea.precioVenta || (linea.estado === "nuevo" ? linea.precioUnit * (linea.multiplicador ?? 2) : "")));
+  const [ventaManual, setVentaManual] = useState(linea.precioVentaExplicito);
+  const calculaAutomatico = !ventaManual && linea.multiplicador != null && Number(precioUnit) > 0;
+  const [precioVenta, setPrecioVenta] = useState(linea.precioVentaExplicito ? String(linea.precioVenta) : String(linea.precioVenta || (linea.estado === "nuevo" ? linea.precioUnit * (linea.multiplicador ?? 2) : "")));
   const [buscando, setBuscando] = useState(false);
   const estado = linea.estado as EstadoLinea;
   const candidatos = parseCandidatos(linea.candidatos);
 
   const [guardando, setGuardando] = useState(false);
   const [guardado, setGuardado] = useState(false);
-  const snapshot = JSON.stringify([codigo, descripcion, cantidad, precioUnit, precioVenta, unidadMedida, modoStock]);
-  const ultimoGuardado = useRef(JSON.stringify([linea.codigo, linea.descripcion, String(linea.cantidad), String(linea.precioUnit || ""), String(linea.precioVenta || ""), linea.unidadMedida, linea.modoStock]));
+  const snapshot = JSON.stringify([codigo, descripcion, cantidad, precioUnit, precioVenta, unidadMedida, modoStock, ventaManual]);
+  const ultimoGuardado = useRef(JSON.stringify([linea.codigo, linea.descripcion, String(linea.cantidad), String(linea.precioUnit || ""), linea.precioVentaExplicito ? String(linea.precioVenta) : String(linea.precioVenta || ""), linea.unidadMedida, linea.modoStock, linea.precioVentaExplicito]));
   const modificado = snapshot !== ultimoGuardado.current;
   useEffect(() => {
     // Una actualización de otra fila no debe borrar este borrador local.
     if (snapshot !== ultimoGuardado.current) return;
-    const venta = String(linea.precioVenta || "");
+    const venta = linea.precioVentaExplicito ? String(linea.precioVenta) : String(linea.precioVenta || "");
     setCodigo(linea.codigo); setDescripcion(linea.descripcion);
     setCantidad(String(linea.cantidad)); setPrecioUnit(String(linea.precioUnit || ""));
     setUnidadMedida(linea.unidadMedida); setModoStock(linea.modoStock);
-    setPrecioVenta(venta);
-    ultimoGuardado.current = JSON.stringify([linea.codigo, linea.descripcion, String(linea.cantidad), String(linea.precioUnit || ""), venta, linea.unidadMedida, linea.modoStock]);
+    setPrecioVenta(venta); setVentaManual(linea.precioVentaExplicito);
+    ultimoGuardado.current = JSON.stringify([linea.codigo, linea.descripcion, String(linea.cantidad), String(linea.precioUnit || ""), venta, linea.unidadMedida, linea.modoStock, linea.precioVentaExplicito]);
   }, [linea]);
   useEffect(() => {
     registrar(linea.id, () => guardar(false));
@@ -385,6 +385,7 @@ function Fila({
         modoStock: modoStock as "sumar" | "fijar",
         precioUnit: Number(precioUnit),
         precioVenta: calculaAutomatico ? recomendado : Number(precioVenta),
+        precioVentaExplicito: ventaManual,
       });
       if (!r.ok) { onError(r.error); return false; }
       ultimoGuardado.current = snapshot;
@@ -504,9 +505,9 @@ function Fila({
         </div>
       )}
 
-      {estado === "nuevo" && (
+      {(estado === "nuevo" || linea.precioVentaExplicito) && (
         <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-          <span>Se va a crear sin publicar. Precio de venta ($):</span>
+          <span>{estado === "nuevo" ? "Se va a crear sin publicar. Precio de venta ($):" : "Precio de venta indicado en el archivo ($):"}</span>
           <input
             className="input w-28 py-1" disabled={bloqueado || guardando || calculaAutomatico || !linea.permitePrecioManual}
             type="number"
@@ -516,7 +517,7 @@ function Fila({
             onChange={(e) => { setVentaManual(true); setPrecioVenta(e.target.value); }}
 
             placeholder="0"
-            aria-label="Precio de venta del producto nuevo"
+            aria-label="Precio de venta del producto"
           />
           <button type="button" className="btn-ghost px-2 py-1 text-xs" disabled={bloqueado || guardando || Number(precioUnit) <= 0} onClick={() => { setVentaManual(false); setPrecioVenta(String(recomendado)); }}>Usar recomendado: {money(recomendado)} (costo × {linea.multiplicador ?? 2})</button>
         </div>
@@ -651,9 +652,10 @@ function ConfirmarCarga({
               <p className="mt-1 text-xs text-slate-500">Stock en destino: {i.stockAnterior} → {i.stockNuevo} {i.unidadMedida === "kg" ? "kg" : "u"} · {i.modoStock === "fijar" ? "saldo final" : "ingreso"} · Costo: {money(i.costoAnterior)} → {money(i.costoNuevo)}</p>
               {i.modoStock === "fijar" && (i.cantidad ?? 0) < 0 && <p className="mt-2 text-xs text-amber-900">Stock negativo en el archivo ({i.cantidad}): se guardará en 0.</p>}
               {i.costoNuevo === 0 && <p className="mt-2 text-xs text-amber-900">Precio de costo no cargado. Se conserva el precio de venta mostrado, sin aplicar el multiplicador.</p>}
-              {i.multiplicador != null && i.costoNuevo > 0 && <p className="mt-2 rounded-lg bg-lime/15 p-2 text-sm font-medium text-navy">Precio automático: {money(i.costoNuevo)} × {i.multiplicador} = {money(i.ventaNueva ?? 0)}. Se aplicará al cargar.</p>}
-              {(i.multiplicador == null || i.costoNuevo === 0) && i.ventaAnterior === 0 && i.ventaNueva !== undefined && <p className="mt-2 text-sm">Precio de venta al crear: {money(i.ventaNueva)}</p>}
-              {i.multiplicador == null && i.porcentaje !== null && Math.abs(i.porcentaje) > 0.000001 && <>
+              {i.precioExplicito && <p className="mt-2 rounded-lg bg-lime/15 p-2 text-sm font-medium text-navy">Precio de venta del archivo: {money(i.ventaNueva ?? 0)}. Se aplicará al cargar.</p>}
+              {!i.precioExplicito && i.multiplicador != null && i.costoNuevo > 0 && <p className="mt-2 rounded-lg bg-lime/15 p-2 text-sm font-medium text-navy">Precio automático: {money(i.costoNuevo)} × {i.multiplicador} = {money(i.ventaNueva ?? 0)}. Se aplicará al cargar.</p>}
+              {!i.precioExplicito && (i.multiplicador == null || i.costoNuevo === 0) && i.ventaAnterior === 0 && i.ventaNueva !== undefined && <p className="mt-2 text-sm">Precio de venta al crear: {money(i.ventaNueva)}</p>}
+              {!i.precioExplicito && i.multiplicador == null && i.porcentaje !== null && Math.abs(i.porcentaje) > 0.000001 && <>
                 <p className={`mt-2 text-sm ${i.porcentaje > 0 ? "text-amber-700" : "text-emerald-700"}`}>
                   {i.porcentaje > 0 ? "Aumentó" : "Bajó"} un {Math.abs(i.porcentaje).toFixed(2)} % respecto de la anterior carga.
                   {i.sugerido !== null ? ` Para mantener el margen porcentual, el precio de venta sería ${money(i.sugerido)}.` : " Sin precio anterior de venta no se puede calcular un margen."}
