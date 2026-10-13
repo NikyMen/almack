@@ -17,7 +17,7 @@ export function PromocionesManager({ promociones, productos }: { promociones: Pr
   const [mensaje, setMensaje] = useState("");
   const [busquedaProducto, setBusquedaProducto] = useState("");
   const [pendiente, start] = useTransition();
-  const editar = (p: Promocion) => { setForm({ id: p.id, nombre: p.nombre, tipo: p.tipo, activa: p.activa, porcentaje: p.porcentaje, productoIds: numeros(p.productoIds), cantidadCombo: p.cantidadCombo, modo: p.modo, fechaUnica: p.fechaUnica, mes: p.mes, dias: numeros(p.dias), diaSemana: p.diaSemana }); setMensaje(""); window.scrollTo({ top: 0, behavior: "smooth" }); };
+  const editar = (p: Promocion) => { const ids = numeros(p.productoIds); const activos = new Set(productos.map(producto => producto.id)); const productoIds = ids.filter(id => activos.has(id)); setForm({ id: p.id, nombre: p.nombre, tipo: p.tipo, activa: p.activa, porcentaje: p.porcentaje, productoIds, cantidadCombo: p.cantidadCombo, modo: p.modo, fechaUnica: p.fechaUnica, mes: p.mes, dias: numeros(p.dias), diaSemana: p.diaSemana }); setMensaje(ids.length > productoIds.length ? "Los productos archivados se quitarán de esta promoción al guardarla." : ""); window.scrollTo({ top: 0, behavior: "smooth" }); };
   const guardar = () => start(async () => { const r = await guardarPromocion(form); setMensaje(r.ok ? "Promoción guardada." : r.error); if (r.ok) { setForm(nueva); router.refresh(); } });
   const alternar = (p: Promocion) => start(async () => { await activarPromocion(p.id, !p.activa); router.refresh(); });
   const productosVisibles = productos.filter(p => `${p.sku} ${p.nombre}`.toLocaleLowerCase("es").includes(busquedaProducto.trim().toLocaleLowerCase("es")));
