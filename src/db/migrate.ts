@@ -18,6 +18,37 @@ const MODULOS = [
 ];
 
 const statements = [
+  `CREATE TABLE IF NOT EXISTS proveedores (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT NOT NULL,
+    cuit TEXT NOT NULL DEFAULT '', contacto TEXT NOT NULL DEFAULT '',
+    telefono TEXT NOT NULL DEFAULT '', email TEXT NOT NULL DEFAULT '',
+    direccion TEXT NOT NULL DEFAULT '', notas TEXT NOT NULL DEFAULT '',
+    activo INTEGER NOT NULL DEFAULT 1, creado_en INTEGER DEFAULT (strftime('%s','now'))
+  )`,
+  `CREATE TABLE IF NOT EXISTS proveedor_articulos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, proveedor_id INTEGER NOT NULL REFERENCES proveedores(id),
+    codigo TEXT NOT NULL, nombre TEXT NOT NULL, marca TEXT NOT NULL DEFAULT '',
+    categoria TEXT NOT NULL DEFAULT '', unidad TEXT NOT NULL DEFAULT 'unidad',
+    precio REAL NOT NULL DEFAULT 0, moneda TEXT NOT NULL DEFAULT 'ARS',
+    activo INTEGER NOT NULL DEFAULT 1, actualizado_en INTEGER DEFAULT (strftime('%s','now')),
+    UNIQUE(proveedor_id, codigo)
+  )`,
+  `CREATE TABLE IF NOT EXISTS proveedor_formatos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, proveedor_id INTEGER NOT NULL REFERENCES proveedores(id),
+    nombre TEXT NOT NULL, clase TEXT NOT NULL DEFAULT 'catalogo',
+    tipo_archivo TEXT NOT NULL DEFAULT 'csv', hoja TEXT NOT NULL DEFAULT '',
+    fila_encabezado INTEGER NOT NULL DEFAULT 1, separador TEXT NOT NULL DEFAULT 'auto',
+    campos TEXT NOT NULL DEFAULT '{}', notas TEXT NOT NULL DEFAULT '',
+    actualizado_en INTEGER DEFAULT (strftime('%s','now'))
+  )`,
+  `CREATE TABLE IF NOT EXISTS promociones (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT NOT NULL, tipo TEXT NOT NULL,
+    activa INTEGER NOT NULL DEFAULT 0, porcentaje REAL NOT NULL DEFAULT 0,
+    producto_ids TEXT NOT NULL DEFAULT '[]', cantidad_combo INTEGER NOT NULL DEFAULT 2,
+    modo TEXT NOT NULL DEFAULT 'continua', fecha_unica TEXT NOT NULL DEFAULT '',
+    mes TEXT NOT NULL DEFAULT '', dias TEXT NOT NULL DEFAULT '[]',
+    dia_semana INTEGER NOT NULL DEFAULT 6, creada_en INTEGER DEFAULT (strftime('%s','now'))
+  )`,
   `CREATE TABLE IF NOT EXISTS stock_respaldos (
     id INTEGER PRIMARY KEY AUTOINCREMENT, motivo TEXT NOT NULL, compra_id INTEGER,
     usuario_nombre TEXT NOT NULL, productos INTEGER NOT NULL, datos TEXT NOT NULL,
@@ -313,6 +344,7 @@ const alters = [
   `ALTER TABLE compras ADD COLUMN detalle TEXT NOT NULL DEFAULT ''`,
   `ALTER TABLE ventas ADD COLUMN sucursal_id INTEGER REFERENCES sucursales(id)`,
   `ALTER TABLE compras ADD COLUMN sucursal_id INTEGER REFERENCES sucursales(id)`,
+  `ALTER TABLE compras ADD COLUMN proveedor_id INTEGER REFERENCES proveedores(id)`,
   `ALTER TABLE usuarios ADD COLUMN sucursal_id INTEGER REFERENCES sucursales(id)`,
   `ALTER TABLE clientes ADD COLUMN sucursal_id INTEGER REFERENCES sucursales(id)`,
   `ALTER TABLE compras ADD COLUMN stock_revertido INTEGER NOT NULL DEFAULT 0`,
@@ -331,6 +363,9 @@ const alters = [
 
 // Índices que importan para las listas más consultadas
 const indices = [
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_proveedores_nombre ON proveedores(lower(nombre))`,
+  `CREATE INDEX IF NOT EXISTS idx_proveedor_articulos_proveedor ON proveedor_articulos(proveedor_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_proveedor_formatos_proveedor ON proveedor_formatos(proveedor_id)`,
   `CREATE INDEX IF NOT EXISTS idx_ia_mensajes_conv ON ia_mensajes(conversacion_id)`,
   `CREATE INDEX IF NOT EXISTS idx_ia_conv_usuario ON ia_conversaciones(usuario_id)`,
   `CREATE INDEX IF NOT EXISTS idx_compra_hist_compra ON compra_historial(compra_id)`,
@@ -445,6 +480,8 @@ async function migrate() {
       args: [sucursalBase],
     });
   }
+
+  await client.execute("UPDATE compras SET proveedor_id = (SELECT id FROM proveedores WHERE lower(nombre) = lower(compras.proveedor) ORDER BY id LIMIT 1) WHERE proveedor_id IS NULL AND proveedor <> ''");
 
   await client.execute("UPDATE clientes SET sucursal_id = (SELECT v.sucursal_id FROM ventas v WHERE v.cliente_id = clientes.id AND v.sucursal_id IS NOT NULL ORDER BY v.id DESC LIMIT 1) WHERE sucursal_id IS NULL AND EXISTS (SELECT 1 FROM ventas v WHERE v.cliente_id = clientes.id AND v.sucursal_id IS NOT NULL)");
 

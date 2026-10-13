@@ -14,6 +14,7 @@ import { useAjustes } from "@/lib/ajustes";
 import { useCarrito, type Linea } from "@/components/carrito";
 import { SelectorPago } from "@/components/selector-pago";
 import { BarcodeScanner } from "@/components/barcode-scanner";
+import { usePromocionAutomatica } from "@/components/use-promocion-automatica";
 
 type Ticket = { ventaId: number; total: number; items: number; medioPago: MedioPago };
 
@@ -33,6 +34,7 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
     carrito, error, setError, enCarrito, total, unidades,
     agregar, cambiarCantidad, quitar, vaciar, buscar, agregarPorCodigo, items,
   } = useCarrito(productos, permitirSinStock);
+  const promocion = usePromocionAutomatica(carrito.map(l => ({ productoId: l.producto.id, cantidad: l.cantidad })));
 
   const filtrados = buscar(busqueda);
 
@@ -170,9 +172,10 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
       </label>
 
       <div className="mt-4 border-t border-slate-100 pt-3">
+        {promocion && <p className="mb-2 text-sm text-emerald-700">{promocion.description}{promocion.discount > 0 ? ` · -${money(promocion.discount)}` : ""}</p>}
         <div className="mb-3 flex items-end justify-between">
           <span className="text-sm text-slate-500">Total</span>
-          <span className="text-2xl font-bold tabular-nums text-navy">{money(total)}</span>
+          <span className="text-2xl font-bold tabular-nums text-navy">{money(promocion?.total ?? total)}</span>
         </div>
         <div className="flex gap-2">
           <button className="btn-primary flex-1 justify-center py-3 text-base" disabled={carrito.length === 0 || pendiente} onClick={cobrar}>

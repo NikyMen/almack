@@ -1,5 +1,6 @@
 import { verificarClaveAdministrador } from "./clave-admin";
-import { db, cajaTurnos, cajaMovimientos, ventas, ventaItems, productos, stockSucursal, cajaSeguridad, cajaIntentos, cajaExtracciones } from "@/db";
+import { db, cajaTurnos, cajaMovimientos, ventas, ventaItems, productos, stockSucursal, cajaSeguridad, cajaIntentos, cajaExtracciones, promociones } from "@/db";
+import { cotizarPromocion } from "@/lib/promociones";
 import { and, eq, sql, desc } from "drizzle-orm";
 import { cantidadValida, redondearCantidad } from "@/lib/cantidades";
 export type CajaTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -74,7 +75,7 @@ export async function venderEnCaja(sucursalId: number, cajero: string, items: { 
   return transaccionCaja(async tx => {
     const turno = await cajaAbierta(sucursalId, tx);
     if (!turno) throw new Error("Abrí la caja de esta sucursal antes de cobrar.");
-    const lineas = [];
+    const lineas: { productoId: number; cantidad: number; precioUnit: number }[] = [];
     let total = 0;
     for (const [productoId, cantidad] of cantidades) {
       const [p] = await tx.select().from(productos).where(eq(productos.id, productoId));
@@ -94,6 +95,9 @@ export async function venderEnCaja(sucursalId: number, cajero: string, items: { 
       total += p.precioVenta * cantidad;
     }
     total = redondear(total);
+    const activas = await tx.select().from(promociones).where(eq(promociones.activa, true));
+    const mejor = activas.map(p => cotizarPromocion(p, lineas.map(l => ({ productoId: l.productoId, cantidad: l.cantidad, precio: l.precioUnit })))).filter((q): q is NonNullable<typeof q> => q !== null).sort((a, b) => b.discount - a.discount)[0];
+    if (mejor?.discount) total = mejor.total;
     const [venta] = await tx.insert(ventas).values({ sucursalId, cajaTurnoId: turno.id, cajero, total, medioPago, clienteId: opts?.clienteId ?? null, canal: opts?.canal === "online" ? "online" : "local", estado: "completada" }).returning({ id: ventas.id });
     await tx.insert(ventaItems).values(lineas.map(l => ({ ...l, ventaId: venta.id })));
     return { ventaId: venta.id, total };

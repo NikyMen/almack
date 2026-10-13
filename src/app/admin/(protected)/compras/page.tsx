@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { db, compras } from "@/db";
+import { db, compras, proveedores } from "@/db";
 import { desc, eq } from "drizzle-orm";
 import { requireAcceso } from "@/lib/auth";
 import { getContextoSucursal } from "@/lib/sucursal";
@@ -7,7 +7,7 @@ import { PageHeader } from "@/components/ui";
 import { ComprasTabla } from "@/components/compras-tabla";
 import { money } from "@/lib/format";
 import { SectionCards } from "@/components/section-cards";
-import { ClipboardList, ChartNoAxesCombined } from "lucide-react";
+import { ClipboardList, ChartNoAxesCombined, Truck } from "lucide-react";
 
 export const maxDuration = 180;
 
@@ -19,15 +19,16 @@ export default async function ComprasPage({ searchParams }: { searchParams: Prom
       <SectionCards items={[
         { href: "/admin/compras?vista=historial", title: "Ver compras", description: "Consultá el historial de órdenes y los importes invertidos.", icon: ClipboardList },
         { href: "/admin/compras/diferencias-precios", title: "Diferencias de precios", description: "Revisá cambios de costos y decisiones de revalorización.", icon: ChartNoAxesCombined },
+        { href: "/admin/compras/proveedores", title: "Proveedores", description: "Gestioná contactos, listas de artículos y formatos de catálogos y comprobantes.", icon: Truck },
       ]} />
     </>;
   }
   const { lista, activa, activaId } = await getContextoSucursal();
-  const items = await db
+  const [items, listaProveedores] = await Promise.all([db
     .select()
     .from(compras)
     .where(activaId ? eq(compras.sucursalId, activaId) : undefined)
-    .orderBy(desc(compras.fecha));
+    .orderBy(desc(compras.fecha)), db.select({ nombre: proveedores.nombre }).from(proveedores).where(eq(proveedores.activo, true))]);
   const total = items.reduce((a, c) => a + c.total, 0);
   return (
     <>
@@ -36,7 +37,7 @@ export default async function ComprasPage({ searchParams }: { searchParams: Prom
         title="Compras"
         subtitle={`${items.length} órdenes · ${money(total)} invertido${activa ? ` · ${activa.nombre}` : ""}`}
       />
-      <ComprasTabla compras={items} sucursales={lista} sucursalActivaId={activaId} />
+      <ComprasTabla compras={items} sucursales={lista} sucursalActivaId={activaId} proveedores={listaProveedores.map(p => p.nombre)} />
     </>
   );
 }

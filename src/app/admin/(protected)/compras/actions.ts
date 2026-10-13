@@ -30,6 +30,7 @@ import {
 } from "@/lib/ai";
 import { esEstadoCompra } from "@/lib/compras";
 import { getContextoSucursal, sucursalOperativaId } from "@/lib/sucursal";
+import { proveedorIdPorNombre } from "@/lib/proveedores";
 import { leerReglasStock, multiplicadorProducto, precioDesdeCosto } from "@/lib/reglas-stock";
 import { diferenciaCosto, type ImpactoLinea } from "@/lib/precios-stock";
 import type { ResumenRecepcion } from "@/lib/recepcion";
@@ -137,6 +138,7 @@ export async function editarCompra(compraId: number, formData: FormData) {
 
   const despues = {
     proveedor,
+    proveedorId: await proveedorIdPorNombre(proveedor),
     total: Number.isFinite(totalCrudo) && totalCrudo >= 0 ? totalCrudo : antes.total,
     estado: esEstadoCompra(estado) ? estado : antes.estado,
     detalle: String(formData.get("detalle") ?? antes.detalle),
@@ -825,7 +827,7 @@ export async function crearCargaStock(formData: FormData) {
   if (!lista.some(s => s.id === sucursalId)) return { ok: false as const, error: "Elegí una sucursal de destino activa." };
   const proveedor = String(formData.get("proveedor") ?? "").trim();
   if (!proveedor) return { ok: false as const, error: "Escribí el proveedor." };
-  const [compra] = await db.insert(compras).values({ proveedor, sucursalId, estado: "falta_controlar" }).returning();
+  const [compra] = await db.insert(compras).values({ proveedor, proveedorId: await proveedorIdPorNombre(proveedor), sucursalId, estado: "falta_controlar" }).returning();
   revalidatePath("/admin/compras");
   return { ok: true as const, compra };
 }

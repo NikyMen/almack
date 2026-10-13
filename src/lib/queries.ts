@@ -202,13 +202,13 @@ export const recientes = {
         fecha: ventas.fecha,
         cliente: clientes.nombre,
         sucursal: sucursales.nombre,
+        cajero: ventas.cajero,
       })
       .from(ventas)
       .leftJoin(clientes, eq(ventas.clienteId, clientes.id))
       .leftJoin(sucursales, eq(ventas.sucursalId, sucursales.id))
       .where(sucursalId ? eq(ventas.sucursalId, sucursalId) : undefined)
-      .orderBy(desc(ventas.id))
-      .limit(50),
+      .orderBy(desc(ventas.fecha), desc(ventas.id)),
   facturas: (sucursalId: number | null = null) =>
     db
       .select({ id: facturas.id, numero: facturas.numero, total: facturas.total, tipo: facturas.tipo, estado: facturas.estado, fecha: facturas.fecha, cliente: clientes.nombre })

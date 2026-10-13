@@ -24,9 +24,11 @@ export function ComprasTabla({
   compras,
   sucursales,
   sucursalActivaId,
+  proveedores = [],
 }: {
   compras: Compra[];
   sucursales: Sucursal[];
+  proveedores?: string[];
   /** null = el panel está en "Todas": hay que preguntar qué local recibe. */
   sucursalActivaId: number | null;
 }) {
@@ -75,6 +77,7 @@ export function ComprasTabla({
         <NuevaCompra
           sucursales={sucursales}
           sucursalActivaId={sucursalActivaId}
+          proveedores={proveedores}
           onDone={() => setNueva(false)}
         />
       )}
@@ -115,10 +118,12 @@ export function ComprasTabla({
 function NuevaCompra({
   sucursales,
   sucursalActivaId,
+  proveedores,
   onDone,
 }: {
   sucursales: Sucursal[];
   sucursalActivaId: number | null;
+  proveedores: string[];
   onDone: () => void;
 }) {
   // Estando dentro de un local no se pregunta: la mercadería entra ahí.
@@ -129,7 +134,8 @@ function NuevaCompra({
       <div className="grid gap-4 md:grid-cols-3">
         <div>
           <label className="label">Proveedor *</label>
-          <input name="proveedor" className="input" required />
+          <input name="proveedor" className="input" list="proveedores-registrados" required />
+          <datalist id="proveedores-registrados">{proveedores.map(nombre => <option key={nombre} value={nombre} />)}</datalist>
         </div>
         <div>
           <label className="label">Total</label>

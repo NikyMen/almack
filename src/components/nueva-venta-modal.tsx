@@ -13,6 +13,7 @@ import { money } from "@/lib/format";
 import { cobrarVenta } from "@/app/actions";
 import { MEDIOS_PAGO_UI, type MedioPago } from "@/lib/medios-pago";
 import { useCarrito } from "@/components/carrito";
+import { usePromocionAutomatica } from "@/components/use-promocion-automatica";
 
 export function NuevaVentaModal({
   productos,
@@ -32,6 +33,7 @@ export function NuevaVentaModal({
 
   const { carrito, error, setError, enCarrito, total, unidades, agregar, quitar, buscar, items } =
     useCarrito(productos, permitirSinStock);
+  const promocion = usePromocionAutomatica(carrito.map(l => ({ productoId: l.producto.id, cantidad: l.cantidad })));
 
   const resultados = buscar(busqueda, 8);
 
@@ -185,7 +187,8 @@ export function NuevaVentaModal({
           <div className="flex items-center justify-between border-t border-slate-100 pt-4">
             <div>
               <p className="text-xs text-slate-500">Total</p>
-              <p className="text-2xl font-bold tabular-nums text-navy">{money(total)}</p>
+              <p className="text-2xl font-bold tabular-nums text-navy">{money(promocion?.total ?? total)}</p>
+              {promocion && <p className="text-xs text-emerald-700">{promocion.description}{promocion.discount > 0 ? ` · -${money(promocion.discount)}` : ""}</p>}
             </div>
             <div className="flex gap-2">
               <button className="btn-ghost" disabled={guardando} onClick={onClose}>Cancelar</button>

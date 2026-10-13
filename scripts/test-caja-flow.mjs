@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 if (!/^file:caja-test-[a-f0-9-]+\.db$/.test(process.env.TURSO_DATABASE_URL ?? "")) throw new Error("Usá pnpm test:caja: requiere una base temporal aislada.");
 
 
-const { db, client, sucursales, productos, stockSucursal, ventas, cajaSeguridad, cajaExtracciones, cajaIntentos } = await import('../src/db/index.ts');
+const { db, client, sucursales, productos, stockSucursal, ventas, promociones, cajaSeguridad, cajaExtracciones, cajaIntentos } = await import('../src/db/index.ts');
 const { cajaDDL } = await import('../src/db/caja-ddl.ts');
 const { abrirCaja, cerrarCaja, moverEfectivo, venderEnCaja, resumenCaja, validarMonto, extraerEfectivo, saldoUltimoCierre } = await import('../src/lib/caja.ts');
 const { hashClaveAdministrador } = await import('../src/lib/clave-admin.ts');
@@ -14,7 +14,8 @@ try {
 CREATE TABLE productos(id INTEGER PRIMARY KEY, sku TEXT, nombre TEXT, descripcion TEXT, categoria TEXT, precio_venta REAL, precio_compra REAL, stock REAL, unidad_medida TEXT NOT NULL DEFAULT 'unidad', activo INTEGER NOT NULL DEFAULT 1, stock_minimo INTEGER, imagen TEXT, publicado INTEGER, descripcion_web TEXT, creado_en INTEGER);
 CREATE TABLE stock_sucursal(id INTEGER PRIMARY KEY, producto_id INTEGER, sucursal_id INTEGER, cantidad INTEGER, UNIQUE(producto_id, sucursal_id));
 CREATE TABLE ventas(id INTEGER PRIMARY KEY, cliente_id INTEGER, sucursal_id INTEGER, caja_turno_id INTEGER, cajero TEXT, total REAL, estado TEXT, canal TEXT, medio_pago TEXT, referencia TEXT, facturada INTEGER, fecha INTEGER);
-CREATE TABLE venta_items(id INTEGER PRIMARY KEY, venta_id INTEGER, producto_id INTEGER, cantidad INTEGER, precio_unit REAL);`);
+CREATE TABLE venta_items(id INTEGER PRIMARY KEY, venta_id INTEGER, producto_id INTEGER, cantidad INTEGER, precio_unit REAL);
+CREATE TABLE promociones(id INTEGER PRIMARY KEY, nombre TEXT NOT NULL, tipo TEXT NOT NULL, activa INTEGER NOT NULL DEFAULT 0, porcentaje REAL NOT NULL DEFAULT 0, producto_ids TEXT NOT NULL DEFAULT '[]', cantidad_combo INTEGER NOT NULL DEFAULT 2, modo TEXT NOT NULL DEFAULT 'continua', fecha_unica TEXT NOT NULL DEFAULT '', mes TEXT NOT NULL DEFAULT '', dias TEXT NOT NULL DEFAULT '[]', dia_semana INTEGER NOT NULL DEFAULT 6, creada_en INTEGER);`);
   for (const ddl of cajaDDL) await client.execute(ddl);
   await db.insert(sucursales).values([{id:1,nombre:'Centro'}, {id:2,nombre:'Otra'}]);
   await db.insert(productos).values({id:1,sku:'A',nombre:'Arroz',precioVenta:25,stock:10});
@@ -92,6 +93,10 @@ CREATE TABLE venta_items(id INTEGER PRIMARY KEY, venta_id INTEGER, producto_id I
   await db.insert(productos).values({id:3,sku:'SIN',nombre:'Sin carga',precioVenta:50,stock:0});
   await abrirCaja(1,'Ana',0);
   await assert.rejects(venderEnCaja(1,'Ana',[{productoId:3,cantidad:1}],'efectivo'), /Sin stock/);
+  await db.insert(promociones).values({ nombre: '10% total', tipo: 'total', activa: true, porcentaje: 10 });
+  const conPromo = await venderEnCaja(1,'Ana',[{productoId:1,cantidad:1}],'efectivo');
+  assert.equal(conPromo.total, 22.5);
+  assert.equal((await db.select().from(ventas).where(eq(ventas.id,conPromo.ventaId)))[0].total, 22.5);
   await assert.rejects(venderEnCaja(1,'Ana',[{productoId:3,cantidad:1}],'efectivo',{permitirSinStock:true,canal:'online'}), /Sin stock/);
   await venderEnCaja(1,'Ana',[{productoId:3,cantidad:2}],'efectivo',{permitirSinStock:true});
   await venderEnCaja(1,'Ana',[{productoId:3,cantidad:1}],'efectivo',{permitirSinStock:true});

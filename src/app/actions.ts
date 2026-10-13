@@ -24,6 +24,7 @@ import {
   consultaNegocio,
 } from "@/lib/ai";
 import { getContextoNegocio } from "@/lib/queries";
+import { proveedorIdPorNombre } from "@/lib/proveedores";
 import { borrarImagenProducto, guardarImagenProducto } from "@/lib/imagenes-producto";
 
 // --- Sucursales --------------------------------------------------------------
@@ -386,6 +387,7 @@ export async function crearCompra(formData: FormData) {
   const estado = String(formData.get("estado") || "pedido");
   await db.insert(compras).values({
     proveedor,
+    proveedorId: await proveedorIdPorNombre(proveedor),
     total: Number(formData.get("total") || 0),
     estado: esEstadoCompra(estado) ? estado : "pedido",
     detalle: String(formData.get("detalle") || ""),

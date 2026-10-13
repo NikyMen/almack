@@ -19,6 +19,7 @@ type Venta = {
   cliente: string | null;
   /** Local donde se hizo. Null en las ventas anteriores a las sucursales. */
   sucursal?: string | null;
+  cajero?: string | null;
 };
 
 const medio = (v: string) => ETIQUETA_MEDIO[v as MedioPago] ?? v;
@@ -48,6 +49,7 @@ export function VentasTabla({
           filter: true,
         } satisfies Col<Venta>]
       : []),
+    { key: "cajero", head: "Usuario", cell: (v) => <span className="text-slate-500">{v.cajero || "Sin registrar"}</span>, value: (v) => v.cajero || "Sin registrar", filter: true },
     { key: "medioPago", head: "Pago", cell: (v) => <span className="text-slate-500">{medio(v.medioPago)}</span>, value: (v) => medio(v.medioPago), filter: true },
     { key: "estado", head: "Estado", cell: (v) => <Estado value={v.estado} />, value: (v) => v.estado, filter: true },
     { key: "fecha", head: "Fecha", cell: (v) => <span className="text-slate-500">{fecha(v.fecha)}</span>, value: (v) => (v.fecha instanceof Date ? v.fecha.getTime() : Number(v.fecha)), sort: true },
@@ -66,14 +68,15 @@ export function VentasTabla({
         rows={ventas}
         cols={cols}
         rowKey={(v) => v.id}
-        search={(v) => `${v.id} ${v.cliente ?? "consumidor final"} ${v.estado} ${v.canal} ${medio(v.medioPago)} ${v.total}`}
+        search={(v) => `${v.id} ${v.cliente ?? "consumidor final"} ${v.estado} ${v.canal} ${v.sucursal ?? ""} ${v.cajero ?? ""} ${medio(v.medioPago)} ${v.total}`}
         searchPlaceholder="Buscar por cliente, estado, total…"
+        sortOptions={[{ key: "fecha", label: "Más recientes", direction: "desc" }, { key: "fecha", label: "Más antiguas", direction: "asc" }]}
         mobileCard={(v) => (
           <div className="flex items-start gap-3">
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium">{v.cliente ?? "Consumidor final"}</p>
               <p className="mt-0.5 text-xs text-slate-400">
-                #{v.id} · {fecha(v.fecha)} · {medio(v.medioPago)}
+                #{v.id} · {fecha(v.fecha)} · {medio(v.medioPago)} · {v.sucursal ?? "Sin sucursal"} · {v.cajero || "Sin usuario"}
               </p>
               <div className="mt-1 flex gap-1">
                 <Estado value={v.canal} />

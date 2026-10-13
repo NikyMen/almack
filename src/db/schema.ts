@@ -160,6 +160,22 @@ export const ventas = sqliteTable("ventas", {
   fecha: integer("fecha", { mode: "timestamp" }).default(now),
 });
 
+export const promociones = sqliteTable("promociones", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  nombre: text("nombre").notNull(),
+  tipo: text("tipo").notNull(), // envio_gratis | combo | seleccionados | total
+  activa: integer("activa", { mode: "boolean" }).notNull().default(false),
+  porcentaje: real("porcentaje").notNull().default(0),
+  productoIds: text("producto_ids").notNull().default("[]"),
+  cantidadCombo: integer("cantidad_combo").notNull().default(2),
+  modo: text("modo").notNull().default("continua"), // unica | dias | semanal | continua
+  fechaUnica: text("fecha_unica").notNull().default(""),
+  mes: text("mes").notNull().default(""), // YYYY-MM
+  dias: text("dias").notNull().default("[]"),
+  diaSemana: integer("dia_semana").notNull().default(6),
+  creadaEn: integer("creada_en", { mode: "timestamp" }).default(now),
+});
+
 // Datos propios del checkout público, vinculados a la venta existente.
 export const tiendaPedidos = sqliteTable("tienda_pedidos", {
   id: integer("id").primaryKey({ autoIncrement: true }),
@@ -196,9 +212,51 @@ export const ventaItems = sqliteTable("venta_items", {
 // ---------------------------------------------------------------------------
 // Compras
 // ---------------------------------------------------------------------------
+export const proveedores = sqliteTable("proveedores", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  nombre: text("nombre").notNull(),
+  cuit: text("cuit").notNull().default(""),
+  contacto: text("contacto").notNull().default(""),
+  telefono: text("telefono").notNull().default(""),
+  email: text("email").notNull().default(""),
+  direccion: text("direccion").notNull().default(""),
+  notas: text("notas").notNull().default(""),
+  activo: integer("activo", { mode: "boolean" }).notNull().default(true),
+  creadoEn: integer("creado_en", { mode: "timestamp" }).default(now),
+});
+
+export const proveedorArticulos = sqliteTable("proveedor_articulos", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  proveedorId: integer("proveedor_id").notNull().references(() => proveedores.id),
+  codigo: text("codigo").notNull(),
+  nombre: text("nombre").notNull(),
+  marca: text("marca").notNull().default(""),
+  categoria: text("categoria").notNull().default(""),
+  unidad: text("unidad").notNull().default("unidad"),
+  precio: real("precio").notNull().default(0),
+  moneda: text("moneda").notNull().default("ARS"),
+  activo: integer("activo", { mode: "boolean" }).notNull().default(true),
+  actualizadoEn: integer("actualizado_en", { mode: "timestamp" }).default(now),
+});
+
+export const proveedorFormatos = sqliteTable("proveedor_formatos", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  proveedorId: integer("proveedor_id").notNull().references(() => proveedores.id),
+  nombre: text("nombre").notNull(),
+  clase: text("clase").notNull().default("catalogo"), // catalogo | comprobante
+  tipoArchivo: text("tipo_archivo").notNull().default("csv"),
+  hoja: text("hoja").notNull().default(""),
+  filaEncabezado: integer("fila_encabezado").notNull().default(1),
+  separador: text("separador").notNull().default("auto"),
+  campos: text("campos").notNull().default("{}"), // campo -> { origen, transformacion }
+  notas: text("notas").notNull().default(""),
+  actualizadoEn: integer("actualizado_en", { mode: "timestamp" }).default(now),
+});
+
 export const compras = sqliteTable("compras", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   proveedor: text("proveedor").notNull().default(""),
+  proveedorId: integer("proveedor_id").references(() => proveedores.id),
   // Sucursal que recibe la mercadería: es a la que se le suma el stock al
   // confirmar la recepción del remito.
   sucursalId: integer("sucursal_id").references(() => sucursales.id),

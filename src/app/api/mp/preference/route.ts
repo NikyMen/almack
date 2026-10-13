@@ -4,6 +4,7 @@ import { eq, inArray } from "drizzle-orm";
 import { db, clientes, productos, tiendaPedidos, ventaItems, ventas } from "@/db";
 import { crearPreferencia, mercadopagoConfigurado } from "@/lib/mercadopago";
 import { cantidadValida, redondearCantidad } from "@/lib/cantidades";
+import { mejorPromocion } from "@/lib/promociones";
 
 export const runtime = "nodejs";
 
@@ -59,7 +60,10 @@ export async function POST(req: Request) {
     if (product.stock < item.cantidad) return NextResponse.json({ error: `Sin stock suficiente de "${product.nombre}" (quedan ${product.stock}).` }, { status: 400 });
   }
 
-  const total = items.reduce((sum, item) => sum + Math.round(byId.get(item.productoId)!.precioVenta * item.cantidad * 100) / 100, 0);
+  const subtotal = items.reduce((sum, item) => sum + Math.round(byId.get(item.productoId)!.precioVenta * item.cantidad * 100) / 100, 0);
+  // La cotización se recalcula en el servidor con los precios actuales.
+  const promocion = await mejorPromocion(items);
+  const total = promocion?.quote.total ?? subtotal;
   const nombre = String(body.nombre ?? "").trim();
   const telefono = String(body.telefono ?? "").trim();
   const direccion = String(body.direccion ?? "").trim();
@@ -87,12 +91,14 @@ export async function POST(req: Request) {
   try {
     const preference = await crearPreferencia({
       ventaId: venta.id,
-      items: items.map((item) => {
-        const product = byId.get(item.productoId)!;
-        return product.unidadMedida === "kg"
-          ? { title: `${product.nombre} (${item.cantidad} kg)`, quantity: 1, unit_price: Math.round(product.precioVenta * item.cantidad * 100) / 100 }
-          : { title: product.nombre, quantity: item.cantidad, unit_price: product.precioVenta };
-      }),
+      items: promocion?.quote.discount
+        ? [{ title: `Pedido Almack · ${promocion.promo.nombre}`, quantity: 1, unit_price: total }]
+        : items.map((item) => {
+            const product = byId.get(item.productoId)!;
+            return product.unidadMedida === "kg"
+              ? { title: `${product.nombre} (${item.cantidad} kg)`, quantity: 1, unit_price: Math.round(product.precioVenta * item.cantidad * 100) / 100 }
+              : { title: product.nombre, quantity: item.cantidad, unit_price: product.precioVenta };
+          }),
     });
     await db.update(tiendaPedidos).set({ preferenciaMp: preference.id, initPointMp: preference.initPoint }).where(eq(tiendaPedidos.ventaId, venta.id));
     return NextResponse.json({ initPoint: preference.initPoint });
