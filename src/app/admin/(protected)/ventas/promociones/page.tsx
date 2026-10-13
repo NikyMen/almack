@@ -9,7 +9,7 @@ export default async function PromocionesPage() {
   await requireAdmin();
   const [lista, catalogo] = await Promise.all([
     db.select().from(promociones).orderBy(desc(promociones.id)),
-    db.select({ id: productos.id, nombre: productos.nombre }).from(productos).orderBy(asc(productos.nombre)),
+    db.select({ id: productos.id, sku: productos.sku, nombre: productos.nombre }).from(productos).orderBy(asc(productos.nombre), asc(productos.sku)),
   ]);
   return <>
     <Link href="/admin/ventas" className="btn-ghost mb-4">← Opciones de ventas</Link>
