@@ -14,6 +14,7 @@ import { cobrarVenta } from "@/app/actions";
 import { MEDIOS_PAGO_UI, type MedioPago } from "@/lib/medios-pago";
 import { useCarrito } from "@/components/carrito";
 import { usePromocionAutomatica } from "@/components/use-promocion-automatica";
+import { useAjustes } from "@/lib/ajustes";
 
 export function NuevaVentaModal({
   productos,
@@ -27,7 +28,8 @@ export function NuevaVentaModal({
   const [busqueda, setBusqueda] = useState("");
   const [clienteId, setClienteId] = useState("");
   const [medio, setMedio] = useState<MedioPago>("efectivo");
-  const [permitirSinStock, setPermitirSinStock] = useState(false);
+  const [ajustes] = useAjustes();
+  const permitirSinStock = ajustes.permitirSinStock;
   const [guardando, startTransition] = useTransition();
   const router = useRouter();
 
@@ -176,11 +178,6 @@ export function NuevaVentaModal({
               </div>
             </div>
           </div>
-
-          <label className="flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">
-            <input type="checkbox" className="mt-1" checked={permitirSinStock} onChange={e => setPermitirSinStock(e.target.checked)} disabled={guardando} />
-            <span>Permitir vender sin stock <span className="block text-xs">El saldo de esta sucursal puede quedar negativo.</span></span>
-          </label>
 
           {error && <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-600">{error}</p>}
 

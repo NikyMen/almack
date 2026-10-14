@@ -45,7 +45,7 @@ export type LecturaRemito = {
 };
 
 // Producto candidato a ser el de la línea, con qué tanto se parece (0 a 1).
-export type Candidato = { id: number; nombre: string; sku: string; score: number };
+export type Candidato = { id: number; nombre: string; sku: string; score: number; descripcion?: string | null; unidadMedida?: string; precioCompra?: number; precioVenta?: number };
 
 // Por encima de MATCH lo damos por encontrado; por debajo de DUDA, por nuevo.
 // En el medio queda en "revisar": es justo la franja donde equivocarse crea un

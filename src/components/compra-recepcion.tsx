@@ -219,7 +219,6 @@ export function CompraRecepcion({ compra, onCambio, onCancelar }: { compra: Comp
             setAgregando(false);
             if (ok) await cargar();
           }}
-          onError={setError}
         />
       )}
 
@@ -282,36 +281,106 @@ export function CompraRecepcion({ compra, onCambio, onCancelar }: { compra: Comp
 function NuevaLinea({
   compraId,
   onDone,
-  onError,
 }: {
   compraId: number;
   onDone: (ok: boolean) => void;
-  onError: (e: string) => void;
 }) {
   const [guardando, setGuardando] = useState(false);
+  const [descripcion, setDescripcion] = useState("");
+  const [codigo, setCodigo] = useState("");
+  const [cantidad, setCantidad] = useState("1");
+  const [unidadMedida, setUnidadMedida] = useState<"unidad" | "kg">("unidad");
+  const [modoStock, setModoStock] = useState<"sumar" | "fijar">("sumar");
+  const [precioUnit, setPrecioUnit] = useState("");
+  const [precioVenta, setPrecioVenta] = useState("");
+  const [elegido, setElegido] = useState<Candidato | null>(null);
+  const [crearNuevo, setCrearNuevo] = useState(false);
+  const [candidatos, setCandidatos] = useState<Candidato[]>([]);
+  const [buscando, setBuscando] = useState(false);
+  const [errorLocal, setErrorLocal] = useState("");
+  const consulta = codigo.trim() || descripcion.trim();
+
+  useEffect(() => {
+    if (elegido || crearNuevo || !consulta) { setCandidatos([]); setBuscando(false); return; }
+    let vigente = true;
+    const timer = window.setTimeout(async () => {
+      setBuscando(true);
+      try {
+        const encontrados = await buscarProductosCompra(consulta);
+        if (vigente) setCandidatos(encontrados);
+      } catch {
+        if (vigente) setErrorLocal("No se pudo buscar en stock. Intentá nuevamente.");
+      } finally {
+        if (vigente) setBuscando(false);
+      }
+    }, 250);
+    return () => { vigente = false; window.clearTimeout(timer); };
+  }, [consulta, elegido, crearNuevo]);
+
+  function seleccionar(c: Candidato) {
+    setElegido(c); setCrearNuevo(false); setCandidatos([]); setErrorLocal("");
+    setDescripcion(c.nombre); setCodigo(c.sku);
+    setUnidadMedida(c.unidadMedida === "kg" ? "kg" : "unidad");
+    setPrecioUnit(c.precioCompra ? String(c.precioCompra) : "");
+    setPrecioVenta("");
+  }
+
+  function editarDescripcion(valor: string) {
+    setDescripcion(valor); setElegido(null); setCrearNuevo(false); setErrorLocal("");
+  }
+
+  function editarCodigo(valor: string) {
+    setCodigo(valor); setElegido(null); setCrearNuevo(false); setErrorLocal("");
+  }
+
   return (
     <form
-      className="mt-3 grid gap-2 rounded-xl bg-slate-50 p-3 sm:grid-cols-[1fr_7rem_9rem_auto] sm:items-end"
+      className="mt-3 space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-3"
       onSubmit={async (e) => {
         e.preventDefault();
-        const fd = new FormData(e.currentTarget);
+        if (!elegido && !crearNuevo) { setErrorLocal("Elegí un producto de la lista o indicá que es uno nuevo."); return; }
+        setErrorLocal("");
         setGuardando(true);
-        const r = await agregarLineaCompra(compraId, {
-          descripcion: String(fd.get("descripcion") || ""),
-          cantidad: Number(fd.get("cantidad")),
-          precioUnit: Number(fd.get("precioUnit")),
-        });
-        setGuardando(false);
-        if (!r.ok) { onError(r.error); return onDone(false); }
-        onDone(true);
+        try {
+          const r = await agregarLineaCompra(compraId, {
+            productoId: elegido?.id ?? null,
+            crearNuevo,
+            descripcion, codigo, cantidad: Number(cantidad), unidadMedida,
+            modoStock, precioUnit: Number(precioUnit || 0),
+            ...(precioVenta.trim() ? { precioVenta: Number(precioVenta) } : {}),
+          });
+          if (!r.ok) { setErrorLocal(r.error); return; }
+          onDone(true);
+        } catch { setErrorLocal("No se pudo agregar el producto. Intentá nuevamente."); }
+        finally { setGuardando(false); }
       }}
     >
-      <label className="text-xs font-medium text-slate-600">Producto / descripción<input name="descripcion" className="input mt-1" placeholder="Producto que faltó" required /></label>
-      <label className="text-xs font-medium text-slate-600">Cantidad<input name="cantidad" type="number" min={0.001} step="0.001" className="input mt-1" defaultValue={1} /></label>
-      <label className="text-xs font-medium text-slate-600">Costo unitario ($)<input name="precioUnit" type="number" min={0} step="0.01" inputMode="decimal" className="input mt-1" placeholder="0" /></label>
-      <button type="submit" className="btn-primary" disabled={guardando}>
-        {guardando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Agregar
-      </button>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <label className="text-xs font-medium text-slate-600">Producto / descripción
+          <input className="input mt-1" value={descripcion} onChange={e => editarDescripcion(e.target.value)} placeholder="Buscar por nombre o descripción" required autoFocus />
+        </label>
+        <label className="text-xs font-medium text-slate-600">Código / SKU
+          <input className="input mt-1 font-mono" value={codigo} onChange={e => editarCodigo(e.target.value)} placeholder="Escribir o escanear código" />
+        </label>
+      </div>
+      {!elegido && !crearNuevo && consulta && <div className="rounded-lg border border-slate-200 bg-white p-2">
+        <p className="mb-1 text-xs font-semibold text-slate-600">{buscando ? "Buscando productos…" : candidatos.length ? "Elegí el producto existente" : "Sin coincidencias visibles"}</p>
+        {candidatos.length > 0 && <div className="max-h-48 space-y-1 overflow-y-auto">{candidatos.map(c => <button key={c.id} type="button" className="flex w-full items-start justify-between gap-3 rounded-lg px-2 py-2 text-left text-sm hover:bg-lime/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lime" onClick={() => seleccionar(c)}><span><strong className="block">{c.nombre}</strong>{c.descripcion && <span className="block text-xs text-slate-500">{c.descripcion}</span>}</span><span className="shrink-0 font-mono text-xs text-slate-500">{c.sku}</span></button>)}</div>}
+        <button type="button" className="mt-2 text-xs font-medium text-slate-600 underline hover:text-navy" onClick={() => { setCrearNuevo(true); setCandidatos([]); setErrorLocal(""); }}>No es ninguno: crear producto nuevo</button>
+      </div>}
+      {elegido && <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">Se sumará a <strong>{elegido.nombre}</strong> · {elegido.sku} <button type="button" className="ml-2 underline" onClick={() => setElegido(null)}>Cambiar</button></p>}
+      {crearNuevo && <p className="rounded-lg bg-violet-50 px-3 py-2 text-sm text-violet-800">Se creará un producto nuevo al confirmar la carga. <button type="button" className="underline" onClick={() => setCrearNuevo(false)}>Buscar existente</button></p>}
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+        <label className="text-xs font-medium text-slate-600">Cantidad<input type="number" min={modoStock === "fijar" ? 0 : 0.001} step={unidadMedida === "kg" ? "0.001" : "1"} className="input mt-1" value={cantidad} onChange={e => setCantidad(e.target.value)} required /></label>
+        <label className="text-xs font-medium text-slate-600">Unidad<select className="input mt-1" value={unidadMedida} onChange={e => setUnidadMedida(e.target.value as "unidad" | "kg")} disabled={Boolean(elegido)}><option value="unidad">Unidad</option><option value="kg">Peso (kg)</option></select></label>
+        <label className="text-xs font-medium text-slate-600">Aplicar stock<select className="input mt-1" value={modoStock} onChange={e => setModoStock(e.target.value as "sumar" | "fijar")}><option value="sumar">Sumar cantidad</option><option value="fijar">Fijar saldo final</option></select></label>
+        <label className="text-xs font-medium text-slate-600">Costo unitario ($)<input type="number" min="0" step="0.01" inputMode="decimal" className="input mt-1" value={precioUnit} onChange={e => setPrecioUnit(e.target.value)} placeholder="0" /></label>
+        <label className="text-xs font-medium text-slate-600">Precio de venta ($) · opcional<input type="number" min="0" step="0.01" inputMode="decimal" className="input mt-1" value={precioVenta} onChange={e => setPrecioVenta(e.target.value)} placeholder="Automático" /></label>
+      </div>
+      {errorLocal && <p role="alert" className="text-xs text-rose-600">{errorLocal}</p>}
+      <div className="flex gap-2"><button type="submit" className="btn-primary" disabled={guardando}>
+        {guardando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />} Agregar al borrador
+      </button><button type="button" className="btn-ghost" onClick={() => onDone(false)} disabled={guardando}>Cancelar</button></div>
     </form>
   );
 }

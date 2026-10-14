@@ -273,6 +273,8 @@ export async function transcribirImagenCompra(compraId: number, reemplazar = fal
 // aplicarRecepcion(), y solo si se confirmó explícitamente.
 
 type DatosLinea = {
+  productoId?: number | null;
+  crearNuevo?: boolean;
   descripcion?: string;
   codigo?: string;
   cantidad?: number;
@@ -477,17 +479,36 @@ export async function agregarLineaCompra(compraId: number, datos: DatosLinea) {
   const compra = await getCompra(compraId);
   if (!compra) return { ok: false as const, error: "La compra no existe." };
 
-  if (datos.cantidad !== undefined && !cantidadValida(datos.cantidad, datos.unidadMedida ?? "unidad", datos.modoStock === "fijar")) return { ok: false as const, error: "Revisá la cantidad y la unidad de medida." };
   if ([datos.precioUnit, datos.precioVenta].some(v => v !== undefined && (!Number.isFinite(v) || v < 0))) return { ok: false as const, error: "Los precios deben ser números positivos o cero." };
-  const descripcion = String(datos.descripcion || "").trim();
+  const [elegido] = datos.productoId == null ? [] : await db.select().from(productos).where(and(eq(productos.id, datos.productoId), eq(productos.activo, true))).limit(1);
+  if (datos.productoId != null && !elegido) return { ok: false as const, error: "El producto elegido ya no está disponible." };
+  const unidad = elegido?.unidadMedida === "kg" ? "kg" : elegido ? "unidad" : datos.unidadMedida ?? "unidad";
+  if (datos.cantidad !== undefined && !cantidadValida(datos.cantidad, unidad, datos.modoStock === "fijar")) return { ok: false as const, error: "Revisá la cantidad y la unidad de medida." };
+  const descripcion = elegido?.nombre ?? String(datos.descripcion || "").trim();
   if (!descripcion) return { ok: false as const, error: "Escribí qué producto es." };
+  if (datos.crearNuevo && !elegido && datos.codigo?.trim()) {
+    const [mismoCodigo] = await db.select({ id: productos.id }).from(productos).where(and(eq(productos.sku, datos.codigo.trim()), eq(productos.activo, true))).limit(1);
+    if (mismoCodigo) return { ok: false as const, error: "Ese código ya pertenece a un producto. Elegilo de la lista." };
+  }
 
-  const item = await reclasificar({
+  const item = elegido ? {
+    descripcion: elegido.nombre, codigo: elegido.sku, cantidad: datos.cantidad ?? 1,
+    modoStock: datos.modoStock ?? "sumar" as const,
+    unidadMedida: unidad,
+    precioUnit: montoPositivo(datos.precioUnit), productoId: elegido.id,
+    estado: "match" as const,
+    candidatos: [{ id: elegido.id, nombre: elegido.nombre, sku: elegido.sku, score: 1 }],
+  } : datos.crearNuevo ? {
+    descripcion, codigo: String(datos.codigo || "").trim(), cantidad: datos.cantidad ?? 1,
+    modoStock: datos.modoStock ?? "sumar" as const, unidadMedida: unidad,
+    precioUnit: montoPositivo(datos.precioUnit), productoId: null,
+    estado: "nuevo" as const, candidatos: [],
+  } : await reclasificar({
     descripcion,
     codigo: String(datos.codigo || "").trim(),
     cantidad: datos.cantidad ?? 1,
     modoStock: datos.modoStock ?? "sumar",
-    unidadMedida: datos.unidadMedida ?? "unidad",
+    unidadMedida: unidad,
     precioUnit: montoPositivo(datos.precioUnit),
   });
 
@@ -506,6 +527,7 @@ export async function agregarLineaCompra(compraId: number, datos: DatosLinea) {
       productoId: item.productoId,
       estado: item.estado,
       candidatos: JSON.stringify(item.candidatos),
+      confirmado: Boolean(elegido),
       origen: "manual",
     })
     .returning({ id: compraLineas.id });

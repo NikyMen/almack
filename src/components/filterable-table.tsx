@@ -32,6 +32,8 @@ export function FilterableTable<T>({
   onRowClick,
   compact = false,
   sortOptions,
+  groupBy,
+  groupHeader,
 }: {
   rows: T[];
   cols: Col<T>[];
@@ -49,6 +51,8 @@ export function FilterableTable<T>({
   onRowClick?: (row: T) => void;
   compact?: boolean;
   sortOptions?: SortOption<T>[];
+  groupBy?: (row: T) => string;
+  groupHeader?: (key: string, rows: T[]) => ReactNode;
 }) {
   const [q, setQ] = useState("");
   const [filters, setFilters] = useState<Record<string, Set<string>>>({});
@@ -89,6 +93,18 @@ export function FilterableTable<T>({
     }
     return out;
   }, [rows, q, filters, sortKey, sortDir, cols, search, sortOptions]);
+
+  const groups = useMemo(() => {
+    if (!groupBy) return null;
+    const result = new Map<string, T[]>();
+    for (const row of filtered) {
+      const key = groupBy(row);
+      const group = result.get(key) ?? [];
+      group.push(row);
+      result.set(key, group);
+    }
+    return [...result.entries()];
+  }, [filtered, groupBy]);
 
   function toggleFiltro(key: string, val: string) {
     setFilters((f) => {
@@ -153,7 +169,9 @@ export function FilterableTable<T>({
       {/* Lista de tarjetas (mobile) */}
       {mobileCard && (
         <div className="grid gap-3 sm:grid-cols-2 xl:hidden">
-          {filtered.map((r) => {
+          {(groups ?? [["", filtered] as [string, T[]]]).flatMap(([key, rows]) => [
+            ...(groups && groupHeader ? [<div key={`group-${key}`} className="rounded-xl border border-slate-200 bg-slate-100 px-4 py-3 text-sm font-semibold text-navy sm:col-span-2">{groupHeader(key, rows)}</div>] : []),
+            ...rows.map((r) => {
             const contenido = <div className="min-w-0 flex-1">{mobileCard(r)}</div>;
             return onRowClick ? (
               <button
@@ -169,7 +187,8 @@ export function FilterableTable<T>({
                 {mobileCard(r)}
               </div>
             );
-          })}
+            }),
+          ])}
           {filtered.length === 0 && <p className="px-4 py-8 text-center text-sm text-slate-400">Sin resultados</p>}
         </div>
       )}
@@ -229,7 +248,9 @@ export function FilterableTable<T>({
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {filtered.map((r) => (
+            {(groups ?? [["", filtered] as [string, T[]]]).flatMap(([key, rows]) => [
+              ...(groups && groupHeader ? [<tr key={`group-${key}`}><th colSpan={cols.length} scope="rowgroup" className="bg-slate-100 px-4 py-3 text-left text-sm font-semibold text-navy">{groupHeader(key, rows)}</th></tr>] : []),
+              ...rows.map((r) => (
               <tr
                 key={rowKey(r)}
                 onClick={onRowClick ? () => onRowClick(r) : undefined}
@@ -239,7 +260,8 @@ export function FilterableTable<T>({
                   <td key={c.key} className={`py-3 ${compact ? "break-words px-2 [overflow-wrap:anywhere]" : "px-4"} ${c.className ?? ""}`}>{c.cell(r)}</td>
                 ))}
               </tr>
-            ))}
+              )),
+            ])}
             {filtered.length === 0 && (
               <tr><td colSpan={cols.length} className="px-4 py-8 text-center text-slate-400">Sin resultados</td></tr>
             )}

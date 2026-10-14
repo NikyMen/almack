@@ -1,6 +1,7 @@
 "use client";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { operarCaja } from "@/app/caja-actions";
 import { money } from "@/lib/format";
 import { ETIQUETA_MEDIO, type MedioPago } from "@/lib/medios-pago";
@@ -41,7 +42,11 @@ export function CajaTurnoPanel({ turno, resumen, historial, sucursal, anterior, 
           <button disabled={pendiente} className="btn-primary">{pendiente ? "Abriendo…" : "Abrir caja"}</button>
         </form> : resumen && <>
           <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
-            {[ ["Fondo inicial", turno.fondoInicial], ["Ventas en efectivo", resumen.efectivo], ["Ingresos / retiros", resumen.ingresos - resumen.retiros], ["Efectivo esperado", resumen.esperado] ].map(([label, value]) => <div key={label} className="rounded-xl bg-slate-50 p-4"><p className="text-xs text-slate-500">{label}</p><p className="text-lg font-bold tabular-nums text-navy">{money(Number(value))}</p></div>)}
+            {[ ["Fondo inicial", turno.fondoInicial], ["Ventas en efectivo", resumen.efectivo], ["Ingresos / retiros", resumen.ingresos - resumen.retiros] ].map(([label, value]) => <div key={label} className="rounded-xl bg-slate-50 p-4"><p className="text-xs text-slate-500">{label}</p><p className="text-lg font-bold tabular-nums text-navy">{money(Number(value))}</p></div>)}
+            <Link href="/admin/ventas/historial" target="_blank" rel="noopener noreferrer" aria-label={`Efectivo esperado ${money(resumen.esperado)}. Abrir ventas históricas en otra ventana`} className="group rounded-xl bg-slate-50 p-4 transition hover:bg-lime/15 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lime">
+              <p className="text-xs text-slate-500 group-hover:text-navy">Efectivo esperado <span aria-hidden="true">↗</span></p>
+              <p className="text-lg font-bold tabular-nums text-navy">{money(resumen.esperado)}</p>
+            </Link>
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-2">{resumen.cobros.filter(c => c.medio !== "efectivo").map(c => <span className="badge bg-slate-100 text-slate-600" key={c.medio}>{ETIQUETA_MEDIO[c.medio as MedioPago] ?? c.medio}: {money(c.total)}</span>)}<span className="text-xs text-slate-500">QR y tarjeta no suman efectivo al cajón.</span></div>
           <div className="mt-3 flex flex-wrap items-center gap-2"><button disabled={pendiente} className="btn-ghost border border-slate-200" onClick={() => {setModo("movimiento"); setError("");}}>Registrar ingreso</button><button disabled={pendiente} className="btn-primary" onClick={() => {setModo("cerrar"); setError("");}}>Arquear y cerrar</button><ExtraccionCaja turnoId={turno.id} disponible={resumen.esperado} /></div>

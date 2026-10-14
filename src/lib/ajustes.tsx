@@ -19,6 +19,7 @@ export type Ajustes = {
   fondoCalidad: FondoCalidad;
   /** Enter en el buscador vacío con carrito cargado → abre el cobro */
   autocobrador: boolean;
+  permitirSinStock: boolean;
   /** tecla → id del medio de pago, en el modal de cobro */
   teclasPago: Record<string, string>;
 };
@@ -26,6 +27,7 @@ export type Ajustes = {
 export const AJUSTES_DEFAULT: Ajustes = {
   fondoCalidad: "baja",
   autocobrador: false,
+  permitirSinStock: true,
   teclasPago: { "1": "efectivo", "2": "qr", "3": "tarjeta" },
 };
 

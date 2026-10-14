@@ -9,7 +9,8 @@
 // Solo el superadmin puede cambiar de local o administrarlos (ver esSuperAdmin
 // en src/lib/permisos.ts). Para el resto del equipo el logo es solo el logo.
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useTransition } from "react";
+import { createPortal } from "react-dom";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { Check, ChevronDown, Loader2, Pencil, Plus, Store, Trash2, X } from "lucide-react";
@@ -38,6 +39,8 @@ export function SucursalSwitcher({ sucursales, activaId, puedeAdministrar, compa
   const [error, setError] = useState("");
   const [pendiente, startTransition] = useTransition();
   const caja = useRef<HTMLDivElement>(null);
+  const menu = useRef<HTMLDivElement>(null);
+  const [posicion, setPosicion] = useState({ left: 0, top: 0, maxHeight: 0 });
 
   const activa = sucursales.find((s) => s.id === activaId) ?? null;
   const etiqueta = activa ? activa.nombre : "Todas las sucursales";
@@ -46,7 +49,7 @@ export function SucursalSwitcher({ sucursales, activaId, puedeAdministrar, compa
   useEffect(() => {
     if (!abierto) return;
     const fuera = (e: MouseEvent) => {
-      if (caja.current && !caja.current.contains(e.target as Node)) cerrar();
+      if (caja.current && !caja.current.contains(e.target as Node) && !menu.current?.contains(e.target as Node)) cerrar();
     };
     const tecla = (e: KeyboardEvent) => e.key === "Escape" && cerrar();
     document.addEventListener("mousedown", fuera);
@@ -54,6 +57,26 @@ export function SucursalSwitcher({ sucursales, activaId, puedeAdministrar, compa
     return () => {
       document.removeEventListener("mousedown", fuera);
       document.removeEventListener("keydown", tecla);
+    };
+  }, [abierto]);
+
+  useLayoutEffect(() => {
+    if (!abierto) return;
+    const ubicar = () => {
+      const rect = caja.current?.getBoundingClientRect();
+      if (!rect) return;
+      setPosicion({
+        left: Math.max(8, Math.min(rect.left, window.innerWidth - Math.min(320, window.innerWidth - 16) - 8)),
+        top: Math.min(rect.bottom + 8, window.innerHeight - 80),
+        maxHeight: Math.max(80, window.innerHeight - rect.bottom - 24),
+      });
+    };
+    ubicar();
+    window.addEventListener("resize", ubicar);
+    window.addEventListener("scroll", ubicar, true);
+    return () => {
+      window.removeEventListener("resize", ubicar);
+      window.removeEventListener("scroll", ubicar, true);
     };
   }, [abierto]);
 
@@ -127,10 +150,12 @@ export function SucursalSwitcher({ sucursales, activaId, puedeAdministrar, compa
         </span>
       </button>
 
-      {abierto && (
+      {abierto && createPortal(
         <div
+          ref={menu}
           role="menu"
-          className="absolute left-0 top-full z-50 mt-2 w-72 max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-slate-200 bg-white p-1.5 text-slate-700 shadow-xl"
+          style={{ left: posicion.left, top: posicion.top, maxHeight: posicion.maxHeight }}
+          className="fixed z-[100] w-72 max-w-[calc(100vw-1rem)] overflow-y-auto rounded-2xl border border-slate-200 bg-white p-1.5 text-slate-700 shadow-xl"
         >
           <p className="px-2.5 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
             Sucursal
@@ -228,7 +253,7 @@ export function SucursalSwitcher({ sucursales, activaId, puedeAdministrar, compa
               <Loader2 className="h-3 w-3 animate-spin" /> Guardando…
             </p>
           )}
-        </div>
+        </div>, document.body
       )}
     </div>
   );

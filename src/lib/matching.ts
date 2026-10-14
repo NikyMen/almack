@@ -90,9 +90,13 @@ export async function buscarProductos(q: string, limite = 12): Promise<Candidato
     .map((p) => {
       // El que empieza igual a lo tipeado va primero aunque el parecido global
       // sea bajo: es lo que espera quien está escribiendo en el buscador.
-      const empieza = normalizar(p.nombre).startsWith(n) || normalizar(p.sku).startsWith(n);
-      const score = Math.max(similitud(texto, p.nombre), empieza ? UMBRAL_MATCH + 0.2 : 0);
-      return candidato(p, score);
+      const nombre = normalizar(p.nombre);
+      const descripcion = normalizar(p.descripcion ?? "");
+      const sku = normalizar(p.sku);
+      const empieza = nombre.startsWith(n) || sku.startsWith(n);
+      const contiene = nombre.includes(n) || descripcion.includes(n) || sku.includes(n);
+      const score = Math.max(similitud(texto, p.nombre), similitud(texto, p.descripcion ?? ""), sku === n ? 1 : 0, empieza ? UMBRAL_MATCH + 0.2 : 0, contiene ? 0.65 : 0);
+      return { ...candidato(p, score), descripcion: p.descripcion, unidadMedida: p.unidadMedida, precioCompra: p.precioCompra, precioVenta: p.precioVenta };
     })
     .filter((c) => c.score > 0.15)
     .sort((a, b) => b.score - a.score)

@@ -70,6 +70,21 @@ export function ConfigModal() {
           </div>
         </section>
 
+        <section className="mb-6">
+          <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-3">
+            <input
+              type="checkbox"
+              className="mt-0.5 h-4 w-4 accent-lime"
+              checked={ajustes.permitirSinStock}
+              onChange={(e) => setAjustes({ permitirSinStock: e.target.checked })}
+            />
+            <span>
+              <span className="block text-sm font-semibold">Permitir vender sin stock</span>
+              <span className="mt-0.5 block text-xs text-slate-500">El saldo de la sucursal puede quedar negativo. Se aplica a Caja y a ventas manuales.</span>
+            </span>
+          </label>
+        </section>
+
         {/* Autocobrador */}
         <section className="mb-6">
           <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-3">

@@ -11,6 +11,7 @@ import { money } from "@/lib/format";
 import { cobrarVenta } from "@/app/actions";
 import { ETIQUETA_MEDIO, type MedioPago } from "@/lib/medios-pago";
 import { useAjustes } from "@/lib/ajustes";
+import { useNav } from "@/components/nav-context";
 import { useCarrito, type Linea } from "@/components/carrito";
 import { SelectorPago } from "@/components/selector-pago";
 import { BarcodeScanner } from "@/components/barcode-scanner";
@@ -24,12 +25,13 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
   const [eligiendoPago, setEligiendoPago] = useState(false);
   const [escaneando, setEscaneando] = useState(false);
   const [pedidoAbierto, setPedidoAbierto] = useState(false);
-  const [permitirSinStock, setPermitirSinStock] = useState(false);
   const [pendiente, startTransition] = useTransition();
   const inputRef = useRef<HTMLInputElement>(null);
   const params = useSearchParams();
 
   const [ajustes, setAjustes] = useAjustes();
+  const { configAbierta, menuAbierto } = useNav();
+  const permitirSinStock = ajustes.permitirSinStock;
   const {
     carrito, error, setError, enCarrito, total, unidades,
     agregar, cambiarCantidad, quitar, vaciar, buscar, agregarPorCodigo, items,
@@ -43,6 +45,20 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
     // virtual al entrar a Caja desde un celular.
     if (window.matchMedia("(hover: hover) and (pointer: fine)").matches) inputRef.current?.focus();
   }, []);
+
+  useEffect(() => {
+    const captarTeclado = (event: KeyboardEvent) => {
+      if (eligiendoPago || escaneando || pedidoAbierto || configAbierta || menuAbierto || event.ctrlKey || event.altKey || event.metaKey || event.isComposing) return;
+      const target = event.target;
+      if (target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName))) return;
+      if (event.key.length !== 1 || event.key === " ") return;
+      event.preventDefault();
+      inputRef.current?.focus();
+      setBusqueda((prev) => prev + event.key);
+    };
+    document.addEventListener("keydown", captarTeclado);
+    return () => document.removeEventListener("keydown", captarTeclado);
+  }, [eligiendoPago, escaneando, pedidoAbierto, configAbierta, menuAbierto]);
 
   const porCodigo = useCallback(
     (codigo: string) => {
@@ -103,7 +119,6 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
       if (!r.ok) return setError(r.error);
       setTicket({ ventaId: r.ventaId, total: r.total, items: unidadesPedido, medioPago });
       vaciar();
-      setPermitirSinStock(false);
       setBusqueda("");
       setEligiendoPago(false);
       setPedidoAbierto(false);
@@ -165,11 +180,6 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
       )}
 
       {error && <p className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-600">{error}</p>}
-
-      <label className="mt-3 flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">
-        <input type="checkbox" className="mt-1" checked={permitirSinStock} onChange={e => setPermitirSinStock(e.target.checked)} disabled={pendiente} />
-        <span>Permitir vender sin stock <span className="block text-xs">El saldo de esta sucursal puede quedar negativo.</span></span>
-      </label>
 
       <div className="mt-4 border-t border-slate-100 pt-3">
         {promocion && <p className="mb-2 text-sm text-emerald-700">{promocion.description}{promocion.discount > 0 ? ` · -${money(promocion.discount)}` : ""}</p>}
