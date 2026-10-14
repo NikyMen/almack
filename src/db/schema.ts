@@ -154,6 +154,10 @@ export const ventas = sqliteTable("ventas", {
   estado: text("estado").notNull().default("completada"), // completada | pendiente | cancelada
   canal: text("canal").notNull().default("local"), // local | online
   medioPago: text("medio_pago").notNull().default("efectivo"), // efectivo | qr | tarjeta | mercadopago
+  efectivoRecibido: real("efectivo_recibido"),
+  vuelto: real("vuelto"),
+  efectivoAntes: real("efectivo_antes"),
+  efectivoDespues: real("efectivo_despues"),
   // Id del pago en la pasarela (MercadoPago) para conciliación/idempotencia.
   referencia: text("referencia").notNull().default(""),
   facturada: integer("facturada", { mode: "boolean" }).notNull().default(false),

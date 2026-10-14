@@ -2,12 +2,12 @@
 import { Overlay } from "@/components/overlay";
 
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Search, Plus, Minus, Trash2, ShoppingCart, Loader2, CheckCircle2, Zap, Camera, ChevronUp, X,
 } from "lucide-react";
 import type { Producto } from "@/db/schema";
-import { money } from "@/lib/format";
+import { money, moneyPreciso } from "@/lib/format";
 import { cobrarVenta } from "@/app/actions";
 import { ETIQUETA_MEDIO, type MedioPago } from "@/lib/medios-pago";
 import { useAjustes } from "@/lib/ajustes";
@@ -17,7 +17,7 @@ import { SelectorPago } from "@/components/selector-pago";
 import { BarcodeScanner } from "@/components/barcode-scanner";
 import { usePromocionAutomatica } from "@/components/use-promocion-automatica";
 
-type Ticket = { ventaId: number; total: number; items: number; medioPago: MedioPago };
+type Ticket = { ventaId: number; total: number; items: number; medioPago: MedioPago; efectivoRecibido: number | null; vuelto: number | null };
 
 export function CajaPOS({ productos }: { productos: Producto[] }) {
   const [busqueda, setBusqueda] = useState("");
@@ -28,6 +28,7 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
   const [pendiente, startTransition] = useTransition();
   const inputRef = useRef<HTMLInputElement>(null);
   const params = useSearchParams();
+  const router = useRouter();
 
   const [ajustes, setAjustes] = useAjustes();
   const { configAbierta, menuAbierto } = useNav();
@@ -109,19 +110,20 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
     setBusqueda("");
   }
 
-  function confirmarPago(medioPago: MedioPago) {
+  function confirmarPago(medioPago: MedioPago, efectivoRecibido?: number) {
     if (carrito.length === 0) return;
     setError("");
     const pedido = items();
     const unidadesPedido = unidades;
     startTransition(async () => {
-      const r = await cobrarVenta(pedido, medioPago, { permitirSinStock });
+      const r = await cobrarVenta(pedido, medioPago, { permitirSinStock, efectivoRecibido });
       if (!r.ok) return setError(r.error);
-      setTicket({ ventaId: r.ventaId, total: r.total, items: unidadesPedido, medioPago });
+      setTicket({ ventaId: r.ventaId, total: r.total, items: unidadesPedido, medioPago, efectivoRecibido: r.efectivoRecibido, vuelto: r.vuelto });
       vaciar();
       setBusqueda("");
       setEligiendoPago(false);
       setPedidoAbierto(false);
+      router.refresh();
       if (window.matchMedia("(hover: hover) and (pointer: fine)").matches) inputRef.current?.focus();
     });
   }
@@ -141,9 +143,10 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
               <CheckCircle2 className="h-8 w-8" />
               <p className="font-semibold">¡Cobrado!</p>
               <p className="text-slate-500">
-                Venta #{ticket.ventaId} · {ticket.items} productos · {money(ticket.total)}
+                Venta #{ticket.ventaId} · {ticket.items} productos · {moneyPreciso(ticket.total)}
               </p>
               <p className="text-xs text-slate-400">Pago: {ETIQUETA_MEDIO[ticket.medioPago]}</p>
+              {ticket.vuelto !== null && <p className="text-sm font-semibold">Recibido: {moneyPreciso(ticket.efectivoRecibido ?? 0)} · Vuelto: {moneyPreciso(ticket.vuelto)}</p>}
               <p className="mt-1 text-xs text-slate-400">Listo para el próximo cliente.</p>
             </div>
           ) : (
@@ -336,15 +339,16 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
           <div className="text-sm">
             <p className="font-semibold">Venta #{ticket.ventaId} cobrada</p>
             <p className="text-emerald-600">
-              {ticket.items} u. · {money(ticket.total)} · {ETIQUETA_MEDIO[ticket.medioPago]}
+              {ticket.items} u. · {moneyPreciso(ticket.total)} · {ETIQUETA_MEDIO[ticket.medioPago]}
             </p>
+            {ticket.vuelto !== null && <p className="font-semibold">Vuelto: {moneyPreciso(ticket.vuelto)}</p>}
           </div>
         </div>
       )}
 
       {eligiendoPago && (
         <SelectorPago
-          total={total}
+          total={promocion?.total ?? total}
           unidades={unidades}
           pendiente={pendiente}
           error={error}

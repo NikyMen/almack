@@ -65,7 +65,7 @@ export async function cerrarCaja(sucursalId: number, turnoId: number, responsabl
     return { esperado: resumen.esperado, contado, diferencia };
   });
 }
-export async function venderEnCaja(sucursalId: number, cajero: string, items: { productoId: number; cantidad: number }[], medioPago: string, opts?: { clienteId?: number | null; canal?: string; permitirSinStock?: boolean }) {
+export async function venderEnCaja(sucursalId: number, cajero: string, items: { productoId: number; cantidad: number }[], medioPago: string, opts?: { clienteId?: number | null; canal?: string; permitirSinStock?: boolean; efectivoRecibido?: number }) {
   if (!items.length || !["efectivo", "qr", "tarjeta"].includes(medioPago)) throw new Error("Revisá los productos y el medio de pago.");
   const cantidades = new Map<number, number>();
   for (const item of items) {
@@ -98,9 +98,18 @@ export async function venderEnCaja(sucursalId: number, cajero: string, items: { 
     const activas = await tx.select().from(promociones).where(eq(promociones.activa, true));
     const mejor = activas.map(p => cotizarPromocion(p, lineas.map(l => ({ productoId: l.productoId, cantidad: l.cantidad, precio: l.precioUnit })))).filter((q): q is NonNullable<typeof q> => q !== null).sort((a, b) => b.discount - a.discount)[0];
     if (mejor?.discount) total = mejor.total;
-    const [venta] = await tx.insert(ventas).values({ sucursalId, cajaTurnoId: turno.id, cajero, total, medioPago, clienteId: opts?.clienteId ?? null, canal: opts?.canal === "online" ? "online" : "local", estado: "completada" }).returning({ id: ventas.id });
+    const efectivoRecibido = medioPago === "efectivo" && opts?.efectivoRecibido !== undefined ? opts.efectivoRecibido : null;
+    if (efectivoRecibido !== null) {
+      validarMonto(efectivoRecibido);
+      if (efectivoRecibido < total) throw new Error("El efectivo recibido no alcanza para cubrir la venta.");
+    }
+    const vuelto = efectivoRecibido === null ? null : redondear(efectivoRecibido - total);
+    const efectivoAntes = (await resumenCaja(turno, tx)).esperado;
+    // El cliente entrega efectivo y recibe vuelto: en el cajón queda el importe de la venta.
+    const efectivoDespues = redondear(efectivoAntes + (medioPago === "efectivo" ? total : 0));
+    const [venta] = await tx.insert(ventas).values({ sucursalId, cajaTurnoId: turno.id, cajero, total, medioPago, efectivoRecibido, vuelto, efectivoAntes, efectivoDespues, clienteId: opts?.clienteId ?? null, canal: opts?.canal === "online" ? "online" : "local", estado: "completada" }).returning({ id: ventas.id });
     await tx.insert(ventaItems).values(lineas.map(l => ({ ...l, ventaId: venta.id })));
-    return { ventaId: venta.id, total };
+    return { ventaId: venta.id, total, efectivoRecibido, vuelto, efectivoAntes, efectivoDespues };
   });
 }
 

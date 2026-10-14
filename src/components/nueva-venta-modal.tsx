@@ -9,7 +9,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Search, Plus, Minus, Trash2, X, Loader2, ShoppingCart } from "lucide-react";
 import type { Producto } from "@/db/schema";
-import { money } from "@/lib/format";
+import { money, moneyPreciso } from "@/lib/format";
 import { cobrarVenta } from "@/app/actions";
 import { MEDIOS_PAGO_UI, type MedioPago } from "@/lib/medios-pago";
 import { useCarrito } from "@/components/carrito";
@@ -28,6 +28,7 @@ export function NuevaVentaModal({
   const [busqueda, setBusqueda] = useState("");
   const [clienteId, setClienteId] = useState("");
   const [medio, setMedio] = useState<MedioPago>("efectivo");
+  const [recibido, setRecibido] = useState("");
   const [ajustes] = useAjustes();
   const permitirSinStock = ajustes.permitirSinStock;
   const [guardando, startTransition] = useTransition();
@@ -36,17 +37,21 @@ export function NuevaVentaModal({
   const { carrito, error, setError, enCarrito, total, unidades, agregar, quitar, buscar, items } =
     useCarrito(productos, permitirSinStock);
   const promocion = usePromocionAutomatica(carrito.map(l => ({ productoId: l.producto.id, cantidad: l.cantidad })));
+  const totalCobro = promocion?.total ?? total;
+  const vuelto = Math.round((Number(recibido) - totalCobro) * 100) / 100;
 
   const resultados = buscar(busqueda, 8);
 
   function guardar() {
     if (carrito.length === 0) return setError("Agregá al menos un producto.");
+    if (medio === "efectivo" && (!recibido || !Number.isFinite(Number(recibido)) || vuelto < 0)) return setError("Ingresá el efectivo recibido; debe cubrir el total.");
     setError("");
     const pedido = items();
     startTransition(async () => {
       const r = await cobrarVenta(pedido, medio, {
         clienteId: clienteId ? Number(clienteId) : null,
         permitirSinStock,
+        ...(medio === "efectivo" ? { efectivoRecibido: Number(recibido) } : {}),
       });
       if (!r.ok) return setError(r.error);
       router.refresh();
@@ -62,6 +67,7 @@ export function NuevaVentaModal({
             <h3 className="text-lg font-semibold">Nueva venta</h3>
             <p className="text-sm text-slate-500">Descuenta stock igual que la caja.</p>
           </div>
+
           <button className="btn-ghost px-2 py-1.5" disabled={guardando} onClick={onClose} aria-label="Cerrar">
             <X className="h-4 w-4" />
           </button>
@@ -179,17 +185,24 @@ export function NuevaVentaModal({
             </div>
           </div>
 
+          {medio === "efectivo" && <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <label className="label">Efectivo recibido del cliente
+              <input className="input mt-1" type="number" min={totalCobro} step="0.01" inputMode="decimal" value={recibido} onChange={(e) => setRecibido(e.target.value)} placeholder="¿Con cuánto pagó?" />
+            </label>
+            {recibido && <p className={`mt-2 text-sm font-semibold ${vuelto < 0 ? "text-rose-600" : "text-emerald-700"}`}>{vuelto < 0 ? "Falta" : "Vuelto"}: {moneyPreciso(Math.abs(vuelto))}</p>}
+          </div>}
+
           {error && <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-600">{error}</p>}
 
           <div className="flex items-center justify-between border-t border-slate-100 pt-4">
             <div>
               <p className="text-xs text-slate-500">Total</p>
-              <p className="text-2xl font-bold tabular-nums text-navy">{money(promocion?.total ?? total)}</p>
+              <p className="text-2xl font-bold tabular-nums text-navy">{moneyPreciso(totalCobro)}</p>
               {promocion && <p className="text-xs text-emerald-700">{promocion.description}{promocion.discount > 0 ? ` · -${money(promocion.discount)}` : ""}</p>}
             </div>
             <div className="flex gap-2">
               <button className="btn-ghost" disabled={guardando} onClick={onClose}>Cancelar</button>
-              <button className="btn-primary" disabled={guardando || carrito.length === 0} onClick={guardar}>
+              <button className="btn-primary" disabled={guardando || carrito.length === 0 || (medio === "efectivo" && (!recibido || vuelto < 0))} onClick={guardar}>
                 {guardando ? <Loader2 className="h-4 w-4 animate-spin" /> : "Registrar venta"}
               </button>
             </div>

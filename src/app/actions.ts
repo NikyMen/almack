@@ -76,7 +76,7 @@ export async function crearSucursal(nombre: string, direccion = "") {
   return { ok: true as const, id: creada.id };
 }
 
-export async function renombrarSucursal(id: number, nombre: string) {
+export async function renombrarSucursal(id: number, nombre: string, direccion: string) {
   if (!(await requireSuperAdmin())) {
     return { ok: false as const, error: "Solo el administrador puede editar sucursales." };
   }
@@ -88,7 +88,7 @@ export async function renombrarSucursal(id: number, nombre: string) {
     return { ok: false as const, error: "Ya tenés una sucursal con ese nombre." };
   }
 
-  await db.update(sucursales).set({ nombre: limpio }).where(eq(sucursales.id, id));
+  await db.update(sucursales).set({ nombre: limpio, direccion: direccion.trim().slice(0, 200) }).where(eq(sucursales.id, id));
   revalidatePath("/", "layout");
   return { ok: true as const };
 }
@@ -366,7 +366,7 @@ type ItemCaja = { productoId: number; cantidad: number };
 export async function cobrarVenta(
   items: ItemCaja[],
   medioPago: MedioPago = "efectivo",
-  opts?: { clienteId?: number | null; canal?: string; permitirSinStock?: boolean }
+  opts?: { clienteId?: number | null; canal?: string; permitirSinStock?: boolean; efectivoRecibido?: number }
 ) {
   const usuario = await requireAcceso(opts && ("clienteId" in opts || "canal" in opts) ? "ventas" : "caja");
   const sucursalId = await sucursalOperativaId();

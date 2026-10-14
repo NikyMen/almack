@@ -9,7 +9,7 @@ import { getContextoSucursal } from "@/lib/sucursal";
 import { stockDeSucursal } from "@/lib/stock";
 import { PageHeader } from "@/components/ui";
 import { VentasTabla } from "@/components/ventas-tabla";
-import { money } from "@/lib/format";
+import { moneyPreciso } from "@/lib/format";
 export default async function HistorialVentas() {
   const usuario = await getUsuarioActual();
   if (!usuario) redirect("/admin/login");
@@ -34,7 +34,7 @@ export default async function HistorialVentas() {
     <>
       <PageHeader
         title="Ventas históricas"
-        subtitle={`${ventas.length} operaciones · ${money(total)} facturado${activa ? ` · ${activa.nombre}` : " · Todas las sucursales"}`}
+        subtitle={`${ventas.length} operaciones · ${moneyPreciso(total)} facturado${activa ? ` · ${activa.nombre}` : " · Todas las sucursales"}`}
       />
       {puedeVender && <Link href="/admin/ventas" className="btn-ghost mb-4">← Opciones de ventas</Link>}
       <VentasTabla ventas={ventas} productos={conStockLocal} clientes={listaClientes} permitirAlta={puedeVender} />

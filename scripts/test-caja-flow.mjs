@@ -13,7 +13,7 @@ try {
   await client.executeMultiple(`CREATE TABLE sucursales(id INTEGER PRIMARY KEY, nombre TEXT NOT NULL, direccion TEXT DEFAULT '', telefono TEXT DEFAULT '', activo INTEGER DEFAULT 1, orden INTEGER DEFAULT 0, creado_en INTEGER);
 CREATE TABLE productos(id INTEGER PRIMARY KEY, sku TEXT, nombre TEXT, descripcion TEXT, categoria TEXT, precio_venta REAL, precio_compra REAL, stock REAL, unidad_medida TEXT NOT NULL DEFAULT 'unidad', activo INTEGER NOT NULL DEFAULT 1, stock_minimo INTEGER, imagen TEXT, publicado INTEGER, descripcion_web TEXT, creado_en INTEGER);
 CREATE TABLE stock_sucursal(id INTEGER PRIMARY KEY, producto_id INTEGER, sucursal_id INTEGER, cantidad INTEGER, UNIQUE(producto_id, sucursal_id));
-CREATE TABLE ventas(id INTEGER PRIMARY KEY, cliente_id INTEGER, sucursal_id INTEGER, caja_turno_id INTEGER, cajero TEXT, total REAL, estado TEXT, canal TEXT, medio_pago TEXT, referencia TEXT, facturada INTEGER, fecha INTEGER);
+CREATE TABLE ventas(id INTEGER PRIMARY KEY, cliente_id INTEGER, sucursal_id INTEGER, caja_turno_id INTEGER, cajero TEXT, total REAL, estado TEXT, canal TEXT, medio_pago TEXT, efectivo_recibido REAL, vuelto REAL, efectivo_antes REAL, efectivo_despues REAL, referencia TEXT, facturada INTEGER, fecha INTEGER);
 CREATE TABLE venta_items(id INTEGER PRIMARY KEY, venta_id INTEGER, producto_id INTEGER, cantidad INTEGER, precio_unit REAL);
 CREATE TABLE promociones(id INTEGER PRIMARY KEY, nombre TEXT NOT NULL, tipo TEXT NOT NULL, activa INTEGER NOT NULL DEFAULT 0, porcentaje REAL NOT NULL DEFAULT 0, producto_ids TEXT NOT NULL DEFAULT '[]', cantidad_combo INTEGER NOT NULL DEFAULT 2, modo TEXT NOT NULL DEFAULT 'continua', fecha_unica TEXT NOT NULL DEFAULT '', mes TEXT NOT NULL DEFAULT '', dias TEXT NOT NULL DEFAULT '[]', dia_semana INTEGER NOT NULL DEFAULT 6, creada_en INTEGER);`);
   for (const ddl of cajaDDL) await client.execute(ddl);
@@ -27,8 +27,12 @@ CREATE TABLE promociones(id INTEGER PRIMARY KEY, nombre TEXT NOT NULL, tipo TEXT
   const turno = await abrirCaja(1,'Ana',100);
   await assert.rejects(abrirCaja(1,'Ana',0), /ya tiene/);
   await abrirCaja(2,'Luis',0);
-  await venderEnCaja(1,'Ana',[{productoId:1,cantidad:2}],'efectivo');
-  await venderEnCaja(1,'Ana',[{productoId:1,cantidad:1}],'qr');
+  await assert.rejects(venderEnCaja(1,'Ana',[{productoId:1,cantidad:1}],'efectivo',{efectivoRecibido:10}), /no alcanza/);
+  assert.equal((await db.select().from(stockSucursal).where(eq(stockSucursal.productoId,1)))[0].cantidad,10);
+  const efectivo = await venderEnCaja(1,'Ana',[{productoId:1,cantidad:2}],'efectivo',{efectivoRecibido:100});
+  assert.deepEqual([efectivo.efectivoRecibido,efectivo.vuelto,efectivo.efectivoAntes,efectivo.efectivoDespues],[100,50,100,150]);
+  const qr = await venderEnCaja(1,'Ana',[{productoId:1,cantidad:1}],'qr');
+  assert.deepEqual([qr.efectivoAntes,qr.efectivoDespues],[150,150]);
   await venderEnCaja(1,'Ana',[{productoId:1,cantidad:1}],'tarjeta');
   await moverEfectivo(1,turno.id,'Ana','ingreso',20,'Cambio');
   assert.equal((await extraer(turno.id,30)).ok,false);
@@ -94,8 +98,9 @@ CREATE TABLE promociones(id INTEGER PRIMARY KEY, nombre TEXT NOT NULL, tipo TEXT
   await abrirCaja(1,'Ana',0);
   await assert.rejects(venderEnCaja(1,'Ana',[{productoId:3,cantidad:1}],'efectivo'), /Sin stock/);
   await db.insert(promociones).values({ nombre: '10% total', tipo: 'total', activa: true, porcentaje: 10 });
-  const conPromo = await venderEnCaja(1,'Ana',[{productoId:1,cantidad:1}],'efectivo');
+  const conPromo = await venderEnCaja(1,'Ana',[{productoId:1,cantidad:1}],'efectivo',{efectivoRecibido:30});
   assert.equal(conPromo.total, 22.5);
+  assert.deepEqual([conPromo.vuelto,conPromo.efectivoAntes,conPromo.efectivoDespues],[7.5,0,22.5]);
   assert.equal((await db.select().from(ventas).where(eq(ventas.id,conPromo.ventaId)))[0].total, 22.5);
   await assert.rejects(venderEnCaja(1,'Ana',[{productoId:3,cantidad:1}],'efectivo',{permitirSinStock:true,canal:'online'}), /Sin stock/);
   await venderEnCaja(1,'Ana',[{productoId:3,cantidad:2}],'efectivo',{permitirSinStock:true});

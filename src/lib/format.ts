@@ -8,6 +8,14 @@ export function money(n: number): string {
 
 export const formatARS = money;
 
+export function moneyPreciso(n: number): string {
+  return new Intl.NumberFormat("es-AR", {
+    style: "currency",
+    currency: "ARS",
+    maximumFractionDigits: 2,
+  }).format(n || 0);
+}
+
 export function fecha(d: Date | number | null | undefined): string {
   if (!d) return "—";
   const date = typeof d === "number" ? new Date(d * 1000) : d;

@@ -44,6 +44,7 @@ export function SucursalSwitcher({ sucursales, activaId, puedeAdministrar, compa
 
   const activa = sucursales.find((s) => s.id === activaId) ?? null;
   const etiqueta = activa ? activa.nombre : "Todas las sucursales";
+  const direccionActiva = activa?.direccion?.trim() ?? "";
 
   // Clic afuera o Escape cierran el menú.
   useEffect(() => {
@@ -117,9 +118,7 @@ export function SucursalSwitcher({ sucursales, activaId, puedeAdministrar, compa
     return (
       <div className={compacto ? "flex items-center gap-2" : ""}>
         {marca}
-        <p className={compacto ? "text-sm font-semibold text-lime" : "text-[11px] text-slate-500"}>
-          {compacto ? "Almack" : etiqueta}
-        </p>
+        <div><p className={compacto ? "text-sm font-semibold text-lime" : "text-[11px] text-slate-400"}>{etiqueta}</p>{direccionActiva && <p className="max-w-52 truncate text-[11px] text-slate-400" title={direccionActiva}>{direccionActiva}</p>}</div>
       </div>
     );
   }
@@ -148,6 +147,7 @@ export function SucursalSwitcher({ sucursales, activaId, puedeAdministrar, compa
           <span className="max-w-[9rem] truncate">{compacto ? activa?.nombre ?? "Todas" : etiqueta}</span>
           <ChevronDown className={`h-3 w-3 shrink-0 transition ${abierto ? "rotate-180" : ""}`} />
         </span>
+        {direccionActiva && <span className="block max-w-[13rem] truncate text-[11px] text-slate-400" title={direccionActiva}>{direccionActiva}</span>}
       </button>
 
       {abierto && createPortal(
@@ -176,10 +176,11 @@ export function SucursalSwitcher({ sucursales, activaId, puedeAdministrar, compa
               <FormNombre
                 key={s.id}
                 inicial={s.nombre}
+                direccionInicial={s.direccion}
                 pendiente={pendiente}
                 onCancelar={() => setEditando(null)}
-                onGuardar={(nombre) =>
-                  correr(() => renombrarSucursal(s.id, nombre), () => setEditando(null))
+                onGuardar={(nombre, direccion) =>
+                  correr(() => renombrarSucursal(s.id, nombre, direccion), () => setEditando(null))
                 }
                 extra={
                   sucursales.length > 1 && (
@@ -208,7 +209,7 @@ export function SucursalSwitcher({ sucursales, activaId, puedeAdministrar, compa
                 accion={
                   <button
                     type="button"
-                    title="Editar el nombre"
+                    title="Editar nombre y dirección"
                     className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
                     onClick={(e) => {
                       e.stopPropagation();
@@ -229,10 +230,11 @@ export function SucursalSwitcher({ sucursales, activaId, puedeAdministrar, compa
           {agregando ? (
             <FormNombre
               inicial=""
+              direccionInicial=""
               placeholder="Nombre de la sucursal"
               pendiente={pendiente}
               onCancelar={() => setAgregando(false)}
-              onGuardar={(nombre) => correr(() => crearSucursal(nombre), () => setAgregando(false))}
+              onGuardar={(nombre, direccion) => correr(() => crearSucursal(nombre, direccion), () => setAgregando(false))}
             />
           ) : (
             <button
@@ -296,6 +298,7 @@ function Fila({
 // Input inline que sirve tanto para crear como para renombrar.
 function FormNombre({
   inicial,
+  direccionInicial,
   placeholder = "Nombre",
   pendiente,
   onGuardar,
@@ -303,19 +306,21 @@ function FormNombre({
   extra,
 }: {
   inicial: string;
+  direccionInicial: string;
   placeholder?: string;
   pendiente: boolean;
-  onGuardar: (nombre: string) => void;
+  onGuardar: (nombre: string, direccion: string) => void;
   onCancelar: () => void;
   extra?: React.ReactNode;
 }) {
   const [valor, setValor] = useState(inicial);
+  const [direccion, setDireccion] = useState(direccionInicial);
 
   return (
-    <div className="flex items-center gap-1 px-1.5 py-1">
+    <div className="space-y-2 px-1.5 py-1">
       <input
         autoFocus
-        className="input min-w-0 flex-1 py-1.5 text-sm"
+        className="input min-w-0 w-full py-1.5 text-sm"
         value={valor}
         placeholder={placeholder}
         disabled={pendiente}
@@ -323,29 +328,41 @@ function FormNombre({
         onKeyDown={(e) => {
           if (e.key === "Enter") {
             e.preventDefault();
-            onGuardar(valor);
+            onGuardar(valor, direccion);
           }
           if (e.key === "Escape") onCancelar();
         }}
       />
-      {extra}
-      <button
-        type="button"
-        title="Guardar"
-        className="rounded-lg p-1.5 text-emerald-600 transition hover:bg-emerald-50"
+      <input
+        className="input min-w-0 w-full py-1.5 text-sm"
+        value={direccion}
+        placeholder="Calle y altura, por ejemplo San Martín 123"
+        aria-label="Dirección de la sucursal"
+        maxLength={200}
         disabled={pendiente}
-        onClick={() => onGuardar(valor)}
-      >
-        <Check className="h-4 w-4" />
-      </button>
-      <button
-        type="button"
-        title="Cancelar"
-        className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100"
-        onClick={onCancelar}
-      >
-        <X className="h-4 w-4" />
-      </button>
+        onChange={(e) => setDireccion(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); onGuardar(valor, direccion); } if (e.key === "Escape") onCancelar(); }}
+      />
+      <div className="flex items-center justify-end gap-1">
+        {extra}
+        <button
+          type="button"
+          title="Guardar"
+          className="rounded-lg p-1.5 text-emerald-600 transition hover:bg-emerald-50"
+          disabled={pendiente}
+          onClick={() => onGuardar(valor, direccion)}
+        >
+          <Check className="h-4 w-4" />
+        </button>
+        <button
+          type="button"
+          title="Cancelar"
+          className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100"
+          onClick={onCancelar}
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
     </div>
   );
 }

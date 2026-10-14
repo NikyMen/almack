@@ -254,7 +254,9 @@ export function FilterableTable<T>({
               <tr
                 key={rowKey(r)}
                 onClick={onRowClick ? () => onRowClick(r) : undefined}
-                className={`hover:bg-slate-50 ${onRowClick ? "cursor-pointer" : ""} ${rowClassName?.(r) ?? ""}`}
+                onKeyDown={onRowClick ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onRowClick(r); } } : undefined}
+                tabIndex={onRowClick ? 0 : undefined}
+                className={`hover:bg-slate-50 ${onRowClick ? "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-lime" : ""} ${rowClassName?.(r) ?? ""}`}
               >
                 {cols.map((c) => (
                   <td key={c.key} className={`py-3 ${compact ? "break-words px-2 [overflow-wrap:anywhere]" : "px-4"} ${c.className ?? ""}`}>{c.cell(r)}</td>
