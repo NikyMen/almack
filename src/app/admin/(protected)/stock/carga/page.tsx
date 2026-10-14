@@ -22,5 +22,5 @@ export default async function CargaStockPage() {
     eq(compras.stockRevertido, false),
     sql`exists (select 1 from ${compraItems} where ${compraItems.compraId} = ${compras.id})`
   )).orderBy(desc(compras.id)) : [];
-  return <><Link href="/admin/stock" className="btn-ghost mb-4">← Opciones de stock</Link><PageHeader title="Carga de stock" subtitle="Del comprobante al inventario, con revisión de productos y precios." /><CargaStock permiteCompras={tieneAcceso(usuario,"compras")} sucursales={lista} activaId={activaId} borradores={borradores} cargas={cargas} /></>;
+  return <><Link href="/admin/stock" className="btn-ghost mb-4">← Opciones de stock</Link><PageHeader title="Carga de stock" subtitle="Del comprobante al inventario, con revisión de productos y precios." /><CargaStock permiteCompras={tieneAcceso(usuario,"compras")} permitePrecioManual={usuario.rol === "admin"} sucursales={lista} activaId={activaId} borradores={borradores} cargas={cargas} /></>;
 }

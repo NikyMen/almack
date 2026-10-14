@@ -9,7 +9,7 @@ import type { Compra, Sucursal } from "@/db/schema";
 import { crearCargaStock } from "@/app/admin/(protected)/compras/actions";
 import { CompraRecepcion } from "@/components/compra-recepcion";
 
-export function CargaStock({ sucursales, activaId, borradores, cargas, permiteCompras = false }: { permiteCompras?: boolean; sucursales: Sucursal[]; activaId: number | null; borradores: Compra[]; cargas: Compra[] }) {
+export function CargaStock({ sucursales, activaId, borradores, cargas, permiteCompras = false, permitePrecioManual = false }: { permiteCompras?: boolean; permitePrecioManual?: boolean; sucursales: Sucursal[]; activaId: number | null; borradores: Compra[]; cargas: Compra[] }) {
   const router = useRouter();
   const [reversion, setReversion] = useState<{ id: number; lineas: LineaReversion[] } | null>(null);
   const [decisiones, setDecisiones] = useState<Record<number, { modo: DecisionReversion["modo"] | ""; cantidad: string }>>({});
@@ -100,7 +100,7 @@ export function CargaStock({ sucursales, activaId, borradores, cargas, permiteCo
       {borradores.length > 0 && <div className="rounded-xl border border-slate-200 bg-white p-5"><h2 className="font-semibold">Retomar una carga pendiente</h2><div className="mt-3 flex flex-wrap gap-2">{borradores.map(c => <button className="btn-ghost" key={c.id} onClick={() => setCompra(c)}>#{c.id} · {c.proveedor}</button>)}</div></div>}
     </> : <div className="rounded-xl bg-white p-4">
       <div className="mb-4 flex items-center justify-between gap-3"><h2 className="font-semibold">Carga #{compra.id} · {compra.proveedor} · {sucursales.find(s => s.id === compra.sucursalId)?.nombre}</h2><button className="btn-ghost" onClick={() => setCompra(null)}>Otra carga</button></div>
-      <CompraRecepcion key={compra.id} compra={compra} onCambio={() => router.refresh()} onCancelar={() => setCompra(null)} />
+      <CompraRecepcion key={compra.id} compra={compra} onCambio={() => router.refresh()} onCancelar={() => setCompra(null)} permitePrecioManual={permitePrecioManual} />
     </div>}
   </div>;
 }

@@ -476,6 +476,7 @@ export async function analizarDetalleCompra(
 /** Renglón cargado a mano: el que estaba tachado, el que la IA no vio. */
 export async function agregarLineaCompra(compraId: number, datos: DatosLinea) {
   const usuario = await requireCargaStock();
+  if (usuario.rol !== "admin" && datos.precioVenta !== undefined) return { ok: false as const, error: "Solo el administrador puede fijar el precio de venta." };
   const compra = await getCompra(compraId);
   if (!compra) return { ok: false as const, error: "La compra no existe." };
 

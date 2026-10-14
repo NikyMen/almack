@@ -12,7 +12,7 @@ import { ClipboardList, ChartNoAxesCombined, Truck } from "lucide-react";
 export const maxDuration = 180;
 
 export default async function ComprasPage({ searchParams }: { searchParams: Promise<{ vista?: string }> }) {
-  await requireAcceso("compras");
+  const usuario = await requireAcceso("compras");
   if ((await searchParams).vista !== "historial") {
     return <>
       <PageHeader title="Compras" subtitle="Elegí cómo querés gestionar tus compras." />
@@ -37,7 +37,7 @@ export default async function ComprasPage({ searchParams }: { searchParams: Prom
         title="Compras"
         subtitle={`${items.length} órdenes · ${money(total)} invertido${activa ? ` · ${activa.nombre}` : ""}`}
       />
-      <ComprasTabla compras={items} sucursales={lista} sucursalActivaId={activaId} proveedores={listaProveedores.map(p => p.nombre)} />
+      <ComprasTabla compras={items} sucursales={lista} sucursalActivaId={activaId} proveedores={listaProveedores.map(p => p.nombre)} permitePrecioManual={usuario.rol === "admin"} />
     </>
   );
 }

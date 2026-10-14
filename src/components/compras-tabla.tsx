@@ -25,10 +25,12 @@ export function ComprasTabla({
   sucursales,
   sucursalActivaId,
   proveedores = [],
+  permitePrecioManual = false,
 }: {
   compras: Compra[];
   sucursales: Sucursal[];
   proveedores?: string[];
+  permitePrecioManual?: boolean;
   /** null = el panel está en "Todas": hay que preguntar qué local recibe. */
   sucursalActivaId: number | null;
 }) {
@@ -109,7 +111,7 @@ export function ComprasTabla({
       />
 
       {detalle && (
-        <DetalleCompra compra={detalle} onClose={() => setDetalle(null)} onCambio={() => router.refresh()} />
+        <DetalleCompra compra={detalle} onClose={() => setDetalle(null)} onCambio={() => router.refresh()} permitePrecioManual={permitePrecioManual} />
       )}
     </>
   );
@@ -180,10 +182,12 @@ function DetalleCompra({
   compra,
   onClose,
   onCambio,
+  permitePrecioManual,
 }: {
   compra: Compra;
   onClose: () => void;
   onCambio: () => void;
+  permitePrecioManual: boolean;
 }) {
   const [editando, setEditando] = useState(false);
   const [historial, setHistorial] = useState<CompraHistorial[] | null>(null);
@@ -410,7 +414,7 @@ function DetalleCompra({
           )}
 
           {/* Lo que se va a cargar al stock (borrador editable) */}
-          <CompraRecepcion compra={compra} onCambio={refrescar} />
+          <CompraRecepcion compra={compra} onCambio={refrescar} permitePrecioManual={permitePrecioManual} />
 
           {/* Auditoría */}
           <section>

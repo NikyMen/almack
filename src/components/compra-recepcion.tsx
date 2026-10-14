@@ -28,7 +28,7 @@ type Modo = "reemplazar" | "agregar";
  * cargar al stock. Todo lo de esta pantalla es reversible; lo único que no lo
  * es está detrás del botón "Cargar al stock", que siempre pide confirmación.
  */
-export function CompraRecepcion({ compra, onCambio, onCancelar }: { compra: Compra; onCambio: () => void; onCancelar?: () => void }) {
+export function CompraRecepcion({ compra, onCambio, onCancelar, permitePrecioManual = false }: { compra: Compra; onCambio: () => void; onCancelar?: () => void; permitePrecioManual?: boolean }) {
   const [lineas, setLineas] = useState<LineaVista[] | null>(null);
   const [error, setError] = useState("");
   const [aviso, setAviso] = useState("");
@@ -215,6 +215,7 @@ export function CompraRecepcion({ compra, onCambio, onCancelar }: { compra: Comp
       {agregando && (
         <NuevaLinea
           compraId={compra.id}
+          permitePrecioManual={permitePrecioManual}
           onDone={async (ok) => {
             setAgregando(false);
             if (ok) await cargar();
@@ -281,9 +282,11 @@ export function CompraRecepcion({ compra, onCambio, onCancelar }: { compra: Comp
 function NuevaLinea({
   compraId,
   onDone,
+  permitePrecioManual,
 }: {
   compraId: number;
   onDone: (ok: boolean) => void;
+  permitePrecioManual: boolean;
 }) {
   const [guardando, setGuardando] = useState(false);
   const [descripcion, setDescripcion] = useState("");
@@ -347,7 +350,7 @@ function NuevaLinea({
             crearNuevo,
             descripcion, codigo, cantidad: Number(cantidad), unidadMedida,
             modoStock, precioUnit: Number(precioUnit || 0),
-            ...(precioVenta.trim() ? { precioVenta: Number(precioVenta) } : {}),
+            ...(permitePrecioManual && precioVenta.trim() ? { precioVenta: Number(precioVenta) } : {}),
           });
           if (!r.ok) { setErrorLocal(r.error); return; }
           onDone(true);
@@ -370,12 +373,12 @@ function NuevaLinea({
       </div>}
       {elegido && <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">Se sumará a <strong>{elegido.nombre}</strong> · {elegido.sku} <button type="button" className="ml-2 underline" onClick={() => setElegido(null)}>Cambiar</button></p>}
       {crearNuevo && <p className="rounded-lg bg-violet-50 px-3 py-2 text-sm text-violet-800">Se creará un producto nuevo al confirmar la carga. <button type="button" className="underline" onClick={() => setCrearNuevo(false)}>Buscar existente</button></p>}
-      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+      <div className={`grid gap-2 sm:grid-cols-2 ${permitePrecioManual ? "lg:grid-cols-5" : "lg:grid-cols-4"}`}>
         <label className="text-xs font-medium text-slate-600">Cantidad<input type="number" min={modoStock === "fijar" ? 0 : 0.001} step={unidadMedida === "kg" ? "0.001" : "1"} className="input mt-1" value={cantidad} onChange={e => setCantidad(e.target.value)} required /></label>
         <label className="text-xs font-medium text-slate-600">Unidad<select className="input mt-1" value={unidadMedida} onChange={e => setUnidadMedida(e.target.value as "unidad" | "kg")} disabled={Boolean(elegido)}><option value="unidad">Unidad</option><option value="kg">Peso (kg)</option></select></label>
         <label className="text-xs font-medium text-slate-600">Aplicar stock<select className="input mt-1" value={modoStock} onChange={e => setModoStock(e.target.value as "sumar" | "fijar")}><option value="sumar">Sumar cantidad</option><option value="fijar">Fijar saldo final</option></select></label>
         <label className="text-xs font-medium text-slate-600">Costo unitario ($)<input type="number" min="0" step="0.01" inputMode="decimal" className="input mt-1" value={precioUnit} onChange={e => setPrecioUnit(e.target.value)} placeholder="0" /></label>
-        <label className="text-xs font-medium text-slate-600">Precio de venta ($) · opcional<input type="number" min="0" step="0.01" inputMode="decimal" className="input mt-1" value={precioVenta} onChange={e => setPrecioVenta(e.target.value)} placeholder="Automático" /></label>
+        {permitePrecioManual && <label className="text-xs font-medium text-slate-600">Precio de venta ($) · opcional<input type="number" min="0" step="0.01" inputMode="decimal" className="input mt-1" value={precioVenta} onChange={e => setPrecioVenta(e.target.value)} placeholder="Automático" /></label>}
       </div>
       {errorLocal && <p role="alert" className="text-xs text-rose-600">{errorLocal}</p>}
       <div className="flex gap-2"><button type="submit" className="btn-primary" disabled={guardando}>
