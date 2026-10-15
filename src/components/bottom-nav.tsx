@@ -89,9 +89,9 @@ export function BottomNav({ usuario }: { usuario: UsuarioActual }) {
           ))}
 
           {/* Botón central elevado: abre la cámara */}
-          <div className="relative w-16 shrink-0">
+          {puedeCaja && <div className="relative w-16 shrink-0">
             <button
-              onClick={() => (puedeCaja ? setEscaneando(true) : router.push("/admin/caja"))}
+              onClick={() => setEscaneando(true)}
               className="absolute -top-5 left-1/2 flex h-14 w-14 -translate-x-1/2 flex-col items-center justify-center rounded-full bg-lime text-navy shadow-lg shadow-lime/30 transition active:scale-95"
               aria-label="Escanear código de barras"
             >
@@ -100,7 +100,7 @@ export function BottomNav({ usuario }: { usuario: UsuarioActual }) {
             <span className="absolute bottom-1.5 left-0 right-0 text-center text-[10px] font-medium text-slate-500">
               Escanear
             </span>
-          </div>
+          </div>}
 
           {der.map((k) => (
             <ItemNav key={k} modulo={k} path={path} />

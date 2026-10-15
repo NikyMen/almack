@@ -6,13 +6,13 @@ import { operarCaja } from "@/app/caja-actions";
 import { money } from "@/lib/format";
 import { ETIQUETA_MEDIO, type MedioPago } from "@/lib/medios-pago";
 import { ExtraccionCaja } from "@/components/extraccion-caja";
-import type { cajaTurnos, cajaExtracciones } from "@/db/schema";
+import type { cajaTurnos, cajaExtracciones, cambiosPrecio } from "@/db/schema";
 import type { resumenCaja, saldoUltimoCierre } from "@/lib/caja";
 type Turno = typeof cajaTurnos.$inferSelect;
 function fecha(value: Date | null) {
   return value ? new Intl.DateTimeFormat("es-AR", { dateStyle: "short", timeStyle: "short", timeZone: "America/Argentina/Buenos_Aires" }).format(value) : "—";
 }
-export function CajaTurnoPanel({ turno, resumen, historial, sucursal, anterior, extracciones }: { anterior: Awaited<ReturnType<typeof saldoUltimoCierre>>; extracciones: (typeof cajaExtracciones.$inferSelect)[]; turno: Turno | null; resumen: Awaited<ReturnType<typeof resumenCaja>> | null; historial: Turno[]; sucursal: string }) {
+export function CajaTurnoPanel({ turno, resumen, historial, cambios, sucursal, anterior, extracciones, puedeVerVentas }: { anterior: Awaited<ReturnType<typeof saldoUltimoCierre>>; extracciones: (typeof cajaExtracciones.$inferSelect)[]; turno: Turno | null; resumen: Awaited<ReturnType<typeof resumenCaja>> | null; historial: Turno[]; cambios: (typeof cambiosPrecio.$inferSelect)[]; sucursal: string; puedeVerVentas: boolean }) {
   const [usarAnterior, setUsarAnterior] = useState(Boolean(anterior));
   const [modo, setModo] = useState<"movimiento" | "cerrar" | null>(null);
   const [error, setError] = useState("");
@@ -31,25 +31,21 @@ export function CajaTurnoPanel({ turno, resumen, historial, sucursal, anterior, 
   }
   return <div className="mb-4 space-y-2">
     <section className="card overflow-hidden">
-      <div className="flex flex-wrap items-center justify-between gap-2 bg-navy px-4 py-2 text-white">
-        <div><p className="text-xs uppercase tracking-widest text-lime">{sucursal}</p><h2 className="text-base font-semibold">{turno ? `Caja abierta · turno #${turno.id}` : "Caja cerrada"}</h2></div>
-        {turno && <p className="text-sm text-white/70">Abrió {turno.responsable} · {fecha(turno.abiertoEn)}</p>}
+      <div className="flex flex-wrap items-center justify-between gap-2 bg-navy px-3 py-2 text-white">
+        <div className="min-w-0"><div className="flex flex-wrap items-center gap-x-2"><p className="text-xs uppercase tracking-widest text-lime">{sucursal}</p>{turno && <p className="text-xs text-slate-400">Abrió {turno.responsable} · {fecha(turno.abiertoEn)}</p>}</div><h2 className="text-sm font-semibold">{turno ? `Caja abierta · turno #${turno.id}` : "Caja cerrada"}</h2></div>
+        {turno && resumen && <div className="flex flex-wrap items-center gap-1.5"><button disabled={pendiente} className="btn-ghost border border-white/20 bg-white px-2 py-1 text-xs text-navy" onClick={() => {setModo("movimiento"); setError("");}}>Registrar ingreso</button><button disabled={pendiente} className="btn-primary px-2 py-1 text-xs" onClick={() => {setModo("cerrar"); setError("");}}>Arquear y cerrar</button><ExtraccionCaja turnoId={turno.id} disponible={resumen.esperado} /></div>}
       </div>
-      <div className="p-3 sm:p-4">
+      <div className="p-2 sm:p-3">
         {!turno && anterior && <div className="mb-4 rounded-lg bg-slate-50 px-3 py-2"><p className="text-xs uppercase tracking-wide text-slate-500">Saldo del último cierre · #{anterior.turnoId}</p><p className="mt-1 text-2xl font-bold text-navy">{money(anterior.disponible)}</p><p className="mt-1 text-xs text-slate-500">Contado: {money(anterior.contado)} · Extracciones posteriores: {money(anterior.extraido)}</p><label className="mt-3 flex items-center gap-2 text-sm"><input type="checkbox" checked={usarAnterior} onChange={e => setUsarAnterior(e.target.checked)} />Iniciar con este saldo</label></div>}
         {!turno ? <form action={fd => enviar(fd, "abrir")} className="flex flex-wrap items-end gap-4">
           <div className="flex-1"><label className="label" htmlFor="fondo">Fondo inicial en efectivo</label><input id="fondo" disabled={usarAnterior} name="monto" type="number" min="0" step="0.01" required className="input" placeholder={usarAnterior && anterior ? money(anterior.disponible) : "0,00"} /><p className="mt-2 text-sm text-slate-500">Contá el dinero del cajón antes de comenzar a vender.</p></div>
           <button disabled={pendiente} className="btn-primary">{pendiente ? "Abriendo…" : "Abrir caja"}</button>
         </form> : resumen && <>
           <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
-            {[ ["Fondo inicial", turno.fondoInicial], ["Ventas en efectivo", resumen.efectivo], ["Ingresos / retiros", resumen.ingresos - resumen.retiros] ].map(([label, value]) => <div key={label} className="rounded-xl bg-slate-50 p-4"><p className="text-xs text-slate-500">{label}</p><p className="text-lg font-bold tabular-nums text-navy">{money(Number(value))}</p></div>)}
-            <Link href="/admin/ventas/historial" target="_blank" rel="noopener noreferrer" aria-label={`Efectivo esperado ${money(resumen.esperado)}. Abrir ventas históricas en otra ventana`} className="group rounded-xl bg-slate-50 p-4 transition hover:bg-lime/15 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lime">
-              <p className="text-xs text-slate-500 group-hover:text-navy">Efectivo esperado <span aria-hidden="true">↗</span></p>
-              <p className="text-lg font-bold tabular-nums text-navy">{money(resumen.esperado)}</p>
-            </Link>
+            {[ ["Fondo inicial", turno.fondoInicial], ["Ventas en efectivo", resumen.efectivo], ["Ingresos / retiros", resumen.ingresos - resumen.retiros] ].map(([label, value]) => <div key={label} className="rounded-xl bg-slate-50 px-3 py-2"><p className="text-xs text-slate-500">{label}</p><p className="text-base font-bold tabular-nums text-navy">{money(Number(value))}</p></div>)}
+            {puedeVerVentas ? <Link href="/admin/ventas/historial" target="_blank" rel="noopener noreferrer" aria-label={`Efectivo esperado ${money(resumen.esperado)}. Abrir ventas históricas en otra ventana`} className="group rounded-xl bg-slate-50 px-3 py-2 transition hover:bg-lime/15 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lime"><p className="text-xs text-slate-500 group-hover:text-navy">Efectivo esperado <span aria-hidden="true">↗</span></p><p className="text-base font-bold tabular-nums text-navy">{money(resumen.esperado)}</p></Link> : <div className="rounded-xl bg-slate-50 px-3 py-2"><p className="text-xs text-slate-500">Efectivo esperado</p><p className="text-base font-bold tabular-nums text-navy">{money(resumen.esperado)}</p></div>}
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-2">{resumen.cobros.filter(c => c.medio !== "efectivo").map(c => <span className="badge bg-slate-100 text-slate-600" key={c.medio}>{ETIQUETA_MEDIO[c.medio as MedioPago] ?? c.medio}: {money(c.total)}</span>)}<span className="text-xs text-slate-500">QR y tarjeta no suman efectivo al cajón.</span></div>
-          <div className="mt-3 flex flex-wrap items-center gap-2"><button disabled={pendiente} className="btn-ghost border border-slate-200" onClick={() => {setModo("movimiento"); setError("");}}>Registrar ingreso</button><button disabled={pendiente} className="btn-primary" onClick={() => {setModo("cerrar"); setError("");}}>Arquear y cerrar</button><ExtraccionCaja turnoId={turno.id} disponible={resumen.esperado} /></div>
           {modo && <form key={modo} action={fd => enviar(fd, modo)} className="mt-5 space-y-3 rounded-xl border border-slate-200 p-4">
             <h3 className="font-semibold">{modo === "cerrar" ? "Arqueo del efectivo" : "Movimiento de efectivo"}</h3>
             {modo === "movimiento" && <div><label className="label" htmlFor="tipo">Tipo</label><select id="tipo" name="tipo" className="input"><option value="ingreso">Ingreso</option></select></div>}
@@ -65,8 +61,9 @@ export function CajaTurnoPanel({ turno, resumen, historial, sucursal, anterior, 
       </div>
     </section>
     <div className="grid items-start gap-2 sm:grid-cols-2">
-    {extracciones.length > 0 && <details className="card px-4 py-2"><summary className="cursor-pointer font-medium">Últimas extracciones</summary><div className="mt-3 divide-y divide-slate-100">{extracciones.map(e => <div key={e.id} className="flex justify-between gap-3 py-3 text-sm"><div><p className="font-medium">{e.motivo}</p><p className="text-xs text-slate-500">{e.responsable} · {fecha(e.fecha)} · Caja {e.estadoCaja} · Turno #{e.turnoId}</p></div><span className="shrink-0 font-semibold">−{money(e.monto)}</span></div>)}</div></details>}
+    {extracciones.length > 0 && <details className="card px-4 py-2 sm:col-span-2"><summary className="cursor-pointer font-medium">Últimas extracciones</summary><div className="mt-3 divide-y divide-slate-100">{extracciones.map(e => <div key={e.id} className="flex justify-between gap-3 py-3 text-sm"><div><p className="font-medium">{e.motivo}</p><p className="text-xs text-slate-500">{e.responsable} · {fecha(e.fecha)} · Caja {e.estadoCaja} · Turno #{e.turnoId}</p></div><span className="shrink-0 font-semibold">−{money(e.monto)}</span></div>)}</div></details>}
     {historial.length > 0 && <details className="card px-4 py-2"><summary className="cursor-pointer font-medium">Últimos cierres de esta sucursal</summary><div className="mt-3 space-y-3">{historial.map(t => <div className="rounded-xl border border-slate-200 p-4 text-sm" key={t.id}><div className="flex flex-wrap justify-between gap-2"><strong>Turno #{t.id} · {fecha(t.cerradoEn)}</strong><span className={t.diferencia ? "text-rose-600" : "text-emerald-600"}>Diferencia: {money(t.diferencia ?? 0)}</span></div><p className="mt-2">Esperado {money(t.efectivoEsperado ?? 0)} · Contado {money(t.efectivoContado ?? 0)}</p><p className="mt-1 text-slate-500">Abrió {t.responsable} · Cerró {t.cerradoPor}</p>{t.resumen && <p className="mt-2 text-slate-500">{(JSON.parse(t.resumen) as {medio:string;total:number}[]).map(c => `${ETIQUETA_MEDIO[c.medio as MedioPago] ?? c.medio}: ${money(c.total)}`).join(" · ")}</p>}{t.observaciones && <p className="mt-2">{t.observaciones}</p>}</div>)}</div></details>}
+    <details className="card px-4 py-2"><summary className="cursor-pointer font-medium">Cambios de precio ({cambios.length})</summary><div className="mt-3 space-y-3">{cambios.length === 0 && <p className="text-sm text-slate-500">Todavía no hay cambios de precio en esta sucursal.</p>}{cambios.map(c => { const d = JSON.parse(c.detalle) as { destino: string; producto?: string; anterior?: number; nuevo?: number; promocion?: string; productos?: { nombre: string; cantidad: number }[] }; return <div className="rounded-xl border border-slate-200 p-3 text-sm" key={c.id}><strong>Venta #{c.ventaId} · {fecha(c.fecha)}</strong><p className="text-slate-500">{c.usuario} · {ETIQUETA_MEDIO[c.medioPago as MedioPago] ?? c.medioPago}</p><p className="mt-1">{d.destino === "stock" ? `Se actualizó el precio en stock de ${d.producto}: ${money(d.anterior ?? 0)} → ${money(d.nuevo ?? 0)}` : `Promoción ${d.promocion}${d.producto ? ` · ${d.producto}: ${money(d.anterior ?? 0)} → ${money(d.nuevo ?? 0)}` : ` · ${d.productos?.map(p => `${p.nombre} (${p.cantidad})`).join(", ")}`}`}</p><p className="text-xs text-slate-500">Total: {money(c.totalAnterior)} → {money(c.totalNuevo)}</p></div>; })}</div></details>
     </div>
   </div>;
 }

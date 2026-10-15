@@ -16,6 +16,7 @@ import { useCarrito, type Linea } from "@/components/carrito";
 import { SelectorPago } from "@/components/selector-pago";
 import { BarcodeScanner } from "@/components/barcode-scanner";
 import { usePromocionAutomatica } from "@/components/use-promocion-automatica";
+import type { AjustePrecio } from "@/lib/caja";
 
 type Ticket = { ventaId: number; total: number; items: number; medioPago: MedioPago; efectivoRecibido: number | null; vuelto: number | null };
 
@@ -25,6 +26,14 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
   const [eligiendoPago, setEligiendoPago] = useState(false);
   const [escaneando, setEscaneando] = useState(false);
   const [pedidoAbierto, setPedidoAbierto] = useState(false);
+  const [editandoPrecio, setEditandoPrecio] = useState<{ tipo: "producto" | "total"; productoId?: number } | null>(null);
+  const [precioNuevo, setPrecioNuevo] = useState("");
+  const [clavePrecio, setClavePrecio] = useState("");
+  const [nombrePromocion, setNombrePromocion] = useState("");
+  const [productosPromocion, setProductosPromocion] = useState<number[]>([]);
+  const [actualizarStock, setActualizarStock] = useState(true);
+  const [ajustePrecio, setAjustePrecio] = useState<AjustePrecio | null>(null);
+  const [firmaAjuste, setFirmaAjuste] = useState("");
   const [pendiente, startTransition] = useTransition();
   const inputRef = useRef<HTMLInputElement>(null);
   const params = useSearchParams();
@@ -38,6 +47,26 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
     agregar, cambiarCantidad, quitar, vaciar, buscar, agregarPorCodigo, items,
   } = useCarrito(productos, permitirSinStock);
   const promocion = usePromocionAutomatica(carrito.map(l => ({ productoId: l.producto.id, cantidad: l.cantidad })));
+  const firmaCarrito = carrito.map(l => `${l.producto.id}:${l.cantidad}`).join("|");
+  const ajusteActivo = firmaAjuste === firmaCarrito ? ajustePrecio : null;
+  useEffect(() => { if (ajustePrecio && firmaAjuste !== firmaCarrito) setAjustePrecio(null); }, [ajustePrecio, firmaAjuste, firmaCarrito]);
+  const precioItem = (l: Linea) => ajusteActivo?.tipo === "producto" && ajusteActivo.productoId === l.producto.id ? ajusteActivo.precio! : l.producto.precioVenta;
+  const totalVisible = ajusteActivo?.tipo === "total" ? ajusteActivo.precio! : ajusteActivo?.tipo === "producto" ? carrito.reduce((sum, l) => sum + precioItem(l) * l.cantidad, 0) : promocion?.total ?? total;
+  function guardarAjuste(e: React.FormEvent) {
+    e.preventDefault();
+    const precio = Number(precioNuevo);
+    if (!precioNuevo || !Number.isFinite(precio) || precio <= 0 || Math.abs(Math.round(precio * 100) - precio * 100) > 0.000001) { setError("Ingresá un importe válido con hasta dos decimales."); return; }
+    if (!/^\d{3,12}$/.test(clavePrecio)) { setError("La contraseña debe tener entre 3 y 12 dígitos."); return; }
+    if ((!actualizarStock || editandoPrecio?.tipo === "total") && !nombrePromocion.trim()) { setError("Indicá el nombre de la promoción."); return; }
+    if (editandoPrecio?.tipo === "total" && productosPromocion.length === 0) { setError("Seleccioná los productos de la promoción."); return; }
+    if (editandoPrecio?.tipo === "total" && precio >= (promocion?.total ?? total)) { setError("El total promocional debe ser menor al actual."); return; }
+    if (editandoPrecio?.tipo === "total" && precio <= carrito.filter(l => !productosPromocion.includes(l.producto.id)).reduce((sum, l) => sum + l.producto.precioVenta * l.cantidad, 0)) { setError("El total debe cubrir los productos no incluidos en la promoción."); return; }
+    if (editandoPrecio?.tipo === "producto" && !actualizarStock && precio >= (carrito.find(l => l.producto.id === editandoPrecio.productoId)?.producto.precioVenta ?? 0)) { setError("El precio promocional debe ser menor al precio del producto."); return; }
+    if (!editandoPrecio) return;
+    setAjustePrecio({ clave: clavePrecio, tipo: editandoPrecio.tipo, productoId: editandoPrecio.productoId, precio, actualizarStock: editandoPrecio.tipo === "producto" && actualizarStock, nombrePromocion: nombrePromocion.trim(), productoIds: editandoPrecio.tipo === "total" ? productosPromocion : undefined });
+    setFirmaAjuste(firmaCarrito);
+    setError(""); setEditandoPrecio(null); setClavePrecio("");
+  }
 
   const filtrados = buscar(busqueda);
 
@@ -116,10 +145,11 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
     const pedido = items();
     const unidadesPedido = unidades;
     startTransition(async () => {
-      const r = await cobrarVenta(pedido, medioPago, { permitirSinStock, efectivoRecibido });
+      const r = await cobrarVenta(pedido, medioPago, { permitirSinStock, efectivoRecibido, ajustePrecio: ajusteActivo ?? undefined });
       if (!r.ok) return setError(r.error);
       setTicket({ ventaId: r.ventaId, total: r.total, items: unidadesPedido, medioPago, efectivoRecibido: r.efectivoRecibido, vuelto: r.vuelto });
       vaciar();
+      setAjustePrecio(null);
       setBusqueda("");
       setEligiendoPago(false);
       setPedidoAbierto(false);
@@ -159,7 +189,8 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
             <div key={l.producto.id} className="flex items-center gap-2 py-2">
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium">{l.producto.nombre}</p>
-                <p className="text-xs text-slate-400">{money(l.producto.precioVenta)} / {l.producto.unidadMedida === "kg" ? "kg" : "u"}</p>
+                <p className="text-xs text-slate-400">{money(precioItem(l))} / {l.producto.unidadMedida === "kg" ? "kg" : "u"}</p>
+                <button type="button" className="text-xs font-medium text-emerald-700 underline" onClick={() => { setEditandoPrecio({ tipo: "producto", productoId: l.producto.id }); setPrecioNuevo(String(precioItem(l))); setActualizarStock(true); setNombrePromocion(""); setError(""); }}>Cambiar precio</button>
                 {l.producto.precioCompra <= 0 && <p className="text-xs text-amber-700">Precio de costo no cargado</p>}
               </div>
               <div className="flex items-center gap-1">
@@ -172,7 +203,7 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
                 </button>
               </div>
               <span className="w-20 text-right text-sm font-semibold tabular-nums">
-                {money(l.producto.precioVenta * l.cantidad)}
+                {money(precioItem(l) * l.cantidad)}
               </span>
               <button className="btn-ghost px-2 py-1.5 text-rose-500" onClick={() => quitar(l.producto.id)} aria-label="Quitar del pedido">
                 <Trash2 className="h-3.5 w-3.5" />
@@ -185,17 +216,19 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
       {error && <p className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-600">{error}</p>}
 
       <div className="mt-4 border-t border-slate-100 pt-3">
-        {promocion && <p className="mb-2 text-sm text-emerald-700">{promocion.description}{promocion.discount > 0 ? ` · -${money(promocion.discount)}` : ""}</p>}
+        {!ajusteActivo && promocion && <p className="mb-2 text-sm text-emerald-700">{promocion.description}{promocion.discount > 0 ? ` · -${money(promocion.discount)}` : ""}</p>}
+        {ajusteActivo && <div className="mb-2 flex items-center justify-between gap-2 text-xs text-emerald-700"><span>Cambio de precio pendiente · se autoriza al cobrar</span><button type="button" className="underline" onClick={() => setAjustePrecio(null)}>Quitar</button></div>}
         <div className="mb-3 flex items-end justify-between">
           <span className="text-sm text-slate-500">Total</span>
-          <span className="text-2xl font-bold tabular-nums text-navy">{money(promocion?.total ?? total)}</span>
+          <span className="text-2xl font-bold tabular-nums text-navy">{money(totalVisible)}</span>
         </div>
+        {carrito.length > 0 && <button type="button" className="mb-3 text-sm font-medium text-emerald-700 underline" onClick={() => { setEditandoPrecio({ tipo: "total" }); setPrecioNuevo(String(totalVisible)); setActualizarStock(false); setNombrePromocion(""); setProductosPromocion(carrito.map(l => l.producto.id)); setError(""); }}>Cambiar monto total</button>}
         <div className="flex gap-2">
           <button className="btn-primary flex-1 justify-center py-3 text-base" disabled={carrito.length === 0 || pendiente} onClick={cobrar}>
             {pendiente ? <Loader2 className="h-5 w-5 animate-spin" /> : "Cobrar"}
           </button>
           {carrito.length > 0 && (
-            <button className="btn-ghost" disabled={pendiente} onClick={vaciar}>
+            <button className="btn-ghost" disabled={pendiente} onClick={() => { vaciar(); setAjustePrecio(null); }}>
               Vaciar
             </button>
           )}
@@ -310,7 +343,7 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
             <ShoppingCart className="h-4 w-4 text-lime" />
             {carrito.length} productos
           </span>
-          <span className="text-lg font-bold tabular-nums text-lime">{money(total)}</span>
+          <span className="text-lg font-bold tabular-nums text-lime">{money(totalVisible)}</span>
           <span className="flex items-center gap-1 text-sm font-semibold">
             Ver pedido <ChevronUp className="h-4 w-4" />
           </span>
@@ -346,9 +379,22 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
         </div>
       )}
 
+      {editandoPrecio && <Overlay className="overlay" onClick={() => setEditandoPrecio(null)}>
+        <form onSubmit={guardarAjuste} className="card mx-auto max-h-[90vh] w-[min(92vw,440px)] space-y-4 overflow-y-auto p-5" onClick={e => e.stopPropagation()}>
+          <div className="flex items-center justify-between"><h2 className="text-lg font-semibold">{editandoPrecio.tipo === "total" ? "Cambiar monto total" : "Cambiar precio del producto"}</h2><button type="button" className="btn-ghost" onClick={() => setEditandoPrecio(null)} aria-label="Cerrar"><X className="h-4 w-4" /></button></div>
+          <label className="block text-sm">{editandoPrecio.tipo === "total" ? "Nuevo total de la venta" : "Nuevo precio por unidad o kilo"}<input className="input mt-1" type="number" min="0.01" step="0.01" required value={precioNuevo} onChange={e => setPrecioNuevo(e.target.value)} /></label>
+          {editandoPrecio.tipo === "producto" && <div><p className="text-sm font-medium">Motivo del cambio</p><label className="mt-2 flex items-center gap-2 text-sm"><input type="radio" checked={actualizarStock} onChange={() => setActualizarStock(true)} />Corregir precio en stock</label><label className="mt-2 flex items-center gap-2 text-sm"><input type="radio" checked={!actualizarStock} onChange={() => setActualizarStock(false)} />Promoción no cargada</label></div>}
+          {(editandoPrecio.tipo === "total" || !actualizarStock) && <label className="block text-sm">Nombre de la promoción<input className="input mt-1" maxLength={100} required value={nombrePromocion} onChange={e => setNombrePromocion(e.target.value)} /></label>}
+          {editandoPrecio.tipo === "total" && <div><p className="text-sm font-medium">Productos de la promoción</p><div className="mt-2 max-h-32 space-y-1 overflow-auto">{carrito.map(l => <label className="flex items-center gap-2 text-sm" key={l.producto.id}><input type="checkbox" checked={productosPromocion.includes(l.producto.id)} onChange={e => setProductosPromocion(prev => e.target.checked ? [...prev, l.producto.id] : prev.filter(id => id !== l.producto.id))} />{l.producto.nombre} ({l.cantidad})</label>)}</div><p className="mt-1 text-xs text-slate-500">El descuento se asigna a los productos seleccionados.</p></div>}
+          {editandoPrecio.tipo === "producto" && !actualizarStock && <p className="text-xs text-slate-500">La promoción incluirá {carrito.find(l => l.producto.id === editandoPrecio.productoId)?.producto.nombre} con la cantidad actual.</p>}
+          <label className="block text-sm">Contraseña para cambios de precio<input className="input mt-1" type="password" inputMode="numeric" autoComplete="off" pattern="[0-9]{3,12}" required value={clavePrecio} onChange={e => setClavePrecio(e.target.value)} /></label>
+          {error && <p role="alert" className="text-sm text-rose-600">{error}</p>}
+          <button className="btn-primary w-full justify-center">Aplicar al pedido</button>
+        </form>
+      </Overlay>}
       {eligiendoPago && (
         <SelectorPago
-          total={promocion?.total ?? total}
+          total={totalVisible}
           unidades={unidades}
           pendiente={pendiente}
           error={error}

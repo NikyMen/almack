@@ -10,6 +10,7 @@ import {
 } from "@/db/schema";
 import { eq, and, asc, desc, gt, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
+import { requireAcceso } from "@/lib/auth";
 import {
   getManager,
   toMensajeDTO,
@@ -20,10 +21,12 @@ import {
 
 // --- Conexión ----------------------------------------------------------------
 export async function iniciarConexion() {
+  await requireAcceso("whatsapp");
   return getManager().connect();
 }
 
 export async function cerrarSesion() {
+  await requireAcceso("whatsapp");
   const snap = await getManager().logout();
   revalidatePath("/whatsapp");
   return snap;
@@ -31,6 +34,7 @@ export async function cerrarSesion() {
 
 // --- Chat --------------------------------------------------------------------
 export async function abrirChat(contactoId: number) {
+  await requireAcceso("whatsapp");
   await getManager().marcarLeido(contactoId);
   const rows = await db
     .select()
@@ -41,6 +45,7 @@ export async function abrirChat(contactoId: number) {
 }
 
 export async function enviarMensaje(contactoId: number, texto: string) {
+  await requireAcceso("whatsapp");
   const t = texto.trim();
   if (!t) return { ok: false as const, error: "El mensaje está vacío" };
   try {
@@ -58,6 +63,7 @@ export async function enviarMensaje(contactoId: number, texto: string) {
 
 // Mensajes del chat abierto con id mayor a `desdeId` (incremental y barato).
 export async function sincronizarChat(contactoId: number, desdeId: number) {
+  await requireAcceso("whatsapp");
   const rows = await db
     .select()
     .from(waMensajes)
@@ -70,6 +76,7 @@ export async function sincronizarChat(contactoId: number, desdeId: number) {
 // cards y contactos nuevos). El cliente fusiona sólo los campos de mensajería,
 // preservando la posición local del kanban.
 export async function sincronizarContactos() {
+  await requireAcceso("whatsapp");
   const rows = await db
     .select()
     .from(waContactos)
@@ -83,6 +90,7 @@ export async function sincronizarContactos() {
 // destino y su índice como `orden`. Cubre mover entre columnas y reordenar
 // dentro de la misma.
 export async function reordenarColumna(etapaId: number, contactoIds: number[]) {
+  await requireAcceso("whatsapp");
   // Backstop del gate de "venta exitosa": si la etapa destino es la de éxito,
   // sólo movemos ahí a los contactos que tienen un presupuesto cargado.
   let ids = contactoIds;
@@ -111,6 +119,7 @@ async function idsConPresupuesto(): Promise<Set<number>> {
 
 // --- Kanban: etapas (columnas) -----------------------------------------------
 export async function reordenarEtapas(etapaIds: number[]) {
+  await requireAcceso("whatsapp");
   for (let i = 0; i < etapaIds.length; i++) {
     await db.update(waEtapas).set({ orden: i }).where(eq(waEtapas.id, etapaIds[i]));
   }
@@ -118,6 +127,7 @@ export async function reordenarEtapas(etapaIds: number[]) {
 }
 
 export async function crearEtapa(nombre: string, color = "slate") {
+  await requireAcceso("whatsapp");
   const n = nombre.trim();
   if (!n) return;
   const [{ max }] = await db
@@ -128,6 +138,7 @@ export async function crearEtapa(nombre: string, color = "slate") {
 }
 
 export async function renombrarEtapa(etapaId: number, nombre: string) {
+  await requireAcceso("whatsapp");
   const n = nombre.trim();
   if (!n) return;
   await db.update(waEtapas).set({ nombre: n }).where(eq(waEtapas.id, etapaId));
@@ -135,6 +146,7 @@ export async function renombrarEtapa(etapaId: number, nombre: string) {
 }
 
 export async function eliminarEtapa(etapaId: number) {
+  await requireAcceso("whatsapp");
   // Reasigna las cards a la primera etapa restante para no perderlas.
   const etapas = await db.select().from(waEtapas).orderBy(asc(waEtapas.orden));
   if (etapas.length <= 1) return; // siempre dejamos al menos una columna
@@ -151,6 +163,7 @@ export async function eliminarEtapa(etapaId: number) {
 export async function obtenerDetalleContacto(
   contactoId: number
 ): Promise<DetalleContacto | null> {
+  await requireAcceso("whatsapp");
   const [c] = await db.select().from(waContactos).where(eq(waContactos.id, contactoId));
   if (!c) return null;
   const [pres] = await db
@@ -198,6 +211,7 @@ export async function actualizarContacto(
     etapaId: number | null;
   }
 ) {
+  await requireAcceso("whatsapp");
   // Si intenta mover a la etapa de éxito, exige presupuesto (gate).
   if (data.etapaId != null) {
     const [etapa] = await db.select().from(waEtapas).where(eq(waEtapas.id, data.etapaId));
@@ -230,6 +244,7 @@ export async function guardarPresupuesto(
   contactoId: number,
   items: PresupuestoItemInput[]
 ) {
+  await requireAcceso("whatsapp");
   const limpios = items
     .map((i) => ({
       productoId: i.productoId ?? null,
@@ -266,6 +281,7 @@ export async function guardarPresupuesto(
 
 // Mueve el lead a la etapa de "venta exitosa" si tiene presupuesto cargado.
 export async function marcarVentaExitosa(contactoId: number) {
+  await requireAcceso("whatsapp");
   const [etapa] = await db.select().from(waEtapas).where(eq(waEtapas.esExito, true)).limit(1);
   if (!etapa) {
     return { ok: false as const, error: "No hay una etapa de venta exitosa configurada." };
@@ -295,6 +311,7 @@ export async function marcarVentaExitosa(contactoId: number) {
 }
 
 export async function refrescarAvatar(contactoId: number) {
+  await requireAcceso("whatsapp");
   const avatar = await getManager().refreshAvatar(contactoId);
   revalidatePath("/whatsapp");
   return { ok: true as const, avatar };

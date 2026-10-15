@@ -1,9 +1,9 @@
 import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { createHmac, timingSafeEqual, randomBytes, scryptSync } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { usuarios } from "@/db/schema";
+import { usuarios, sucursales } from "@/db/schema";
 import {
   MODULOS,
   parsePermisos,
@@ -19,6 +19,7 @@ const SECRET = process.env.AUTH_SECRET || "gestoria-dev-secret-cambia-esto";
 // Credenciales del admin por entorno (respaldo/bootstrap del login DB)
 const USER = process.env.AUTH_USER || "admin";
 const PASS = process.env.AUTH_PASSWORD || "admin";
+const SESSION_MS = 8 * 60 * 60 * 1000;
 
 function sign(value: string): string {
   return createHmac("sha256", SECRET).update(value).digest("hex");
@@ -37,7 +38,11 @@ export function verifyToken(token: string | undefined): string | null {
   const expected = sign(payload);
   if (sig.length !== expected.length) return null;
   if (!timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return null;
-  return payload.split(".")[0] || null;
+  const separador = payload.lastIndexOf(".");
+  if (separador <= 0) return null;
+  const emitido = Number(payload.slice(separador + 1));
+  if (!Number.isSafeInteger(emitido) || emitido > Date.now() + 60_000 || Date.now() - emitido > SESSION_MS) return null;
+  return payload.slice(0, separador) || null;
 }
 
 // --- Hash de contraseñas (scrypt nativo, sin dependencias) ------------------
@@ -143,7 +148,11 @@ export async function getUsuarioActual(): Promise<UsuarioActual | null> {
 export async function requireAcceso(modulo: ModuloKey): Promise<UsuarioActual> {
   const u = await getUsuarioActual();
   if (!u) redirect("/admin/login");
-  if (u.rol !== "admin" && !u.sucursalId) throw new Error("El administrador debe asignarte una sucursal.");
+  if (u.rol !== "admin") {
+    if (!u.sucursalId) notFound();
+    const [sucursal] = await db.select({ id: sucursales.id }).from(sucursales).where(and(eq(sucursales.id, u.sucursalId), eq(sucursales.activo, true)));
+    if (!sucursal) notFound();
+  }
   if (!tieneAcceso(u, modulo)) redirect(primerModuloPermitido(u));
   return u;
 }
@@ -158,5 +167,5 @@ export async function requireAdmin(): Promise<UsuarioActual> {
 // La carga de inventario pertenece a Stock; se conserva el acceso de Compras.
 export async function requireCargaStock(): Promise<UsuarioActual> {
   const usuario = await getUsuarioActual();
-  return requireAcceso(usuario?.permisos.includes("stock") ? "stock" : "compras");
+  return requireAcceso(tieneAcceso(usuario, "stock") ? "stock" : "compras");
 }

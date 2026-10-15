@@ -1,4 +1,6 @@
 import { getManager } from "@/lib/whatsapp/manager";
+import { getUsuarioActual } from "@/lib/auth";
+import { tieneAcceso } from "@/lib/permisos";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -6,6 +8,8 @@ export const dynamic = "force-dynamic";
 // Stream SSE: empuja al navegador el estado de conexión, el QR y cada
 // contacto/mensaje nuevo en tiempo real.
 export async function GET(req: Request) {
+  const usuario = await getUsuarioActual();
+  if (!usuario || !tieneAcceso(usuario, "whatsapp")) return new Response("No autorizado", { status: 403 });
   const manager = getManager();
 
   // Si hay una sesión guardada en disco, reconectamos al abrir el tablero.

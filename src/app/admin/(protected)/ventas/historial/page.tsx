@@ -1,21 +1,15 @@
 import { asc, eq, or, sql } from "drizzle-orm";
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import { ventas as ventasTabla, db, productos, clientes } from "@/db";
 import { recientes } from "@/lib/queries";
-import { getUsuarioActual } from "@/lib/auth";
-import { tieneAcceso, primerModuloPermitido } from "@/lib/permisos";
+import { requireAcceso } from "@/lib/auth";
 import { getContextoSucursal } from "@/lib/sucursal";
 import { stockDeSucursal } from "@/lib/stock";
 import { PageHeader } from "@/components/ui";
 import { VentasTabla } from "@/components/ventas-tabla";
 import { moneyPreciso } from "@/lib/format";
 export default async function HistorialVentas() {
-  const usuario = await getUsuarioActual();
-  if (!usuario) redirect("/admin/login");
-  if (usuario.rol !== "admin" && !usuario.sucursalId) throw new Error("El administrador debe asignarte una sucursal.");
-  const puedeVender = tieneAcceso(usuario, "ventas");
-  if (!puedeVender && !tieneAcceso(usuario, "caja")) redirect(primerModuloPermitido(usuario));
+  await requireAcceso("ventas");
   const { activa, activaId } = await getContextoSucursal();
   // El alta manual necesita el catálogo y los clientes para armar la venta.
   const [ventas, catalogo, listaClientes] = await Promise.all([
@@ -36,8 +30,8 @@ export default async function HistorialVentas() {
         title="Ventas históricas"
         subtitle={`${ventas.length} operaciones · ${moneyPreciso(total)} facturado${activa ? ` · ${activa.nombre}` : " · Todas las sucursales"}`}
       />
-      {puedeVender && <Link href="/admin/ventas" className="btn-ghost mb-4">← Opciones de ventas</Link>}
-      <VentasTabla ventas={ventas} productos={conStockLocal} clientes={listaClientes} permitirAlta={puedeVender} />
+      <Link href="/admin/ventas" className="btn-ghost mb-4">← Opciones de ventas</Link>
+      <VentasTabla ventas={ventas} productos={conStockLocal} clientes={listaClientes} />
     </>
   );
 }

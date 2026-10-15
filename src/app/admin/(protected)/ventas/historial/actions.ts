@@ -2,14 +2,10 @@
 
 import { eq } from "drizzle-orm";
 import { db, ventas, ventaItems, productos } from "@/db";
-import { getUsuarioActual } from "@/lib/auth";
-import { tieneAcceso } from "@/lib/permisos";
+import { requireAcceso } from "@/lib/auth";
 
 export async function detalleVenta(id: number) {
-  const usuario = await getUsuarioActual();
-  if (!usuario || (!tieneAcceso(usuario, "ventas") && !tieneAcceso(usuario, "caja"))) {
-    return { ok: false as const, error: "No tenés permiso para consultar esta venta." };
-  }
+  const usuario = await requireAcceso("ventas");
   if (!Number.isSafeInteger(id) || id <= 0) return { ok: false as const, error: "Venta inválida." };
   const [venta] = await db.select().from(ventas).where(eq(ventas.id, id)).limit(1);
   if (!venta || (usuario.rol !== "admin" && venta.sucursalId !== usuario.sucursalId)) {

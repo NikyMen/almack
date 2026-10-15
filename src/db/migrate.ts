@@ -49,6 +49,8 @@ const statements = [
     mes TEXT NOT NULL DEFAULT '', dias TEXT NOT NULL DEFAULT '[]',
     dia_semana INTEGER NOT NULL DEFAULT 6, creada_en INTEGER DEFAULT (strftime('%s','now'))
   )`,
+  `CREATE TABLE IF NOT EXISTS precio_seguridad (id INTEGER PRIMARY KEY, clave_hash TEXT NOT NULL, actualizado_por TEXT NOT NULL, actualizado_en INTEGER NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS cambios_precio (id INTEGER PRIMARY KEY AUTOINCREMENT, venta_id INTEGER NOT NULL REFERENCES ventas(id), sucursal_id INTEGER NOT NULL REFERENCES sucursales(id), usuario TEXT NOT NULL, medio_pago TEXT NOT NULL, tipo TEXT NOT NULL, detalle TEXT NOT NULL, total_anterior REAL NOT NULL, total_nuevo REAL NOT NULL, fecha INTEGER DEFAULT (strftime('%s','now')))`,
   `CREATE TABLE IF NOT EXISTS stock_respaldos (
     id INTEGER PRIMARY KEY AUTOINCREMENT, motivo TEXT NOT NULL, compra_id INTEGER,
     usuario_nombre TEXT NOT NULL, productos INTEGER NOT NULL, datos TEXT NOT NULL,
@@ -334,6 +336,9 @@ const statements = [
 // ALTER idempotentes para DBs ya existentes (SQLite no soporta ADD COLUMN IF
 // NOT EXISTS → si la columna ya existe, el execute tira error y lo ignoramos).
 const alters = [
+  `ALTER TABLE promociones ADD COLUMN precio_fijo REAL`,
+  `ALTER TABLE promociones ADD COLUMN cantidades TEXT NOT NULL DEFAULT '{}'`,
+  `ALTER TABLE promociones ADD COLUMN alcance TEXT NOT NULL DEFAULT 'productos'`,
   `ALTER TABLE ventas ADD COLUMN caja_turno_id INTEGER REFERENCES caja_turnos(id)`,
   `ALTER TABLE ventas ADD COLUMN cajero TEXT NOT NULL DEFAULT ''`,
   `ALTER TABLE wa_contactos ADD COLUMN numero_lead TEXT NOT NULL DEFAULT ''`,
@@ -371,6 +376,7 @@ const alters = [
 
 // Índices que importan para las listas más consultadas
 const indices = [
+  `CREATE INDEX IF NOT EXISTS idx_cambios_precio_sucursal ON cambios_precio(sucursal_id, id)`,
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_proveedores_nombre ON proveedores(lower(nombre))`,
   `CREATE INDEX IF NOT EXISTS idx_proveedor_articulos_proveedor ON proveedor_articulos(proveedor_id)`,
   `CREATE INDEX IF NOT EXISTS idx_proveedor_formatos_proveedor ON proveedor_formatos(proveedor_id)`,

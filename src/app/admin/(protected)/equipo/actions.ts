@@ -1,7 +1,7 @@
 "use server";
 
 import { hashClaveAdministrador } from "@/lib/clave-admin";
-import { cajaSeguridad } from "@/db/schema";
+import { cajaSeguridad, precioSeguridad } from "@/db/schema";
 import { db } from "@/db";
 import { usuarios, waContactos, sucursales } from "@/db/schema";
 import { eq } from "drizzle-orm";
@@ -108,6 +108,19 @@ export async function guardarClaveAdministrador(clave: string, confirmacion: str
     if (clave !== confirmacion) return { ok: false, error: "Las claves no coinciden." };
     const claveHash = hashClaveAdministrador(clave);
     await db.insert(cajaSeguridad).values({ id: 1, claveHash, actualizadoPor: `${admin.nombre} (${admin.usuario})`, actualizadoEn: new Date() }).onConflictDoUpdate({ target: cajaSeguridad.id, set: { claveHash, actualizadoPor: `${admin.nombre} (${admin.usuario})`, actualizadoEn: new Date() } });
+    revalidatePath("/admin/equipo");
+    revalidatePath("/admin/caja");
+    return { ok: true, error: "" };
+  } catch (e) { return { ok: false, error: e instanceof Error ? e.message : "No se pudo guardar la clave." }; }
+}
+
+export async function guardarClavePrecio(clave: string, confirmacion: string) {
+  const admin = await requireAdmin();
+  try {
+    if (clave !== confirmacion) return { ok: false, error: "Las claves no coinciden." };
+    if (!/^\d{3,12}$/.test(clave)) return { ok: false, error: "Usá entre 3 y 12 dígitos numéricos." };
+    const claveHash = hashClaveAdministrador(clave, 3);
+    await db.insert(precioSeguridad).values({ id: 1, claveHash, actualizadoPor: `${admin.nombre} (${admin.usuario})`, actualizadoEn: new Date() }).onConflictDoUpdate({ target: precioSeguridad.id, set: { claveHash, actualizadoPor: `${admin.nombre} (${admin.usuario})`, actualizadoEn: new Date() } });
     revalidatePath("/admin/equipo");
     revalidatePath("/admin/caja");
     return { ok: true, error: "" };

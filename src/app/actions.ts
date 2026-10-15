@@ -337,6 +337,7 @@ export async function toggleOfertaTienda(id: number) {
 }
 
 export async function guardarDescripcionWeb(id: number, texto: string) {
+  await requireAcceso("stock");
   await db.update(productos).set({ descripcionWeb: texto }).where(eq(productos.id, id));
   revalidatePath("/tienda");
 }
@@ -366,14 +367,15 @@ type ItemCaja = { productoId: number; cantidad: number };
 export async function cobrarVenta(
   items: ItemCaja[],
   medioPago: MedioPago = "efectivo",
-  opts?: { clienteId?: number | null; canal?: string; permitirSinStock?: boolean; efectivoRecibido?: number }
+  opts?: { clienteId?: number | null; canal?: string; permitirSinStock?: boolean; efectivoRecibido?: number; ajustePrecio?: import("@/lib/caja").AjustePrecio }
 ) {
   const usuario = await requireAcceso(opts && ("clienteId" in opts || "canal" in opts) ? "ventas" : "caja");
+  if (opts?.ajustePrecio) await requireAcceso("caja");
   const sucursalId = await sucursalOperativaId();
   if (!sucursalId) return { ok: false as const, error: "Creá una sucursal antes de cobrar." };
   try {
-    const resultado = await venderEnCaja(sucursalId, usuario.nombre, items, medioPago, opts);
-    for (const ruta of ["/admin/caja", "/admin/ventas", "/admin/stock", "/admin"]) revalidatePath(ruta);
+    const resultado = await venderEnCaja(sucursalId, usuario.nombre, items, medioPago, { ...opts, usuario: usuario.usuario });
+    for (const ruta of ["/admin/caja", "/admin/ventas", "/admin/stock", "/admin/ventas/promociones", "/admin", "/tienda", "/tienda/productos"]) revalidatePath(ruta);
     return { ok: true as const, ...resultado };
   } catch (e) {
     return { ok: false as const, error: e instanceof Error ? e.message : "No se pudo cobrar la venta." };
@@ -400,6 +402,7 @@ export async function crearCompra(formData: FormData) {
 
 // --- IA ----------------------------------------------------------------------
 export async function accionDescripcion(nombre: string, categoria: string, detalles: string) {
+  await requireAcceso("stock");
   try {
     return { ok: true as const, texto: await generarDescripcionProducto({ nombre, categoria, detalles }) };
   } catch (e) {
@@ -412,6 +415,7 @@ export async function accionPublicacion(
   red: "instagram" | "facebook" | "tiktok" | "whatsapp",
   promo: string
 ) {
+  await requireAcceso("ia");
   try {
     return { ok: true as const, texto: await generarPublicacionRedes({ nombre, red, promo }) };
   } catch (e) {
@@ -420,6 +424,7 @@ export async function accionPublicacion(
 }
 
 export async function accionConsulta(pregunta: string) {
+  await requireAcceso("ia");
   try {
     const contexto = await getContextoNegocio();
     return { ok: true as const, texto: await consultaNegocio({ pregunta, contexto }) };

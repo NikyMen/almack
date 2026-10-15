@@ -34,6 +34,14 @@ export function cotizarPromocion(p: Promocion, lineas: Linea[]): CouponQuote | n
   const ids = new Set(numeros(p.productoIds));
   const seleccionadas = lineas.filter(l => ids.has(l.productoId));
   const base = seleccionadas.reduce((n, l) => n + redondear(l.precio * l.cantidad), 0);
+  if (p.tipo === "precio_fijo") {
+    const cantidades: Record<string, number> = JSON.parse(p.cantidades || "{}");
+    if (ids.size === 0 || seleccionadas.length !== ids.size || seleccionadas.some(l => l.cantidad !== cantidades[String(l.productoId)]) || (p.alcance === "carrito" && seleccionadas.length !== lineas.length)) return null;
+    const fijo = p.precioFijo;
+    if (fijo === null || fijo < 0 || fijo >= base) return null;
+    const descuento = redondear(base - fijo);
+    return { code: `PROMO-${p.id}`, subtotal, discount: descuento, total: redondear(subtotal - descuento), description: p.nombre, automatic: true };
+  }
   const porcentaje = Math.max(0, Math.min(100, p.porcentaje));
   let descuento = 0;
   if (p.tipo === "total") descuento = subtotal * porcentaje / 100;

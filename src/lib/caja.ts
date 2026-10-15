@@ -1,5 +1,5 @@
 import { verificarClaveAdministrador } from "./clave-admin";
-import { db, cajaTurnos, cajaMovimientos, ventas, ventaItems, productos, stockSucursal, cajaSeguridad, cajaIntentos, cajaExtracciones, promociones } from "@/db";
+import { db, cajaTurnos, cajaMovimientos, ventas, ventaItems, productos, stockSucursal, cajaSeguridad, cajaIntentos, cajaExtracciones, promociones, precioSeguridad, cambiosPrecio } from "@/db";
 import { cotizarPromocion } from "@/lib/promociones";
 import { and, eq, sql, desc } from "drizzle-orm";
 import { cantidadValida, redondearCantidad } from "@/lib/cantidades";
@@ -65,8 +65,28 @@ export async function cerrarCaja(sucursalId: number, turnoId: number, responsabl
     return { esperado: resumen.esperado, contado, diferencia };
   });
 }
-export async function venderEnCaja(sucursalId: number, cajero: string, items: { productoId: number; cantidad: number }[], medioPago: string, opts?: { clienteId?: number | null; canal?: string; permitirSinStock?: boolean; efectivoRecibido?: number }) {
+export type AjustePrecio = { clave: string; tipo: "producto" | "total"; productoId?: number; precio?: number; actualizarStock?: boolean; nombrePromocion?: string; productoIds?: number[] };
+export async function verificarClavePrecio(usuario: string, clave: string) {
+  const [config] = await db.select().from(precioSeguridad).where(eq(precioSeguridad.id, 1));
+  if (!config) throw new Error("El administrador debe configurar la contraseña para cambios de precio en Equipo.");
+  const llave = `precio:${usuario}`;
+  const [intento] = await db.select().from(cajaIntentos).where(eq(cajaIntentos.usuario, llave));
+  const ahora = Math.floor(Date.now() / 1000);
+  if (intento && intento.bloqueadoHasta > ahora) throw new Error("Demasiados intentos. Volvé a intentar en 15 minutos.");
+  if (!/^\d{3,12}$/.test(clave) || !verificarClaveAdministrador(clave, config.claveHash, 3)) {
+    const fallos = (intento?.bloqueadoHasta ? 0 : intento?.fallos ?? 0) + 1;
+    await db.insert(cajaIntentos).values({ usuario: llave, fallos, bloqueadoHasta: fallos >= 5 ? ahora + 900 : 0 }).onConflictDoUpdate({ target: cajaIntentos.usuario, set: { fallos, bloqueadoHasta: fallos >= 5 ? ahora + 900 : 0 } });
+    throw new Error(fallos >= 5 ? "Demasiados intentos. Volvé a intentar en 15 minutos." : "Contraseña de cambios de precio incorrecta.");
+  }
+  await db.delete(cajaIntentos).where(eq(cajaIntentos.usuario, llave));
+}
+export async function venderEnCaja(sucursalId: number, cajero: string, items: { productoId: number; cantidad: number }[], medioPago: string, opts?: { clienteId?: number | null; canal?: string; permitirSinStock?: boolean; efectivoRecibido?: number; ajustePrecio?: AjustePrecio; usuario?: string }) {
   if (!items.length || !["efectivo", "qr", "tarjeta"].includes(medioPago)) throw new Error("Revisá los productos y el medio de pago.");
+  const ajuste = opts?.ajustePrecio;
+  if (ajuste) {
+    if (opts?.canal === "online" || !opts?.usuario) throw new Error("El cambio de precio solo está disponible en Caja.");
+    await verificarClavePrecio(opts.usuario, ajuste.clave);
+  }
   const cantidades = new Map<number, number>();
   for (const item of items) {
     if (!Number.isSafeInteger(item.productoId) || !Number.isFinite(item.cantidad) || item.cantidad <= 0) throw new Error("Revisá las cantidades del pedido.");
@@ -75,7 +95,7 @@ export async function venderEnCaja(sucursalId: number, cajero: string, items: { 
   return transaccionCaja(async tx => {
     const turno = await cajaAbierta(sucursalId, tx);
     if (!turno) throw new Error("Abrí la caja de esta sucursal antes de cobrar.");
-    const lineas: { productoId: number; cantidad: number; precioUnit: number }[] = [];
+    const lineas: { productoId: number; cantidad: number; precioUnit: number; nombre: string; precioAnterior: number }[] = [];
     let total = 0;
     for (const [productoId, cantidad] of cantidades) {
       const [p] = await tx.select().from(productos).where(eq(productos.id, productoId));
@@ -91,13 +111,46 @@ export async function venderEnCaja(sucursalId: number, cajero: string, items: { 
         if (!r.rowsAffected) throw new Error(`Sin stock suficiente de "${p.nombre}".`);
       }
       await tx.update(productos).set({ stock: sql`(select coalesce(sum(cantidad),0) from stock_sucursal where producto_id = ${productoId})` }).where(eq(productos.id, productoId));
-      lineas.push({ productoId, cantidad, precioUnit: p.precioVenta });
+      lineas.push({ productoId, cantidad, precioUnit: p.precioVenta, precioAnterior: p.precioVenta, nombre: p.nombre });
       total += p.precioVenta * cantidad;
     }
     total = redondear(total);
     const activas = await tx.select().from(promociones).where(eq(promociones.activa, true));
     const mejor = activas.map(p => cotizarPromocion(p, lineas.map(l => ({ productoId: l.productoId, cantidad: l.cantidad, precio: l.precioUnit })))).filter((q): q is NonNullable<typeof q> => q !== null).sort((a, b) => b.discount - a.discount)[0];
     if (mejor?.discount) total = mejor.total;
+    const totalAnterior = total;
+    let detalleCambio: string | null = null;
+    let promoNueva: { nombre: string; ids: number[]; cantidades: Record<string, number>; precioFijo: number; alcance: string } | null = null;
+    if (ajuste) {
+      if (ajuste.tipo !== "producto" && ajuste.tipo !== "total") throw new Error("Tipo de cambio de precio inválido.");
+      validarMonto(ajuste.precio ?? NaN, true);
+      if (ajuste.tipo === "producto") {
+        const linea = lineas.find(l => l.productoId === ajuste.productoId);
+        if (!linea) throw new Error("El producto a modificar no está en el pedido.");
+        if (linea.precioUnit === ajuste.precio) throw new Error("El nuevo precio coincide con el actual.");
+        linea.precioUnit = ajuste.precio!;
+        total = redondear(lineas.reduce((sum, l) => sum + l.precioUnit * l.cantidad, 0));
+        if (ajuste.actualizarStock) {
+          await tx.update(productos).set({ precioVenta: ajuste.precio! }).where(eq(productos.id, linea.productoId));
+          detalleCambio = JSON.stringify({ producto: linea.nombre, productoId: linea.productoId, anterior: linea.precioAnterior, nuevo: ajuste.precio, destino: "stock" });
+        } else {
+          const nombre = ajuste.nombrePromocion?.trim() ?? "";
+          if (!nombre || nombre.length > 100 || ajuste.precio! >= linea.precioAnterior) throw new Error("Indicá un nombre de promoción y un precio menor al original.");
+          promoNueva = { nombre, ids: [linea.productoId], cantidades: { [linea.productoId]: linea.cantidad }, precioFijo: redondear(ajuste.precio! * linea.cantidad), alcance: "productos" };
+          detalleCambio = JSON.stringify({ producto: linea.nombre, productoId: linea.productoId, anterior: linea.precioAnterior, nuevo: ajuste.precio, destino: "promocion", promocion: nombre });
+        }
+      } else {
+        const ids = [...new Set(ajuste.productoIds ?? [])];
+        const nombre = ajuste.nombrePromocion?.trim() ?? "";
+        if (!nombre || nombre.length > 100 || ids.length === 0 || ids.some(id => !lineas.some(l => l.productoId === id)) || ajuste.precio! >= total) throw new Error("Indicá nombre, productos del carrito y un total promocional menor al original.");
+        const subtotalFuera = redondear(lineas.filter(l => !ids.includes(l.productoId)).reduce((sum, l) => sum + l.precioUnit * l.cantidad, 0));
+        const precioPromocion = redondear(ajuste.precio! - subtotalFuera);
+        if (precioPromocion <= 0) throw new Error("El nuevo total debe cubrir los productos que no forman parte de la promoción.");
+        total = ajuste.precio!;
+        promoNueva = { nombre, ids, cantidades: Object.fromEntries(lineas.filter(l => ids.includes(l.productoId)).map(l => [l.productoId, l.cantidad])), precioFijo: precioPromocion, alcance: "productos" };
+        detalleCambio = JSON.stringify({ destino: "promocion", promocion: nombre, productos: lineas.filter(l => ids.includes(l.productoId)).map(l => ({ id: l.productoId, nombre: l.nombre, cantidad: l.cantidad })) });
+      }
+    }
     const efectivoRecibido = medioPago === "efectivo" && opts?.efectivoRecibido !== undefined ? opts.efectivoRecibido : null;
     if (efectivoRecibido !== null) {
       validarMonto(efectivoRecibido);
@@ -108,7 +161,9 @@ export async function venderEnCaja(sucursalId: number, cajero: string, items: { 
     // El cliente entrega efectivo y recibe vuelto: en el cajón queda el importe de la venta.
     const efectivoDespues = redondear(efectivoAntes + (medioPago === "efectivo" ? total : 0));
     const [venta] = await tx.insert(ventas).values({ sucursalId, cajaTurnoId: turno.id, cajero, total, medioPago, efectivoRecibido, vuelto, efectivoAntes, efectivoDespues, clienteId: opts?.clienteId ?? null, canal: opts?.canal === "online" ? "online" : "local", estado: "completada" }).returning({ id: ventas.id });
-    await tx.insert(ventaItems).values(lineas.map(l => ({ ...l, ventaId: venta.id })));
+    await tx.insert(ventaItems).values(lineas.map(l => ({ productoId: l.productoId, cantidad: l.cantidad, precioUnit: l.precioUnit, ventaId: venta.id })));
+    if (promoNueva) await tx.insert(promociones).values({ nombre: promoNueva.nombre, tipo: "precio_fijo", activa: true, productoIds: JSON.stringify(promoNueva.ids), cantidades: JSON.stringify(promoNueva.cantidades), precioFijo: promoNueva.precioFijo, alcance: promoNueva.alcance, modo: "continua" });
+    if (ajuste && detalleCambio) await tx.insert(cambiosPrecio).values({ ventaId: venta.id, sucursalId, usuario: cajero, medioPago, tipo: ajuste.tipo, detalle: detalleCambio, totalAnterior, totalNuevo: total });
     return { ventaId: venta.id, total, efectivoRecibido, vuelto, efectivoAntes, efectivoDespues };
   });
 }

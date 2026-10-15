@@ -171,6 +171,9 @@ export const promociones = sqliteTable("promociones", {
   activa: integer("activa", { mode: "boolean" }).notNull().default(false),
   porcentaje: real("porcentaje").notNull().default(0),
   productoIds: text("producto_ids").notNull().default("[]"),
+  precioFijo: real("precio_fijo"),
+  cantidades: text("cantidades").notNull().default("{}"),
+  alcance: text("alcance").notNull().default("productos"),
   cantidadCombo: integer("cantidad_combo").notNull().default(2),
   modo: text("modo").notNull().default("continua"), // unica | dias | semanal | continua
   fechaUnica: text("fecha_unica").notNull().default(""),
@@ -178,6 +181,26 @@ export const promociones = sqliteTable("promociones", {
   dias: text("dias").notNull().default("[]"),
   diaSemana: integer("dia_semana").notNull().default(6),
   creadaEn: integer("creada_en", { mode: "timestamp" }).default(now),
+});
+
+export const cambiosPrecio = sqliteTable("cambios_precio", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  ventaId: integer("venta_id").notNull().references(() => ventas.id),
+  sucursalId: integer("sucursal_id").notNull().references(() => sucursales.id),
+  usuario: text("usuario").notNull(),
+  medioPago: text("medio_pago").notNull(),
+  tipo: text("tipo").notNull(),
+  detalle: text("detalle").notNull(),
+  totalAnterior: real("total_anterior").notNull(),
+  totalNuevo: real("total_nuevo").notNull(),
+  fecha: integer("fecha", { mode: "timestamp" }).default(now),
+});
+
+export const precioSeguridad = sqliteTable("precio_seguridad", {
+  id: integer("id").primaryKey(),
+  claveHash: text("clave_hash").notNull(),
+  actualizadoPor: text("actualizado_por").notNull(),
+  actualizadoEn: integer("actualizado_en", { mode: "timestamp" }).notNull(),
 });
 
 // Datos propios del checkout público, vinculados a la venta existente.

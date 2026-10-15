@@ -174,6 +174,7 @@ export function Sidebar({
           puedeAdministrar={esSuperAdmin(usuario)}
           compacto
         />
+        {path === "/admin/caja" && <div className="min-w-0 truncate text-xs text-white"><strong className="text-sm">Caja</strong><span className="ml-2 text-white/60">Apertura, ventas y arqueo</span></div>}
       </header>
 
       {/* Sidebar fijo en escritorio, con los rayos de luz de fondo */}
