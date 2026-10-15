@@ -49,7 +49,6 @@ const statements = [
     mes TEXT NOT NULL DEFAULT '', dias TEXT NOT NULL DEFAULT '[]',
     dia_semana INTEGER NOT NULL DEFAULT 6, creada_en INTEGER DEFAULT (strftime('%s','now'))
   )`,
-  `CREATE TABLE IF NOT EXISTS precio_seguridad (id INTEGER PRIMARY KEY, clave_hash TEXT NOT NULL, actualizado_por TEXT NOT NULL, actualizado_en INTEGER NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS cambios_precio (id INTEGER PRIMARY KEY AUTOINCREMENT, venta_id INTEGER NOT NULL REFERENCES ventas(id), sucursal_id INTEGER NOT NULL REFERENCES sucursales(id), usuario TEXT NOT NULL, medio_pago TEXT NOT NULL, tipo TEXT NOT NULL, detalle TEXT NOT NULL, total_anterior REAL NOT NULL, total_nuevo REAL NOT NULL, fecha INTEGER DEFAULT (strftime('%s','now')))`,
   `CREATE TABLE IF NOT EXISTS stock_respaldos (
     id INTEGER PRIMARY KEY AUTOINCREMENT, motivo TEXT NOT NULL, compra_id INTEGER,
@@ -413,6 +412,9 @@ async function migrate() {
   for (const sql of statements) {
     await client.execute(sql);
   }
+  // La autorización por clave de cambios de precio fue retirada; eliminar el hash anterior.
+  await client.execute("DROP TABLE IF EXISTS precio_seguridad");
+  await client.execute("DELETE FROM caja_intentos WHERE usuario LIKE 'precio:%'");
 
   // Migración de columnas para DBs ya creadas (idempotente)
   let nuevaColumnaRecibida = false;

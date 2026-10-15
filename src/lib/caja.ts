@@ -1,5 +1,5 @@
 import { verificarClaveAdministrador } from "./clave-admin";
-import { db, cajaTurnos, cajaMovimientos, ventas, ventaItems, productos, stockSucursal, cajaSeguridad, cajaIntentos, cajaExtracciones, promociones, precioSeguridad, cambiosPrecio } from "@/db";
+import { db, cajaTurnos, cajaMovimientos, ventas, ventaItems, productos, stockSucursal, cajaSeguridad, cajaIntentos, cajaExtracciones, promociones, cambiosPrecio } from "@/db";
 import { cotizarPromocion } from "@/lib/promociones";
 import { and, eq, sql, desc } from "drizzle-orm";
 import { cantidadValida, redondearCantidad } from "@/lib/cantidades";
@@ -65,28 +65,11 @@ export async function cerrarCaja(sucursalId: number, turnoId: number, responsabl
     return { esperado: resumen.esperado, contado, diferencia };
   });
 }
-export type AjustePrecio = { clave: string; tipo: "producto" | "total"; productoId?: number; precio?: number; actualizarStock?: boolean; nombrePromocion?: string; productoIds?: number[] };
-export async function verificarClavePrecio(usuario: string, clave: string) {
-  const [config] = await db.select().from(precioSeguridad).where(eq(precioSeguridad.id, 1));
-  if (!config) throw new Error("El administrador debe configurar la contraseña para cambios de precio en Equipo.");
-  const llave = `precio:${usuario}`;
-  const [intento] = await db.select().from(cajaIntentos).where(eq(cajaIntentos.usuario, llave));
-  const ahora = Math.floor(Date.now() / 1000);
-  if (intento && intento.bloqueadoHasta > ahora) throw new Error("Demasiados intentos. Volvé a intentar en 15 minutos.");
-  if (!/^\d{3,12}$/.test(clave) || !verificarClaveAdministrador(clave, config.claveHash, 3)) {
-    const fallos = (intento?.bloqueadoHasta ? 0 : intento?.fallos ?? 0) + 1;
-    await db.insert(cajaIntentos).values({ usuario: llave, fallos, bloqueadoHasta: fallos >= 5 ? ahora + 900 : 0 }).onConflictDoUpdate({ target: cajaIntentos.usuario, set: { fallos, bloqueadoHasta: fallos >= 5 ? ahora + 900 : 0 } });
-    throw new Error(fallos >= 5 ? "Demasiados intentos. Volvé a intentar en 15 minutos." : "Contraseña de cambios de precio incorrecta.");
-  }
-  await db.delete(cajaIntentos).where(eq(cajaIntentos.usuario, llave));
-}
-export async function venderEnCaja(sucursalId: number, cajero: string, items: { productoId: number; cantidad: number }[], medioPago: string, opts?: { clienteId?: number | null; canal?: string; permitirSinStock?: boolean; efectivoRecibido?: number; ajustePrecio?: AjustePrecio; usuario?: string }) {
+export type AjustePrecio = { tipo: "producto" | "total"; productoId?: number; precio?: number; actualizarStock?: boolean; nombrePromocion?: string; productoIds?: number[] };
+export async function venderEnCaja(sucursalId: number, cajero: string, items: { productoId: number; cantidad: number }[], medioPago: string, opts?: { clienteId?: number | null; canal?: string; permitirSinStock?: boolean; efectivoRecibido?: number; ajustePrecio?: AjustePrecio }) {
   if (!items.length || !["efectivo", "qr", "tarjeta"].includes(medioPago)) throw new Error("Revisá los productos y el medio de pago.");
   const ajuste = opts?.ajustePrecio;
-  if (ajuste) {
-    if (opts?.canal === "online" || !opts?.usuario) throw new Error("El cambio de precio solo está disponible en Caja.");
-    await verificarClavePrecio(opts.usuario, ajuste.clave);
-  }
+  if (ajuste && opts?.canal === "online") throw new Error("El cambio de precio solo está disponible en Caja.");
   const cantidades = new Map<number, number>();
   for (const item of items) {
     if (!Number.isSafeInteger(item.productoId) || !Number.isFinite(item.cantidad) || item.cantidad <= 0) throw new Error("Revisá las cantidades del pedido.");

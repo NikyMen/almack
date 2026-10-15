@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 if (!/^file:caja-test-[a-f0-9-]+\.db$/.test(process.env.TURSO_DATABASE_URL ?? "")) throw new Error("Usá pnpm test:caja: requiere una base temporal aislada.");
 
 
-const { db, client, sucursales, productos, stockSucursal, ventas, promociones, cajaSeguridad, cajaExtracciones, cajaIntentos, precioSeguridad, cambiosPrecio, ventaItems } = await import('../src/db/index.ts');
+const { db, client, sucursales, productos, stockSucursal, ventas, promociones, cajaSeguridad, cajaExtracciones, cajaIntentos, cambiosPrecio, ventaItems } = await import('../src/db/index.ts');
 const { cajaDDL } = await import('../src/db/caja-ddl.ts');
 const { abrirCaja, cerrarCaja, moverEfectivo, venderEnCaja, resumenCaja, validarMonto, extraerEfectivo, saldoUltimoCierre } = await import('../src/lib/caja.ts');
 const { hashClaveAdministrador, verificarClaveAdministrador } = await import('../src/lib/clave-admin.ts');
@@ -16,7 +16,6 @@ CREATE TABLE stock_sucursal(id INTEGER PRIMARY KEY, producto_id INTEGER, sucursa
 CREATE TABLE ventas(id INTEGER PRIMARY KEY, cliente_id INTEGER, sucursal_id INTEGER, caja_turno_id INTEGER, cajero TEXT, total REAL, estado TEXT, canal TEXT, medio_pago TEXT, efectivo_recibido REAL, vuelto REAL, efectivo_antes REAL, efectivo_despues REAL, referencia TEXT, facturada INTEGER, fecha INTEGER);
 CREATE TABLE venta_items(id INTEGER PRIMARY KEY, venta_id INTEGER, producto_id INTEGER, cantidad INTEGER, precio_unit REAL);
 CREATE TABLE promociones(id INTEGER PRIMARY KEY, nombre TEXT NOT NULL, tipo TEXT NOT NULL, activa INTEGER NOT NULL DEFAULT 0, porcentaje REAL NOT NULL DEFAULT 0, producto_ids TEXT NOT NULL DEFAULT '[]', precio_fijo REAL, cantidades TEXT NOT NULL DEFAULT '{}', alcance TEXT NOT NULL DEFAULT 'productos', cantidad_combo INTEGER NOT NULL DEFAULT 2, modo TEXT NOT NULL DEFAULT 'continua', fecha_unica TEXT NOT NULL DEFAULT '', mes TEXT NOT NULL DEFAULT '', dias TEXT NOT NULL DEFAULT '[]', dia_semana INTEGER NOT NULL DEFAULT 6, creada_en INTEGER);
-CREATE TABLE precio_seguridad(id INTEGER PRIMARY KEY, clave_hash TEXT NOT NULL, actualizado_por TEXT NOT NULL, actualizado_en INTEGER NOT NULL);
 CREATE TABLE cambios_precio(id INTEGER PRIMARY KEY, venta_id INTEGER NOT NULL, sucursal_id INTEGER NOT NULL, usuario TEXT NOT NULL, medio_pago TEXT NOT NULL, tipo TEXT NOT NULL, detalle TEXT NOT NULL, total_anterior REAL NOT NULL, total_nuevo REAL NOT NULL, fecha INTEGER);`);
   for (const ddl of cajaDDL) await client.execute(ddl);
   await db.insert(sucursales).values([{id:1,nombre:'Centro'}, {id:2,nombre:'Otra'}]);
@@ -26,7 +25,6 @@ CREATE TABLE cambios_precio(id INTEGER PRIMARY KEY, venta_id INTEGER NOT NULL, s
   assert.throws(() => hashClaveAdministrador('abc'), /entre 4 y 64/);
   assert.equal(verificarClaveAdministrador('abcd', hashClaveAdministrador('abcd')), true);
   assert.equal(verificarClaveAdministrador('abc', hashClaveAdministrador('abcd')), false);
-  assert.equal(verificarClaveAdministrador('123', hashClaveAdministrador('123', 3), 3), true);
   assert.throws(() => validarMonto(-1));
   assert.throws(() => validarMonto(1.001));
   await assert.rejects(venderEnCaja(1,'Ana',[{productoId:1,cantidad:1}],'efectivo'), /Abrí/);
@@ -114,22 +112,21 @@ CREATE TABLE cambios_precio(id INTEGER PRIMARY KEY, venta_id INTEGER NOT NULL, s
   assert.equal((await db.select().from(stockSucursal).where(eq(stockSucursal.productoId,3)))[0].cantidad,-3);
   assert.equal((await db.select().from(productos).where(eq(productos.id,3)))[0].stock,-3);
   await assert.rejects(venderEnCaja(1,'Ana',[{productoId:3,cantidad:1}],'efectivo'), /Sin stock/);
-  await db.insert(precioSeguridad).values({id:1,claveHash:hashClaveAdministrador('123',3),actualizadoPor:'Admin',actualizadoEn:new Date()});
-  const base = { permitirSinStock:true, usuario:'ana' };
-  await assert.rejects(venderEnCaja(1,'Ana',[{productoId:3,cantidad:1}],'qr',{...base,ajustePrecio:{clave:'000',tipo:'producto',productoId:3,precio:40,actualizarStock:true}}), /incorrecta/);
+  const base = { permitirSinStock:true };
+  await assert.rejects(venderEnCaja(1,'Ana',[{productoId:3,cantidad:1}],'qr',{...base,canal:'online',ajustePrecio:{tipo:'producto',productoId:3,precio:40,actualizarStock:true}}), /solo está disponible en Caja/);
   assert.equal((await db.select().from(productos).where(eq(productos.id,3)))[0].precioVenta,50);
-  const correccion = await venderEnCaja(1,'Ana',[{productoId:3,cantidad:1}],'qr',{...base,ajustePrecio:{clave:'123',tipo:'producto',productoId:3,precio:40,actualizarStock:true}});
+  const correccion = await venderEnCaja(1,'Ana',[{productoId:3,cantidad:1}],'qr',{...base,ajustePrecio:{tipo:'producto',productoId:3,precio:40,actualizarStock:true}});
   assert.equal(correccion.total,40);
   assert.equal((await db.select().from(productos).where(eq(productos.id,3)))[0].precioVenta,40);
   assert.equal((await db.select().from(ventaItems).where(eq(ventaItems.ventaId,correccion.ventaId)))[0].precioUnit,40);
-  const promoProducto = await venderEnCaja(1,'Ana',[{productoId:3,cantidad:1}],'tarjeta',{...base,ajustePrecio:{clave:'123',tipo:'producto',productoId:3,precio:20,actualizarStock:false,nombrePromocion:'Oferta queso'}});
+  const promoProducto = await venderEnCaja(1,'Ana',[{productoId:3,cantidad:1}],'tarjeta',{...base,ajustePrecio:{tipo:'producto',productoId:3,precio:20,actualizarStock:false,nombrePromocion:'Oferta queso'}});
   assert.equal(promoProducto.total,20);
   assert.equal((await db.select().from(productos).where(eq(productos.id,3)))[0].precioVenta,40);
   assert.equal((await venderEnCaja(1,'Ana',[{productoId:3,cantidad:1}],'qr',base)).total,20);
-  const promoTotal = await venderEnCaja(1,'Ana',[{productoId:1,cantidad:1},{productoId:3,cantidad:1}],'qr',{...base,ajustePrecio:{clave:'123',tipo:'total',precio:15,nombrePromocion:'Combo caja',productoIds:[1,3]}});
+  const promoTotal = await venderEnCaja(1,'Ana',[{productoId:1,cantidad:1},{productoId:3,cantidad:1}],'qr',{...base,ajustePrecio:{tipo:'total',precio:15,nombrePromocion:'Combo caja',productoIds:[1,3]}});
   assert.equal(promoTotal.total,15);
   assert.equal((await venderEnCaja(1,'Ana',[{productoId:1,cantidad:1},{productoId:3,cantidad:1}],'qr',base)).total,15);
-  const promoParcial = await venderEnCaja(1,'Ana',[{productoId:1,cantidad:2},{productoId:3,cantidad:1}],'qr',{...base,ajustePrecio:{clave:'123',tipo:'total',precio:60,nombrePromocion:'Oferta arroz',productoIds:[1]}});
+  const promoParcial = await venderEnCaja(1,'Ana',[{productoId:1,cantidad:2},{productoId:3,cantidad:1}],'qr',{...base,ajustePrecio:{tipo:'total',precio:60,nombrePromocion:'Oferta arroz',productoIds:[1]}});
   assert.equal(promoParcial.total,60);
   assert.equal((await venderEnCaja(1,'Ana',[{productoId:1,cantidad:2},{productoId:3,cantidad:1}],'qr',base)).total,60);
   assert.equal((await db.select().from(cambiosPrecio)).length,4);

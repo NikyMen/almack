@@ -4,7 +4,7 @@ import { Overlay } from "@/components/overlay";
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
-  Search, Plus, Minus, Trash2, ShoppingCart, Loader2, CheckCircle2, Zap, Camera, ChevronUp, X,
+  Search, Plus, Minus, Trash2, ShoppingCart, Loader2, CheckCircle2, Zap, Camera, ChevronUp, X, Pencil, TriangleAlert,
 } from "lucide-react";
 import type { Producto } from "@/db/schema";
 import { money, moneyPreciso } from "@/lib/format";
@@ -28,7 +28,7 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
   const [pedidoAbierto, setPedidoAbierto] = useState(false);
   const [editandoPrecio, setEditandoPrecio] = useState<{ tipo: "producto" | "total"; productoId?: number } | null>(null);
   const [precioNuevo, setPrecioNuevo] = useState("");
-  const [clavePrecio, setClavePrecio] = useState("");
+  const [ajustePorConfirmar, setAjustePorConfirmar] = useState<AjustePrecio | null>(null);
   const [nombrePromocion, setNombrePromocion] = useState("");
   const [productosPromocion, setProductosPromocion] = useState<number[]>([]);
   const [actualizarStock, setActualizarStock] = useState(true);
@@ -56,16 +56,21 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
     e.preventDefault();
     const precio = Number(precioNuevo);
     if (!precioNuevo || !Number.isFinite(precio) || precio <= 0 || Math.abs(Math.round(precio * 100) - precio * 100) > 0.000001) { setError("Ingresá un importe válido con hasta dos decimales."); return; }
-    if (!/^\d{3,12}$/.test(clavePrecio)) { setError("La contraseña debe tener entre 3 y 12 dígitos."); return; }
     if ((!actualizarStock || editandoPrecio?.tipo === "total") && !nombrePromocion.trim()) { setError("Indicá el nombre de la promoción."); return; }
     if (editandoPrecio?.tipo === "total" && productosPromocion.length === 0) { setError("Seleccioná los productos de la promoción."); return; }
     if (editandoPrecio?.tipo === "total" && precio >= (promocion?.total ?? total)) { setError("El total promocional debe ser menor al actual."); return; }
     if (editandoPrecio?.tipo === "total" && precio <= carrito.filter(l => !productosPromocion.includes(l.producto.id)).reduce((sum, l) => sum + l.producto.precioVenta * l.cantidad, 0)) { setError("El total debe cubrir los productos no incluidos en la promoción."); return; }
     if (editandoPrecio?.tipo === "producto" && !actualizarStock && precio >= (carrito.find(l => l.producto.id === editandoPrecio.productoId)?.producto.precioVenta ?? 0)) { setError("El precio promocional debe ser menor al precio del producto."); return; }
     if (!editandoPrecio) return;
-    setAjustePrecio({ clave: clavePrecio, tipo: editandoPrecio.tipo, productoId: editandoPrecio.productoId, precio, actualizarStock: editandoPrecio.tipo === "producto" && actualizarStock, nombrePromocion: nombrePromocion.trim(), productoIds: editandoPrecio.tipo === "total" ? productosPromocion : undefined });
+    setAjustePorConfirmar({ tipo: editandoPrecio.tipo, productoId: editandoPrecio.productoId, precio, actualizarStock: editandoPrecio.tipo === "producto" && actualizarStock, nombrePromocion: nombrePromocion.trim(), productoIds: editandoPrecio.tipo === "total" ? productosPromocion : undefined });
+    setError("");
+  }
+  function confirmarAjuste() {
+    if (!ajustePorConfirmar) return;
+    setAjustePrecio(ajustePorConfirmar);
     setFirmaAjuste(firmaCarrito);
-    setError(""); setEditandoPrecio(null); setClavePrecio("");
+    setAjustePorConfirmar(null);
+    setEditandoPrecio(null);
   }
 
   const filtrados = buscar(busqueda);
@@ -190,7 +195,7 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium">{l.producto.nombre}</p>
                 <p className="text-xs text-slate-400">{money(precioItem(l))} / {l.producto.unidadMedida === "kg" ? "kg" : "u"}</p>
-                <button type="button" className="text-xs font-medium text-emerald-700 underline" onClick={() => { setEditandoPrecio({ tipo: "producto", productoId: l.producto.id }); setPrecioNuevo(String(precioItem(l))); setActualizarStock(true); setNombrePromocion(""); setError(""); }}>Cambiar precio</button>
+                <button type="button" className="group mt-1 inline-flex h-7 w-7 items-center justify-center rounded-md border border-transparent text-emerald-700 transition-colors hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600" title={`Editar precio de ${l.producto.nombre}`} aria-label={`Editar precio de ${l.producto.nombre}`} onClick={() => { setEditandoPrecio({ tipo: "producto", productoId: l.producto.id }); setAjustePorConfirmar(null); setPrecioNuevo(String(precioItem(l))); setActualizarStock(true); setNombrePromocion(""); setError(""); }}><Pencil className="h-4 w-4 transition-transform group-hover:scale-110" /></button>
                 {l.producto.precioCompra <= 0 && <p className="text-xs text-amber-700">Precio de costo no cargado</p>}
               </div>
               <div className="flex items-center gap-1">
@@ -217,12 +222,11 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
 
       <div className="mt-4 border-t border-slate-100 pt-3">
         {!ajusteActivo && promocion && <p className="mb-2 text-sm text-emerald-700">{promocion.description}{promocion.discount > 0 ? ` · -${money(promocion.discount)}` : ""}</p>}
-        {ajusteActivo && <div className="mb-2 flex items-center justify-between gap-2 text-xs text-emerald-700"><span>Cambio de precio pendiente · se autoriza al cobrar</span><button type="button" className="underline" onClick={() => setAjustePrecio(null)}>Quitar</button></div>}
+        {ajusteActivo && <div className="mb-2 flex items-center justify-between gap-2 text-xs text-emerald-700"><span>Cambio de precio pendiente · se aplicará al cobrar</span><button type="button" className="underline" onClick={() => setAjustePrecio(null)}>Quitar</button></div>}
         <div className="mb-3 flex items-end justify-between">
-          <span className="text-sm text-slate-500">Total</span>
+          <span className="flex items-center gap-1 text-sm text-slate-500">Total{carrito.length > 0 && <button type="button" className="group inline-flex h-7 w-7 items-center justify-center rounded-md border border-transparent text-emerald-700 transition-colors hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600" title="Editar monto total" aria-label="Editar monto total" onClick={() => { setEditandoPrecio({ tipo: "total" }); setAjustePorConfirmar(null); setPrecioNuevo(String(totalVisible)); setActualizarStock(false); setNombrePromocion(""); setProductosPromocion(carrito.map(l => l.producto.id)); setError(""); }}><Pencil className="h-4 w-4 transition-transform group-hover:scale-110" /></button>}</span>
           <span className="text-2xl font-bold tabular-nums text-navy">{money(totalVisible)}</span>
         </div>
-        {carrito.length > 0 && <button type="button" className="mb-3 text-sm font-medium text-emerald-700 underline" onClick={() => { setEditandoPrecio({ tipo: "total" }); setPrecioNuevo(String(totalVisible)); setActualizarStock(false); setNombrePromocion(""); setProductosPromocion(carrito.map(l => l.producto.id)); setError(""); }}>Cambiar monto total</button>}
         <div className="flex gap-2">
           <button className="btn-primary flex-1 justify-center py-3 text-base" disabled={carrito.length === 0 || pendiente} onClick={cobrar}>
             {pendiente ? <Loader2 className="h-5 w-5 animate-spin" /> : "Cobrar"}
@@ -379,7 +383,11 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
         </div>
       )}
 
-      {editandoPrecio && <Overlay className="overlay" onClick={() => setEditandoPrecio(null)}>
+      {editandoPrecio && <Overlay className="overlay" onClick={() => { setEditandoPrecio(null); setAjustePorConfirmar(null); }}>
+        {ajustePorConfirmar ? <div role="alertdialog" aria-modal="true" aria-labelledby="advertencia-precio" className="card mx-auto w-[min(92vw,440px)] space-y-4 p-5" onClick={e => e.stopPropagation()}>
+          <div className="flex items-start gap-3"><div className="rounded-full bg-amber-100 p-2 text-amber-800"><TriangleAlert className="h-5 w-5" /></div><div><h2 id="advertencia-precio" className="text-lg font-semibold">Confirmá el cambio de precio</h2><p className="mt-1 text-sm font-semibold text-amber-900">{ajustePorConfirmar.tipo === "total" ? "Nuevo total" : "Nuevo precio por unidad o kilo"}: {moneyPreciso(ajustePorConfirmar.precio ?? 0)}</p><p className="mt-1 text-sm text-slate-600">{ajustePorConfirmar.actualizarStock ? "Al cobrar, el precio del producto también se actualizará en Stock." : `Al cobrar, se creará la promoción «${ajustePorConfirmar.nombrePromocion}» y quedará activa.`} El cambio quedará registrado con el usuario y el medio de pago de la venta.</p></div></div>
+          <div className="flex justify-end gap-2"><button type="button" className="btn-ghost" onClick={() => setAjustePorConfirmar(null)}>Volver</button><button type="button" className="btn-primary" onClick={confirmarAjuste}>Entendido, aplicar al pedido</button></div>
+        </div> :
         <form onSubmit={guardarAjuste} className="card mx-auto max-h-[90vh] w-[min(92vw,440px)] space-y-4 overflow-y-auto p-5" onClick={e => e.stopPropagation()}>
           <div className="flex items-center justify-between"><h2 className="text-lg font-semibold">{editandoPrecio.tipo === "total" ? "Cambiar monto total" : "Cambiar precio del producto"}</h2><button type="button" className="btn-ghost" onClick={() => setEditandoPrecio(null)} aria-label="Cerrar"><X className="h-4 w-4" /></button></div>
           <label className="block text-sm">{editandoPrecio.tipo === "total" ? "Nuevo total de la venta" : "Nuevo precio por unidad o kilo"}<input className="input mt-1" type="number" min="0.01" step="0.01" required value={precioNuevo} onChange={e => setPrecioNuevo(e.target.value)} /></label>
@@ -387,10 +395,10 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
           {(editandoPrecio.tipo === "total" || !actualizarStock) && <label className="block text-sm">Nombre de la promoción<input className="input mt-1" maxLength={100} required value={nombrePromocion} onChange={e => setNombrePromocion(e.target.value)} /></label>}
           {editandoPrecio.tipo === "total" && <div><p className="text-sm font-medium">Productos de la promoción</p><div className="mt-2 max-h-32 space-y-1 overflow-auto">{carrito.map(l => <label className="flex items-center gap-2 text-sm" key={l.producto.id}><input type="checkbox" checked={productosPromocion.includes(l.producto.id)} onChange={e => setProductosPromocion(prev => e.target.checked ? [...prev, l.producto.id] : prev.filter(id => id !== l.producto.id))} />{l.producto.nombre} ({l.cantidad})</label>)}</div><p className="mt-1 text-xs text-slate-500">El descuento se asigna a los productos seleccionados.</p></div>}
           {editandoPrecio.tipo === "producto" && !actualizarStock && <p className="text-xs text-slate-500">La promoción incluirá {carrito.find(l => l.producto.id === editandoPrecio.productoId)?.producto.nombre} con la cantidad actual.</p>}
-          <label className="block text-sm">Contraseña para cambios de precio<input className="input mt-1" type="password" inputMode="numeric" autoComplete="off" pattern="[0-9]{3,12}" required value={clavePrecio} onChange={e => setClavePrecio(e.target.value)} /></label>
           {error && <p role="alert" className="text-sm text-rose-600">{error}</p>}
           <button className="btn-primary w-full justify-center">Aplicar al pedido</button>
         </form>
+        }
       </Overlay>}
       {eligiendoPago && (
         <SelectorPago

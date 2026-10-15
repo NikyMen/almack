@@ -196,13 +196,6 @@ export const cambiosPrecio = sqliteTable("cambios_precio", {
   fecha: integer("fecha", { mode: "timestamp" }).default(now),
 });
 
-export const precioSeguridad = sqliteTable("precio_seguridad", {
-  id: integer("id").primaryKey(),
-  claveHash: text("clave_hash").notNull(),
-  actualizadoPor: text("actualizado_por").notNull(),
-  actualizadoEn: integer("actualizado_en", { mode: "timestamp" }).notNull(),
-});
-
 // Datos propios del checkout público, vinculados a la venta existente.
 export const tiendaPedidos = sqliteTable("tienda_pedidos", {
   id: integer("id").primaryKey({ autoIncrement: true }),

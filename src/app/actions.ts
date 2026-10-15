@@ -374,7 +374,7 @@ export async function cobrarVenta(
   const sucursalId = await sucursalOperativaId();
   if (!sucursalId) return { ok: false as const, error: "Creá una sucursal antes de cobrar." };
   try {
-    const resultado = await venderEnCaja(sucursalId, usuario.nombre, items, medioPago, { ...opts, usuario: usuario.usuario });
+    const resultado = await venderEnCaja(sucursalId, usuario.nombre, items, medioPago, opts);
     for (const ruta of ["/admin/caja", "/admin/ventas", "/admin/stock", "/admin/ventas/promociones", "/admin", "/tienda", "/tienda/productos"]) revalidatePath(ruta);
     return { ok: true as const, ...resultado };
   } catch (e) {
