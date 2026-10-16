@@ -3,13 +3,14 @@ import { Overlay } from "@/components/overlay";
 
 import { ConfigProductoStock } from "@/components/stock-configuracion";
 import { useId, useRef, useState, useTransition, type ReactNode } from "react";
-import { Sparkles, Loader2, Plus, Pencil, Trash2, Eye, EyeOff, ScanLine, Store, Settings2, Tag, Ellipsis } from "lucide-react";
+import { Sparkles, Loader2, Plus, Pencil, Trash2, Eye, EyeOff, ScanLine, Store, Settings2, Tag, Ellipsis, CopyCheck } from "lucide-react";
 import type { Producto, Sucursal } from "@/db/schema";
 import { vaciarStock } from "@/app/admin/(protected)/stock/actions";
 import { money } from "@/lib/format";
 import { FilterableTable, Col } from "@/components/filterable-table";
 import { BarcodeScanner } from "@/components/barcode-scanner";
 import { CampoImagenProducto } from "@/components/product-image-input";
+import { ControlDuplicados } from "@/components/stock-duplicados";
 import { ajustarStock, crearProducto, editarProducto, eliminarProducto, accionDescripcion, togglePublicado, toggleOfertaTienda } from "@/app/actions";
 
 /**
@@ -41,6 +42,7 @@ export function StockManager({
   const [configurando, setConfigurando] = useState<ProductoConStock | null>(null);
   const [open, setOpen] = useState(false);
   const [vaciando, setVaciando] = useState(false);
+  const [controlDuplicados, setControlDuplicados] = useState(false);
   const [error, setError] = useState("");
   const [editando, setEditando] = useState<ProductoConStock | null>(null);
   const [ocultos, setOcultos] = useState<Set<number>>(new Set());
@@ -127,6 +129,7 @@ export function StockManager({
   return (
     <>
       <div className="mb-4 flex flex-wrap justify-end gap-2">
+        {administrador && <button className="btn-ghost" onClick={() => setControlDuplicados(true)}><CopyCheck className="h-4 w-4" /> Control de duplicados</button>}
         {administrador && <button className="btn-ghost text-rose-600" disabled={!items.length} onClick={() => setVaciando(true)}><Trash2 className="h-4 w-4" /> Vaciar stock</button>}
         <button className="btn-primary" onClick={() => setOpen((v) => !v)}>
           {open ? "Cerrar" : <><Plus className="h-4 w-4" /> Nuevo producto</>}
@@ -187,6 +190,7 @@ export function StockManager({
       />
 
       {vaciando && <VaciarStock cantidad={items.length} cerrar={() => setVaciando(false)} />}
+      {controlDuplicados && <ControlDuplicados items={items} onClose={() => setControlDuplicados(false)} onEdit={p => { setControlDuplicados(false); setEditando(p); }} />}
       {configurando && <ConfigProductoStock producto={configurando} global={multiplicadorGeneral} cerrar={() => setConfigurando(null)} />}
       {editando && <EditarProducto producto={editando} ctx={ctx} onDone={() => setEditando(null)} />}
 
