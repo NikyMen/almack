@@ -14,15 +14,15 @@ export type LineaEnTransito = {
   creadoEn: Date | null;
 };
 
-export function StockTransitoView({ lineas, sucursales, destinoId, elegirDestino }: {
+export function StockTransitoView({ lineas, sucursales, destinoId, elegirDestino, unidades, traslados, total }: {
   lineas: LineaEnTransito[];
   sucursales: Sucursal[];
   destinoId: number | null;
   elegirDestino: boolean;
+  unidades: number;
+  traslados: number;
+  total: number;
 }) {
-  const unidades = lineas.reduce((total, linea) => total + linea.cantidad, 0);
-  const traslados = new Set(lineas.map((linea) => linea.movimientoId)).size;
-
   return (
     <section aria-label="Stock en tránsito">
       <div className="mb-5 rounded-2xl border border-amber-200 bg-amber-50/80 p-4 sm:p-5">
@@ -34,6 +34,8 @@ export function StockTransitoView({ lineas, sucursales, destinoId, elegirDestino
           <p className="text-sm text-slate-600">{traslados} {traslados === 1 ? "traslado pendiente" : "traslados pendientes"}. Esta mercadería todavía no está disponible para vender.</p>
         </div>
       </div>
+
+      <p className="mb-3 text-sm text-slate-500">{total} línea(s) pendiente(s)</p>
 
       {elegirDestino && (
         <nav aria-label="Filtrar tránsito por destino" className="mb-5 flex flex-wrap gap-2">

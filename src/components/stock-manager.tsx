@@ -44,7 +44,7 @@ export function StockManager({
   const [open, setOpen] = useState(false);
   const [vaciando, setVaciando] = useState(false);
   const [controlDuplicados, setControlDuplicados] = useState(false);
-  const [itemsDuplicados, setItemsDuplicados] = useState<ProductoConStock[]>([]);
+  const [datosDuplicados, setDatosDuplicados] = useState<Awaited<ReturnType<typeof cargarProductosDuplicados>> | null>(null);
   const [cargandoDuplicados, setCargandoDuplicados] = useState(false);
   const [error, setError] = useState("");
   const [editando, setEditando] = useState<ProductoConStock | null>(null);
@@ -86,13 +86,14 @@ export function StockManager({
     });
   }
 
-  async function abrirDuplicados() {
+  async function abrirDuplicados(pagina = 1) {
     setCargandoDuplicados(true);
     setError("");
     try {
-      setItemsDuplicados(await cargarProductosDuplicados());
+      setDatosDuplicados(await cargarProductosDuplicados(pagina));
       setControlDuplicados(true);
     } catch {
+      setControlDuplicados(false);
       setError("No se pudo cargar el control de duplicados.");
     } finally {
       setCargandoDuplicados(false);
@@ -145,7 +146,7 @@ export function StockManager({
   return (
     <>
       <div className="mb-4 flex flex-wrap justify-end gap-2">
-        {administrador && <button className="btn-ghost" disabled={cargandoDuplicados} onClick={abrirDuplicados}><CopyCheck className="h-4 w-4" /> {cargandoDuplicados ? "Cargando duplicados…" : "Control de duplicados"}</button>}
+        {administrador && <button className="btn-ghost" disabled={cargandoDuplicados} onClick={() => abrirDuplicados()}><CopyCheck className="h-4 w-4" /> {cargandoDuplicados ? "Cargando duplicados…" : "Control de duplicados"}</button>}
         {administrador && <button className="btn-ghost text-rose-600" disabled={!totalProductos} onClick={() => setVaciando(true)}><Trash2 className="h-4 w-4" /> Vaciar stock</button>}
         <button className="btn-primary" onClick={() => setOpen((v) => !v)}>
           {open ? "Cerrar" : <><Plus className="h-4 w-4" /> Nuevo producto</>}
@@ -196,7 +197,7 @@ export function StockManager({
       />
 
       {vaciando && <VaciarStock cantidad={totalProductos} cerrar={() => setVaciando(false)} />}
-      {controlDuplicados && <ControlDuplicados items={itemsDuplicados} onClose={() => setControlDuplicados(false)} onEdit={p => { setControlDuplicados(false); setEditando(p); }} />}
+      {controlDuplicados && datosDuplicados && <ControlDuplicados key={datosDuplicados.paginaActual} items={datosDuplicados.items} grupos={datosDuplicados.grupos} pagina={datosDuplicados.paginaActual} paginas={datosDuplicados.paginas} cargando={cargandoDuplicados} onPagina={abrirDuplicados} onClose={() => setControlDuplicados(false)} onEdit={p => { setControlDuplicados(false); setEditando(p); }} />}
       {configurando && <ConfigProductoStock producto={configurando} global={multiplicadorGeneral} cerrar={() => setConfigurando(null)} />}
       {editando && <EditarProducto producto={editando} ctx={ctx} onDone={() => setEditando(null)} />}
 

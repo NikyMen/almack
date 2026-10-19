@@ -5,7 +5,7 @@
 // Un envío sale del stock disponible y queda en tránsito hasta que el destino
 // verifica las cantidades y decide si lo acepta o rechaza.
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowRight, CircleCheck, Fuel, Loader2, PackageCheck, Plus, Search, Trash2, Truck } from "lucide-react";
@@ -13,6 +13,7 @@ import type { Sucursal } from "@/db/schema";
 import { money, fechaHora } from "@/lib/format";
 import { CATEGORIAS_GASTO, ETIQUETA_GASTO, type CategoriaGasto } from "@/lib/gastos";
 import { registrarTraslado, resolverTraslado, confirmarDevolucion, registrarGasto, eliminarGasto } from "@/app/admin/(protected)/movimientos/actions";
+import { buscarProductosParaTraslado } from "@/app/admin/(protected)/stock/actions";
 
 export type ProductoTraslado = {
   id: number;
@@ -48,18 +49,16 @@ export type GastoVista = {
   deTraslado: boolean;
 };
 
-type Linea = { productoId: number; nombre: string; cantidad: number };
+type Linea = { productoId: number; nombre: string; cantidad: number; disponible: number };
 
 export function MoverStock({
   sucursales,
   sucursalActivaId,
-  catalogo,
   historial,
   gastos,
 }: {
   sucursales: Sucursal[];
   sucursalActivaId: number | null;
-  catalogo: ProductoTraslado[];
   historial: TrasladoVista[];
   gastos: GastoVista[];
 }) {
@@ -74,6 +73,8 @@ export function MoverStock({
   const [lineas, setLineas] = useState<Linea[]>([]);
   const [nota, setNota] = useState("");
   const [busqueda, setBusqueda] = useState("");
+  const [resultados, setResultados] = useState<ProductoTraslado[]>([]);
+  const [buscando, setBuscando] = useState(false);
 
   const [conGasto, setConGasto] = useState(false);
   const [gastoConcepto, setGastoConcepto] = useState("Nafta del traslado");
@@ -85,18 +86,19 @@ export function MoverStock({
   const [aviso, setAviso] = useState("");
   const [pendiente, startTransition] = useTransition();
 
-  const enOrigen = (productoId: number) =>
-    catalogo.find((p) => p.id === productoId)?.porSucursal[origenId] ?? 0;
-
-  // El buscador solo ofrece lo que realmente hay en el origen: no se puede
-  // mandar mercadería que el local no tiene.
-  const resultados = useMemo(() => {
-    const q = busqueda.trim().toLowerCase();
-    return catalogo
-      .filter((p) => (p.porSucursal[origenId] ?? 0) > 0)
-      .filter((p) => !q || `${p.nombre} ${p.sku}`.toLowerCase().includes(q))
-      .slice(0, 8);
-  }, [catalogo, busqueda, origenId]);
+  useEffect(() => {
+    const termino = busqueda.trim();
+    if (!termino) { setResultados([]); setBuscando(false); return; }
+    let vigente = true;
+    setBuscando(true);
+    const espera = setTimeout(() => {
+      buscarProductosParaTraslado(origenId, termino)
+        .then(filas => { if (vigente) setResultados(filas); })
+        .catch(() => { if (vigente) { setResultados([]); setError("No se pudo buscar productos para el traslado."); } })
+        .finally(() => { if (vigente) setBuscando(false); });
+    }, 250);
+    return () => { vigente = false; clearTimeout(espera); };
+  }, [busqueda, origenId]);
 
   const totalUnidades = lineas.reduce((a, l) => a + (l.cantidad || 0), 0);
 
@@ -106,7 +108,7 @@ export function MoverStock({
     setLineas((prev) =>
       prev.some((l) => l.productoId === p.id)
         ? prev.map((l) => (l.productoId === p.id ? { ...l, cantidad: l.cantidad + 1 } : l))
-        : [...prev, { productoId: p.id, nombre: p.nombre, cantidad: 1 }]
+        : [...prev, { productoId: p.id, nombre: p.nombre, cantidad: 1, disponible: p.porSucursal[origenId] ?? 0 }]
     );
   }
 
@@ -122,10 +124,10 @@ export function MoverStock({
   function confirmar() {
     setError("");
     setAviso("");
-    const excedidas = lineas.filter((l) => l.cantidad > enOrigen(l.productoId));
+    const excedidas = lineas.filter((l) => l.cantidad > l.disponible);
     if (excedidas.length) {
       return setError(
-        `No hay tanto stock de "${excedidas[0].nombre}" en el origen (hay ${enOrigen(excedidas[0].productoId)}).`
+        `No hay tanto stock de "${excedidas[0].nombre}" en el origen (hay ${excedidas[0].disponible}).`
       );
     }
 
@@ -210,12 +212,13 @@ export function MoverStock({
           </div>
           {busqueda.trim() && (
             <div className="mt-2 overflow-hidden rounded-xl border border-slate-200">
-              {resultados.length === 0 && (
+              {buscando && <p className="px-3 py-2.5 text-sm text-slate-400">Buscando…</p>}
+              {!buscando && resultados.length === 0 && (
                 <p className="px-3 py-2.5 text-sm text-slate-400">
                   Nada con stock en {nombreDe(origenId)}.
                 </p>
               )}
-              {resultados.map((p) => (
+              {!buscando && resultados.map((p) => (
                 <button
                   key={p.id}
                   className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left text-sm transition hover:bg-slate-50"
@@ -242,7 +245,7 @@ export function MoverStock({
             </p>
           )}
           {lineas.map((l) => {
-            const hay = enOrigen(l.productoId);
+            const hay = l.disponible;
             const excede = l.cantidad > hay;
             return (
               <div key={l.productoId} className="flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2">

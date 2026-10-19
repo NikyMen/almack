@@ -1,21 +1,17 @@
-import { leerReglasStock } from "@/lib/reglas-stock";
 import { AlertasStock } from "@/components/alertas-stock";
 import { MultiplicadorStock } from "@/components/stock-configuracion";
-import { db, productos, stockMovimientoItems, stockMovimientos } from "@/db";
 import Link from "next/link";
-import { and, desc, eq, inArray } from "drizzle-orm";
 import { requireAcceso } from "@/lib/auth";
 import { esSuperAdmin, tieneAcceso } from "@/lib/permisos";
 import { PageHeader } from "@/components/ui";
-import { StockManager, type ProductoConStock } from "@/components/stock-manager";
-import { desgloseStock, desgloseTransito } from "@/lib/stock";
+import { StockManager } from "@/components/stock-manager";
 import { getContextoSucursal } from "@/lib/sucursal";
 import { StockTransitoView, type LineaEnTransito } from "@/components/stock-transito-view";
 import { SectionCards } from "@/components/section-cards";
-import { listarStock, ORDENES_STOCK, type OrdenStock } from "@/lib/stock-listado";
+import { listarStock, listarLineasTransito, ORDENES_STOCK, type OrdenStock } from "@/lib/stock-listado";
 import { Boxes, ArrowLeftRight, Truck, TriangleAlert, PackagePlus, Archive } from "lucide-react";
 
-export default async function StockPage({ searchParams }: { searchParams: Promise<{ sucursal?: string; vista?: string; pagina?: string; buscar?: string; categoria?: string; orden?: string }> }) {
+export default async function StockPage({ searchParams }: { searchParams: Promise<{ sucursal?: string; vista?: string; pagina?: string; buscar?: string; categoria?: string; orden?: string; todas?: string }> }) {
   const usuario = await requireAcceso("stock");
   const params = await searchParams;
   if (!params.vista && !params.sucursal) {
@@ -56,34 +52,13 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
   const orden: OrdenStock = ORDENES_STOCK.includes(params.orden as OrdenStock) ? params.orden as OrdenStock : "recientes";
   const paginaSolicitada = Number(params.pagina);
   const pagina = Number.isSafeInteger(paginaSolicitada) && paginaSolicitada > 0 ? paginaSolicitada : 1;
-  const listado = !modoAlertas && !modoTransito
-    ? await listarStock({ pagina, busqueda, categoria, orden, sucursalId: activaId, administrador })
+  const mostrarTodasAlertas = modoAlertas && administrador && params.todas === "1";
+  const listado = !modoTransito
+    ? await listarStock({ pagina, busqueda, categoria: modoAlertas ? "" : categoria, orden: modoAlertas ? "recientes" : orden,
+      sucursalId: activaId, administrador, soloAlertas: modoAlertas && !mostrarTodasAlertas, contarAlertas: modoAlertas })
     : null;
-  const [items, desglose, transito, config] = modoAlertas ? await Promise.all([
-    db.select().from(productos).where(eq(productos.activo, true)).orderBy(desc(productos.id)),
-    desgloseStock(), desgloseTransito(), leerReglasStock(),
-  ]) : [[], new Map(), new Map(), { multiplicador: listado?.multiplicador ?? null, reglas: [] }];
-
-  const pendientes = modoTransito ? await db
-    .select({
-      itemId: stockMovimientoItems.id,
-      movimientoId: stockMovimientos.id,
-      sku: productos.sku,
-      producto: stockMovimientoItems.descripcion,
-      cantidad: stockMovimientoItems.cantidad,
-      origenId: stockMovimientos.origenId,
-      destinoId: stockMovimientos.destinoId,
-      estado: stockMovimientos.estado,
-      creadoEn: stockMovimientos.creadoEn,
-    })
-    .from(stockMovimientoItems)
-    .innerJoin(stockMovimientos, eq(stockMovimientoItems.movimientoId, stockMovimientos.id))
-    .innerJoin(productos, eq(stockMovimientoItems.productoId, productos.id))
-    .where(and(
-      inArray(stockMovimientos.estado, ["en_transito", "rechazado"]),
-      destinoSeguro ? eq(stockMovimientos.destinoId, destinoSeguro) : undefined,
-    ))
-    .orderBy(desc(stockMovimientos.id), stockMovimientoItems.id) : [];
+  const transito = modoTransito ? await listarLineasTransito(destinoSeguro, pagina) : null;
+  const pendientes = transito?.filas ?? [];
   const nombres = new Map(lista.map((s) => [s.id, s.nombre]));
   const lineasEnTransito: LineaEnTransito[] = pendientes.map((p) => ({
     itemId: p.itemId,
@@ -97,24 +72,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
     creadoEn: p.creadoEn,
   }));
 
-  // En "Todas" la columna Stock es el total de la empresa; dentro de un local,
-  // lo que hay en ese local y nada más.
-  const filas: ProductoConStock[] = listado?.filas ?? items.map((p) => {
-    const porSucursal: Record<number, number> = {};
-    for (const d of desglose.get(p.id) ?? []) if (administrador || d.sucursalId === activaId) porSucursal[d.sucursalId] = d.cantidad;
-    const transitoPorSucursal: Record<number, number> = {};
-    for (const d of transito.get(p.id) ?? []) if (administrador || d.sucursalId === activaId) transitoPorSucursal[d.sucursalId] = d.cantidad;
-    return {
-      ...p,
-      stock: administrador ? p.stock : (activaId ? porSucursal[activaId] ?? 0 : 0),
-      alertaActiva: config.reglas.find(r => r.productoId === p.id)?.alertaActiva ?? true,
-      multiplicadorCosto: config.reglas.find(r => r.productoId === p.id)?.multiplicador ?? null,
-      porSucursal,
-      transitoPorSucursal,
-      stockLocal: activaId ? porSucursal[activaId] ?? 0 : p.stock,
-      transitoLocal: activaId ? transitoPorSucursal[activaId] ?? 0 : Object.values(transitoPorSucursal).reduce((a, b) => a + b, 0),
-    };
-  });
+  const filas = listado?.filas ?? [];
 
   return (
     <>
@@ -140,8 +98,8 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
         <Link href="/admin/stock?sucursal=transito" aria-current={modoTransito ? "page" : undefined} className={`rounded-xl px-3 py-2 text-sm font-medium transition ${modoTransito ? "bg-amber-100 text-amber-900" : "text-slate-600 hover:bg-slate-100"}`}>Tránsito</Link>
         {tieneAcceso(usuario, "movimientos") && <Link href={`/admin/stock/mover?sucursal=${modoTransito ? destinoId ?? "todas" : activaId ?? "todas"}`} className="ml-auto rounded-xl bg-orange-50 px-3 py-2 text-sm font-semibold text-orange-800 transition hover:bg-orange-100">Mover stock →</Link>}
       </div>
-      {administrador && !modoTransito && <MultiplicadorStock valor={config.multiplicador} />}
-      {listado && <>
+      {administrador && !modoTransito && <MultiplicadorStock valor={listado?.multiplicador ?? null} />}
+      {listado && !modoAlertas && <>
         <form action="/admin/stock" className="mb-4 flex flex-wrap items-end gap-2">
           <input type="hidden" name="vista" value="inventario" />
           {params.sucursal && <input type="hidden" name="sucursal" value={params.sucursal} />}
@@ -164,13 +122,18 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
         <p className="mb-3 text-sm text-slate-500">{listado.total} resultado(s) · página {listado.paginaActual} de {listado.paginas}</p>
       </>}
       {modoTransito
-        ? <StockTransitoView lineas={lineasEnTransito} sucursales={lista} destinoId={destinoSeguro} elegirDestino={administrador} />
-        : modoAlertas ? <AlertasStock items={filas} administrador={administrador} global={config.multiplicador} />
-        : <StockManager items={filas} totalProductos={listado?.totalProductos ?? 0} sucursales={lista} sucursalActivaId={activaId} administrador={administrador} multiplicadorGeneral={config.multiplicador} />}
+        ? <StockTransitoView lineas={lineasEnTransito} sucursales={lista} destinoId={destinoSeguro} elegirDestino={administrador} unidades={transito?.unidades ?? 0} traslados={transito?.traslados ?? 0} total={transito?.total ?? 0} />
+        : modoAlertas ? <AlertasStock items={filas} administrador={administrador} global={listado?.multiplicador ?? null} totalAlertas={listado?.totalAlertas ?? 0} total={listado?.total ?? 0} busqueda={busqueda} mostrarTodas={mostrarTodasAlertas} sucursal={params.sucursal} />
+        : <StockManager items={filas} totalProductos={listado?.totalProductos ?? 0} sucursales={lista} sucursalActivaId={activaId} administrador={administrador} multiplicadorGeneral={listado?.multiplicador ?? null} />}
       {listado && listado.paginas > 1 && <nav className="mt-5 flex items-center justify-center gap-3" aria-label="Páginas de stock">
-        {listado.paginaActual > 1 && <Link className="btn-ghost" href={{ pathname: "/admin/stock", query: { vista: "inventario", ...(params.sucursal ? { sucursal: params.sucursal } : {}), ...(busqueda ? { buscar: busqueda } : {}), ...(categoria ? { categoria } : {}), orden, pagina: listado.paginaActual - 1 } }}>← Anterior</Link>}
+        {listado.paginaActual > 1 && <Link className="btn-ghost" href={{ pathname: "/admin/stock", query: { vista: modoAlertas ? "alertas" : "inventario", ...(params.sucursal ? { sucursal: params.sucursal } : {}), ...(busqueda ? { buscar: busqueda } : {}), ...(!modoAlertas && categoria ? { categoria } : {}), ...(!modoAlertas ? { orden } : {}), ...(mostrarTodasAlertas ? { todas: "1" } : {}), pagina: listado.paginaActual - 1 } }}>← Anterior</Link>}
         <span className="text-sm text-slate-600">{listado.paginaActual} / {listado.paginas}</span>
-        {listado.paginaActual < listado.paginas && <Link className="btn-ghost" href={{ pathname: "/admin/stock", query: { vista: "inventario", ...(params.sucursal ? { sucursal: params.sucursal } : {}), ...(busqueda ? { buscar: busqueda } : {}), ...(categoria ? { categoria } : {}), orden, pagina: listado.paginaActual + 1 } }}>Siguiente →</Link>}
+        {listado.paginaActual < listado.paginas && <Link className="btn-ghost" href={{ pathname: "/admin/stock", query: { vista: modoAlertas ? "alertas" : "inventario", ...(params.sucursal ? { sucursal: params.sucursal } : {}), ...(busqueda ? { buscar: busqueda } : {}), ...(!modoAlertas && categoria ? { categoria } : {}), ...(!modoAlertas ? { orden } : {}), ...(mostrarTodasAlertas ? { todas: "1" } : {}), pagina: listado.paginaActual + 1 } }}>Siguiente →</Link>}
+      </nav>}
+      {transito && transito.paginas > 1 && <nav className="mt-5 flex items-center justify-center gap-3" aria-label="Páginas de tránsito">
+        {transito.paginaActual > 1 && <Link className="btn-ghost" href={{ pathname: "/admin/stock", query: { sucursal: params.sucursal ?? "transito", pagina: transito.paginaActual - 1 } }}>← Anterior</Link>}
+        <span className="text-sm text-slate-600">{transito.paginaActual} / {transito.paginas}</span>
+        {transito.paginaActual < transito.paginas && <Link className="btn-ghost" href={{ pathname: "/admin/stock", query: { sucursal: params.sucursal ?? "transito", pagina: transito.paginaActual + 1 } }}>Siguiente →</Link>}
       </nav>}
     </>
   );

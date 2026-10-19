@@ -1,17 +1,19 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, Check, Merge, Pencil, X } from "lucide-react";
 import { Overlay } from "@/components/overlay";
-import { agruparDuplicadosStock } from "@/lib/duplicados-stock";
+import type { GrupoDuplicados } from "@/lib/duplicados-stock";
 import { actualizarPreciosDuplicados, consolidarDuplicados } from "@/app/admin/(protected)/stock/duplicados-actions";
 import { money } from "@/lib/format";
 import type { ProductoConStock } from "@/components/stock-manager";
 
-export function ControlDuplicados({ items, onClose, onEdit }: { items: ProductoConStock[]; onClose: () => void; onEdit: (p: ProductoConStock) => void }) {
+export function ControlDuplicados({ items, grupos, pagina, paginas, cargando, onPagina, onClose, onEdit }: {
+  items: ProductoConStock[]; grupos: GrupoDuplicados[]; pagina: number; paginas: number; cargando: boolean;
+  onPagina: (pagina: number) => void; onClose: () => void; onEdit: (p: ProductoConStock) => void;
+}) {
   const router = useRouter();
-  const grupos = useMemo(() => agruparDuplicadosStock(items), [items]);
   const [indice, setIndice] = useState(0);
   const [seleccion, setSeleccion] = useState<number[]>([]);
   const [principal, setPrincipal] = useState<number | null>(null);
@@ -66,7 +68,7 @@ export function ControlDuplicados({ items, onClose, onEdit }: { items: ProductoC
     });
   }
 
-  return <Overlay className="overlay" onClick={() => { if (!pendiente) onClose(); }}>
+  return <Overlay className="overlay" onClick={() => { if (!pendiente && !cargando) onClose(); }}>
     <div className="sheet flex max-h-[92dvh] flex-col overflow-hidden p-0 sm:max-w-5xl" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Control de duplicados">
       <div className="flex items-start justify-between gap-4 border-b border-slate-200 bg-slate-50 px-5 py-4 sm:px-7">
         <div>
@@ -74,7 +76,7 @@ export function ControlDuplicados({ items, onClose, onEdit }: { items: ProductoC
           <h2 className="mt-1 text-xl font-semibold text-slate-900">Control de duplicados</h2>
           <p className="mt-1 text-sm text-slate-500">Revisá coincidencias, corregí precios o reuní el stock en un solo producto.</p>
         </div>
-        <button className="btn-ghost shrink-0 px-2" onClick={onClose} disabled={pendiente} aria-label="Cerrar"><X className="h-4 w-4" /></button>
+        <button className="btn-ghost shrink-0 px-2" onClick={onClose} disabled={pendiente || cargando} aria-label="Cerrar"><X className="h-4 w-4" /></button>
       </div>
       <div className="overflow-y-auto px-5 py-5 sm:px-7">
         {!grupos.length ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-6 text-sm text-emerald-900"><Check className="mb-2 h-6 w-6" /> No se encontraron códigos repetidos ni nombres similares entre los productos activos.</div> : <>
@@ -82,6 +84,11 @@ export function ControlDuplicados({ items, onClose, onEdit }: { items: ProductoC
             <span className="rounded-full bg-orange-100 px-3 py-1 text-xs font-semibold text-orange-800">{grupos.filter(g => g.tipo === "codigo").length} por código</span>
             <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">{grupos.filter(g => g.tipo === "nombre").length} por nombre</span>
           </div>
+          {paginas > 1 && <nav className="mb-5 flex items-center justify-center gap-3" aria-label="Páginas de duplicados">
+            <button className="btn-ghost" disabled={pagina <= 1 || pendiente || cargando} onClick={() => onPagina(pagina - 1)}>← Anterior</button>
+            <span className="text-sm text-slate-600">{pagina} / {paginas} · hasta 50 productos por página</span>
+            <button className="btn-ghost" disabled={pagina >= paginas || pendiente || cargando} onClick={() => onPagina(pagina + 1)}>Siguiente →</button>
+          </nav>}
           <div className="grid gap-5 lg:grid-cols-[15rem_minmax(0,1fr)]">
             <nav className="max-h-64 space-y-1 overflow-y-auto lg:max-h-[58dvh]" aria-label="Grupos de duplicados">
               {grupos.map((g, i) => <button key={`${g.tipo}-${g.clave}`} onClick={() => elegirGrupo(i)} className={`w-full rounded-xl border px-3 py-2 text-left transition ${i === indice ? "border-orange-300 bg-orange-50 text-orange-950" : "border-transparent text-slate-600 hover:bg-slate-50"}`}>

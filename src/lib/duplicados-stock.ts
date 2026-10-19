@@ -53,3 +53,29 @@ export function agruparDuplicadosStock(productos: IdentidadProducto[]): GrupoDup
     .sort((a, b) => b.ids.length - a.ids.length || a.clave.localeCompare(b.clave, "es"));
   return [...gruposCodigo, ...gruposNombre];
 }
+
+/** Reparte la revisión en páginas sin partir grupos que entran completos. */
+export function paginaGruposDuplicados(grupos: GrupoDuplicados[], pagina: number, tamano = 50) {
+  const paginas: GrupoDuplicados[][] = [[]];
+  let usados = 0;
+  for (const grupo of grupos) {
+    for (let inicio = 0; inicio < grupo.ids.length;) {
+      const restantes = grupo.ids.length - inicio;
+      if (usados && (restantes > tamano - usados) && restantes <= tamano) {
+        paginas.push([]);
+        usados = 0;
+      }
+      if (usados === tamano) {
+        paginas.push([]);
+        usados = 0;
+      }
+      const cantidad = Math.min(tamano - usados, restantes);
+      paginas.at(-1)!.push({ ...grupo, ids: grupo.ids.slice(inicio, inicio + cantidad) });
+      usados += cantidad;
+      inicio += cantidad;
+    }
+  }
+  const paginaActual = Math.min(Math.max(1, pagina), paginas.length);
+  const visibles = paginas[paginaActual - 1];
+  return { grupos: visibles, ids: visibles.flatMap(g => g.ids), paginaActual, paginas: paginas.length };
+}
