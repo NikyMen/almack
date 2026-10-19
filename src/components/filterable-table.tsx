@@ -34,6 +34,7 @@ export function FilterableTable<T>({
   sortOptions,
   groupBy,
   groupHeader,
+  showResultCount = true,
 }: {
   rows: T[];
   cols: Col<T>[];
@@ -53,6 +54,7 @@ export function FilterableTable<T>({
   sortOptions?: SortOption<T>[];
   groupBy?: (row: T) => string;
   groupHeader?: (key: string, rows: T[]) => ReactNode;
+  showResultCount?: boolean;
 }) {
   const [q, setQ] = useState("");
   const [filters, setFilters] = useState<Record<string, Set<string>>>({});
@@ -163,7 +165,7 @@ export function FilterableTable<T>({
             <X className="h-3.5 w-3.5" /> Limpiar
           </button>
         )}
-        <span className="ml-auto text-xs text-slate-400">{filtered.length} resultado(s)</span>
+        {showResultCount && <span className="ml-auto text-xs text-slate-400">{filtered.length} resultado(s)</span>}
       </div>
 
       {/* Lista de tarjetas (mobile) */}

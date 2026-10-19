@@ -165,8 +165,10 @@ export async function stockDeSucursal(sucursalId: number): Promise<Map<number, n
 }
 
 /** Unidades enviadas pendientes de resolución, agrupadas por destino y producto. */
-export async function desgloseTransito(): Promise<Map<number, StockDeProducto[]>> {
-  const filas = await db.select().from(stockTransito).orderBy(asc(stockTransito.sucursalId));
+export async function desgloseTransito(ids?: number[]): Promise<Map<number, StockDeProducto[]>> {
+  const filas = await db.select().from(stockTransito)
+    .where(ids && ids.length ? inArray(stockTransito.productoId, ids) : undefined)
+    .orderBy(asc(stockTransito.sucursalId));
   const mapa = new Map<number, StockDeProducto[]>();
   for (const fila of filas) {
     const lista = mapa.get(fila.productoId) ?? [];

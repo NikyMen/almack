@@ -5,7 +5,7 @@ import { ConfigProductoStock } from "@/components/stock-configuracion";
 import { useId, useRef, useState, useTransition, type ReactNode } from "react";
 import { Sparkles, Loader2, Plus, Pencil, Trash2, Eye, EyeOff, ScanLine, Store, Settings2, Tag, Ellipsis, CopyCheck } from "lucide-react";
 import type { Producto, Sucursal } from "@/db/schema";
-import { vaciarStock } from "@/app/admin/(protected)/stock/actions";
+import { vaciarStock, cargarProductosDuplicados } from "@/app/admin/(protected)/stock/actions";
 import { money } from "@/lib/format";
 import { FilterableTable, Col } from "@/components/filterable-table";
 import { BarcodeScanner } from "@/components/barcode-scanner";
@@ -36,13 +36,16 @@ type Contexto = {
 
 export function StockManager({
   items,
+  totalProductos,
   sucursales,
   sucursalActivaId, administrador, multiplicadorGeneral,
-}: { items: ProductoConStock[] } & Contexto) {
+}: { items: ProductoConStock[]; totalProductos: number } & Contexto) {
   const [configurando, setConfigurando] = useState<ProductoConStock | null>(null);
   const [open, setOpen] = useState(false);
   const [vaciando, setVaciando] = useState(false);
   const [controlDuplicados, setControlDuplicados] = useState(false);
+  const [itemsDuplicados, setItemsDuplicados] = useState<ProductoConStock[]>([]);
+  const [cargandoDuplicados, setCargandoDuplicados] = useState(false);
   const [error, setError] = useState("");
   const [editando, setEditando] = useState<ProductoConStock | null>(null);
   const [ocultos, setOcultos] = useState<Set<number>>(new Set());
@@ -83,6 +86,19 @@ export function StockManager({
     });
   }
 
+  async function abrirDuplicados() {
+    setCargandoDuplicados(true);
+    setError("");
+    try {
+      setItemsDuplicados(await cargarProductosDuplicados());
+      setControlDuplicados(true);
+    } catch {
+      setError("No se pudo cargar el control de duplicados.");
+    } finally {
+      setCargandoDuplicados(false);
+    }
+  }
+
   function acciones(p: ProductoConStock) {
     return <AccionesStock nombre={p.nombre}>
       <button className="btn-ghost w-full justify-start" onClick={() => ajustar(p, -1)}>− Quitar 1</button>
@@ -99,10 +115,10 @@ export function StockManager({
   const cols: Col<ProductoConStock>[] = [
     { key: "sku", head: "SKU", width: 13, cell: (p) => <span className="font-mono text-xs text-slate-500">{p.sku}</span>, value: (p) => p.sku },
     { key: "nombre", head: "Producto", width: 21, cell: (p) => <span className="font-medium">{p.nombre}</span>, value: (p) => p.nombre },
-    { key: "categoria", head: "Categoría", width: 10, cell: (p) => <span className="text-slate-500">{p.categoria}</span>, value: (p) => p.categoria ?? "General", filter: true },
-    { key: "precio", head: "Costo / venta", width: 17, cell: (p) => <PreciosStock producto={p} />, value: (p) => p.precioVenta, sort: true },
+    { key: "categoria", head: "Categoría", width: 10, cell: (p) => <span className="text-slate-500">{p.categoria}</span>, value: (p) => p.categoria ?? "General" },
+    { key: "precio", head: "Costo / venta", width: 17, cell: (p) => <PreciosStock producto={p} />, value: (p) => p.precioVenta },
     {
-      key: "stock", head: sucursalActivaId ? "Stock acá" : "Stock total", width: 10, value: (p) => p.stockLocal, sort: true,
+      key: "stock", head: sucursalActivaId ? "Stock acá" : "Stock total", width: 10, value: (p) => p.stockLocal,
       cell: (p) => {
         const bajo = p.alertaActiva && p.stockLocal < p.stockMinimo;
         return (
@@ -112,7 +128,7 @@ export function StockManager({
         );
       },
     },
-    { key: "transito", head: "En tránsito", width: 8, value: (p) => p.transitoLocal, sort: true,
+    { key: "transito", head: "En tránsito", width: 8, value: (p) => p.transitoLocal,
       cell: (p) => <span className={p.transitoLocal ? "rounded-lg bg-amber-50 px-2 py-1 font-semibold text-amber-800" : "text-slate-400"}>{p.transitoLocal}</span> },
     ...(mostrarDesglose
       ? [
@@ -129,8 +145,8 @@ export function StockManager({
   return (
     <>
       <div className="mb-4 flex flex-wrap justify-end gap-2">
-        {administrador && <button className="btn-ghost" onClick={() => setControlDuplicados(true)}><CopyCheck className="h-4 w-4" /> Control de duplicados</button>}
-        {administrador && <button className="btn-ghost text-rose-600" disabled={!items.length} onClick={() => setVaciando(true)}><Trash2 className="h-4 w-4" /> Vaciar stock</button>}
+        {administrador && <button className="btn-ghost" disabled={cargandoDuplicados} onClick={abrirDuplicados}><CopyCheck className="h-4 w-4" /> {cargandoDuplicados ? "Cargando duplicados…" : "Control de duplicados"}</button>}
+        {administrador && <button className="btn-ghost text-rose-600" disabled={!totalProductos} onClick={() => setVaciando(true)}><Trash2 className="h-4 w-4" /> Vaciar stock</button>}
         <button className="btn-primary" onClick={() => setOpen((v) => !v)}>
           {open ? "Cerrar" : <><Plus className="h-4 w-4" /> Nuevo producto</>}
         </button>
@@ -141,21 +157,11 @@ export function StockManager({
 
       <FilterableTable
         compact
-        sortOptions={[
-          { key: "bajo", label: "Stock bajo primero", direction: "asc", compare: (a, b) => Number(!(a.alertaActiva && a.stockLocal < a.stockMinimo)) - Number(!(b.alertaActiva && b.stockLocal < b.stockMinimo)) || a.stockLocal - b.stockLocal },
-          { key: "stock", label: "Menor stock primero", direction: "asc" },
-          { key: "stock", label: "Mayor stock primero", direction: "desc" },
-          { key: "precio", label: "Menor precio de venta", direction: "asc" },
-          { key: "precio", label: "Mayor precio de venta", direction: "desc" },
-          { key: "transito", label: "Mayor stock en tránsito", direction: "desc" },
-          { key: "transito", label: "Menor stock en tránsito", direction: "asc" },
-        ]}
+        showResultCount={false}
         rows={items}
         cols={cols}
         rowKey={(p) => p.id}
         rowClassName={(p) => (ocultos.has(p.id) ? "bg-slate-100 text-slate-400 opacity-60" : "")}
-        search={(p) => `${p.sku} ${p.nombre} ${p.categoria} ${p.precioVenta}`}
-        searchPlaceholder="Buscar producto por nombre, SKU, categoría…"
         mobileCard={(p) => {
           const bajo = p.alertaActiva && p.stockLocal < p.stockMinimo;
           return (
@@ -189,8 +195,8 @@ export function StockManager({
         }}
       />
 
-      {vaciando && <VaciarStock cantidad={items.length} cerrar={() => setVaciando(false)} />}
-      {controlDuplicados && <ControlDuplicados items={items} onClose={() => setControlDuplicados(false)} onEdit={p => { setControlDuplicados(false); setEditando(p); }} />}
+      {vaciando && <VaciarStock cantidad={totalProductos} cerrar={() => setVaciando(false)} />}
+      {controlDuplicados && <ControlDuplicados items={itemsDuplicados} onClose={() => setControlDuplicados(false)} onEdit={p => { setControlDuplicados(false); setEditando(p); }} />}
       {configurando && <ConfigProductoStock producto={configurando} global={multiplicadorGeneral} cerrar={() => setConfigurando(null)} />}
       {editando && <EditarProducto producto={editando} ctx={ctx} onDone={() => setEditando(null)} />}
 
