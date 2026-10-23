@@ -69,3 +69,37 @@ export async function consolidarDuplicados(destinoId: number, origenIds: number[
     return { ok: false as const, error: e instanceof Error ? e.message : "No se pudieron consolidar los productos." };
   }
 }
+
+export async function conservarDuplicado(destinoId: number, grupoSolicitado: { tipo: "codigo" | "nombre"; clave: string }) {
+  const usuario = await requireAdmin();
+  if (!Number.isSafeInteger(destinoId) || destinoId <= 0 ||
+      !grupoSolicitado || !["codigo", "nombre"].includes(grupoSolicitado.tipo) ||
+      typeof grupoSolicitado.clave !== "string" || !grupoSolicitado.clave || grupoSolicitado.clave.length > 200)
+    return { ok: false as const, error: "Elegí un producto para conservar." };
+  try {
+    const retirados = await db.transaction(async tx => {
+      const identidades = await tx.select({ id: productos.id, sku: productos.sku, nombre: productos.nombre })
+        .from(productos).where(eq(productos.activo, true));
+      const grupo = agruparDuplicadosStock(identidades).find(g =>
+        g.tipo === grupoSolicitado.tipo && g.clave === grupoSolicitado.clave && g.ids.includes(destinoId));
+      if (!grupo || grupo.ids.length < 2) throw new Error("El grupo de duplicados cambió. Actualizá la página antes de continuar.");
+      const origenIds = grupo.ids.filter(id => id !== destinoId);
+
+      const [transito] = await tx.select({ id: stockTransito.id }).from(stockTransito)
+        .where(and(inArray(stockTransito.productoId, origenIds), sql`${stockTransito.cantidad} <> 0`)).limit(1);
+      const [pendiente] = await tx.select({ id: stockMovimientoItems.id }).from(stockMovimientoItems)
+        .innerJoin(stockMovimientos, eq(stockMovimientoItems.movimientoId, stockMovimientos.id))
+        .where(and(inArray(stockMovimientoItems.productoId, origenIds), inArray(stockMovimientos.estado, ["en_transito", "rechazado"]))).limit(1);
+      if (transito || pendiente) throw new Error("Uno de los productos tiene un traslado pendiente. Resolvelo antes de continuar.");
+
+      await guardarRespaldoStock(tx, `Antes de conservar duplicado #${destinoId}`, usuario.nombre);
+      await tx.delete(stockSucursal).where(inArray(stockSucursal.productoId, origenIds));
+      await tx.update(productos).set({ activo: false, publicado: false, stock: 0 }).where(inArray(productos.id, origenIds));
+      return origenIds.length;
+    });
+    refrescar();
+    return { ok: true as const, retirados };
+  } catch (e) {
+    return { ok: false as const, error: e instanceof Error ? e.message : "No se pudieron retirar los duplicados." };
+  }
+}

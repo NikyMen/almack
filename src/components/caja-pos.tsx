@@ -17,6 +17,7 @@ import { SelectorPago } from "@/components/selector-pago";
 import { BarcodeScanner } from "@/components/barcode-scanner";
 import { usePromocionAutomatica } from "@/components/use-promocion-automatica";
 import type { AjustePrecio } from "@/lib/caja";
+import { ajusteVigente } from "@/lib/ajuste-carrito";
 
 type Ticket = { ventaId: number; total: number; items: number; medioPago: MedioPago; efectivoRecibido: number | null; vuelto: number | null };
 
@@ -48,8 +49,8 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
   } = useCarrito(productos, permitirSinStock);
   const promocion = usePromocionAutomatica(carrito.map(l => ({ productoId: l.producto.id, cantidad: l.cantidad })));
   const firmaCarrito = carrito.map(l => `${l.producto.id}:${l.cantidad}`).join("|");
-  const ajusteActivo = firmaAjuste === firmaCarrito ? ajustePrecio : null;
-  useEffect(() => { if (ajustePrecio && firmaAjuste !== firmaCarrito) setAjustePrecio(null); }, [ajustePrecio, firmaAjuste, firmaCarrito]);
+  const ajusteActivo = ajusteVigente(ajustePrecio, firmaAjuste, firmaCarrito, carrito.map(l => l.producto.id));
+  useEffect(() => { if (ajustePrecio && !ajusteActivo) setAjustePrecio(null); }, [ajustePrecio, ajusteActivo]);
   const precioItem = (l: Linea) => ajusteActivo?.tipo === "producto" && ajusteActivo.productoId === l.producto.id ? ajusteActivo.precio! : l.producto.precioVenta;
   const totalVisible = ajusteActivo?.tipo === "total" ? ajusteActivo.precio! : ajusteActivo?.tipo === "producto" ? carrito.reduce((sum, l) => sum + precioItem(l) * l.cantidad, 0) : promocion?.total ?? total;
   function guardarAjuste(e: React.FormEvent) {

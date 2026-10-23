@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { AlertTriangle, Check, Merge, Pencil, X } from "lucide-react";
 import { Overlay } from "@/components/overlay";
 import type { GrupoDuplicados } from "@/lib/duplicados-stock";
-import { actualizarPreciosDuplicados, consolidarDuplicados } from "@/app/admin/(protected)/stock/duplicados-actions";
+import { actualizarPreciosDuplicados, consolidarDuplicados, conservarDuplicado } from "@/app/admin/(protected)/stock/duplicados-actions";
 import { money } from "@/lib/format";
 import type { ProductoConStock } from "@/components/stock-manager";
 
@@ -19,7 +19,7 @@ export function ControlDuplicados({ items, grupos, pagina, paginas, cargando, on
   const [principal, setPrincipal] = useState<number | null>(null);
   const [venta, setVenta] = useState("");
   const [compra, setCompra] = useState("");
-  const [accion, setAccion] = useState<"precios" | "consolidar" | null>(null);
+  const [accion, setAccion] = useState<"precios" | "consolidar" | "conservar" | null>(null);
   const [confirmando, setConfirmando] = useState(false);
   const [error, setError] = useState("");
   const [exito, setExito] = useState("");
@@ -31,15 +31,19 @@ export function ControlDuplicados({ items, grupos, pagina, paginas, cargando, on
   const otros = elegidos.filter(p => p.id !== principal);
   const unidadesCompatibles = new Set(elegidos.map(p => p.unidadMedida)).size <= 1;
   const enTransito = otros.some(p => Object.values(p.transitoPorSucursal).some(cantidad => cantidad !== 0));
+  const conservado = seleccion.length === 1 ? miembros.find(p => p.id === seleccion[0]) : undefined;
+  const descartados = conservado ? miembros.filter(p => p.id !== conservado.id) : [];
+  const stockDescartado = descartados.reduce((total, p) => total + p.stock, 0);
 
   function elegirGrupo(i: number) {
     setIndice(i); setSeleccion([]); setPrincipal(null); setAccion(null); setConfirmando(false); setError(""); setExito("");
   }
   function alternar(id: number) {
-    const siguientes = seleccion.includes(id) ? seleccion.filter(x => x !== id) : [...seleccion, id];
+    const siguientes = seleccion.includes(id) ? seleccion.filter(x => x !== id) : accion === "conservar" ? [id] : [...seleccion, id];
     setSeleccion(siguientes);
     if (principal && !siguientes.includes(principal)) setPrincipal(null);
-    setAccion(null); setConfirmando(false); setError(""); setExito("");
+    if (accion !== "conservar") setAccion(null);
+    setConfirmando(false); setError(""); setExito("");
   }
   function guardarPrecios() {
     const cambios: { precioVenta?: number; precioCompra?: number } = {};
@@ -68,13 +72,26 @@ export function ControlDuplicados({ items, grupos, pagina, paginas, cargando, on
     });
   }
 
+  function conservar() {
+    if (!conservado || !grupo || !descartados.length) {
+      setError("Seleccioná un solo producto para conservar."); return;
+    }
+    if (!confirmando) { setConfirmando(true); setError(""); return; }
+    setError("");
+    iniciar(async () => {
+      const resultado = await conservarDuplicado(conservado.id, { tipo: grupo.tipo, clave: grupo.clave });
+      if (!resultado.ok) { setError(resultado.error); setConfirmando(false); }
+      else { onClose(); router.refresh(); }
+    });
+  }
+
   return <Overlay className="overlay" onClick={() => { if (!pendiente && !cargando) onClose(); }}>
     <div className="sheet flex max-h-[92dvh] flex-col overflow-hidden p-0 sm:max-w-5xl" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Control de duplicados">
       <div className="flex items-start justify-between gap-4 border-b border-slate-200 bg-slate-50 px-5 py-4 sm:px-7">
         <div>
           <p className="text-xs font-bold uppercase tracking-widest text-orange-700">Inventario · revisión</p>
           <h2 className="mt-1 text-xl font-semibold text-slate-900">Control de duplicados</h2>
-          <p className="mt-1 text-sm text-slate-500">Revisá coincidencias, corregí precios o reuní el stock en un solo producto.</p>
+          <p className="mt-1 text-sm text-slate-500">Revisá coincidencias, corregí precios, reuní el stock o conservá un producto sin sumar existencias.</p>
         </div>
         <button className="btn-ghost shrink-0 px-2" onClick={onClose} disabled={pendiente || cargando} aria-label="Cerrar"><X className="h-4 w-4" /></button>
       </div>
@@ -99,7 +116,7 @@ export function ControlDuplicados({ items, grupos, pagina, paginas, cargando, on
             <div className="min-w-0">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <div><h3 className="font-semibold">{grupo.tipo === "codigo" ? "Coinciden en código" : "Coinciden en nombre"}</h3><p className="text-xs text-slate-500">{miembros.length} productos · seleccioná los que quieras corregir</p></div>
-                <button className="btn-ghost text-xs" onClick={() => { setSeleccion(miembros.map(p => p.id)); setPrincipal(null); setConfirmando(false); }}>Seleccionar todos</button>
+                {accion !== "conservar" && <button className="btn-ghost text-xs" onClick={() => { setSeleccion(miembros.map(p => p.id)); setPrincipal(null); setConfirmando(false); }}>Seleccionar todos</button>}
               </div>
               <div className="space-y-2">
                 {miembros.map(p => <div key={p.id} className={`rounded-xl border p-3 ${seleccion.includes(p.id) ? "border-orange-300 bg-orange-50/40" : "border-slate-200 bg-white"}`}>
@@ -115,9 +132,14 @@ export function ControlDuplicados({ items, grupos, pagina, paginas, cargando, on
                 </div>)}
               </div>
               <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <div className="flex flex-wrap gap-2"><button className={`rounded-lg px-3 py-2 text-sm font-medium ${accion === "precios" ? "bg-slate-900 text-white" : "bg-white text-slate-700"}`} onClick={() => { setAccion("precios"); setConfirmando(false); }}>Editar precios de seleccionados</button><button className={`rounded-lg px-3 py-2 text-sm font-medium ${accion === "consolidar" ? "bg-slate-900 text-white" : "bg-white text-slate-700"}`} onClick={() => { setAccion("consolidar"); setConfirmando(false); }}>Consolidar seleccionados</button></div>
+                <div className="flex flex-wrap gap-2"><button className={`rounded-lg px-3 py-2 text-sm font-medium ${accion === "precios" ? "bg-slate-900 text-white" : "bg-white text-slate-700"}`} onClick={() => { setAccion("precios"); setConfirmando(false); }}>Editar precios de seleccionados</button><button className={`rounded-lg px-3 py-2 text-sm font-medium ${accion === "consolidar" ? "bg-slate-900 text-white" : "bg-white text-slate-700"}`} onClick={() => { setAccion("consolidar"); setConfirmando(false); }}>Consolidar seleccionados</button><button className={`rounded-lg px-3 py-2 text-sm font-medium ${accion === "conservar" ? "bg-slate-900 text-white" : "bg-white text-slate-700"}`} onClick={() => { setAccion("conservar"); setSeleccion([]); setPrincipal(null); setConfirmando(false); setError(""); }}>Conservar seleccionado</button></div>
                 {accion === "precios" && <div className="mt-4"><p className="mb-3 text-xs text-slate-600">Se aplicarán los valores ingresados a los {seleccion.length} seleccionados. Dejá vacío lo que no quieras cambiar.</p><div className="grid gap-3 sm:grid-cols-2"><label className="text-xs font-medium">Precio de venta<input className="input mt-1" type="number" min="0" step="0.01" value={venta} onChange={e => setVenta(e.target.value)} placeholder="Sin cambios" /></label><label className="text-xs font-medium">Costo de compra<input className="input mt-1" type="number" min="0" step="0.01" value={compra} onChange={e => setCompra(e.target.value)} placeholder="Sin cambios" /></label></div><button className="btn-primary mt-3" disabled={pendiente || !seleccion.length} onClick={guardarPrecios}>Guardar precios</button></div>}
                 {accion === "consolidar" && <div className="mt-4"><p className="text-xs text-slate-600">Elegí cuál conservar. Se sumará el stock de todas las sucursales y los demás se retirarán del catálogo. El principal conserva su nombre, código y precios.</p><label className="label mt-3">Producto principal</label><select className="input" value={principal ?? ""} onChange={e => { setPrincipal(Number(e.target.value) || null); setConfirmando(false); }}><option value="">Elegir producto…</option>{elegidos.map(p => <option key={p.id} value={p.id}>{p.nombre} · {p.sku} · #{p.id}</option>)}</select>{!unidadesCompatibles && <p className="mt-2 text-xs text-rose-700">Las unidades de medida no coinciden.</p>}{enTransito && <p className="mt-2 text-xs text-rose-700">Hay stock en tránsito en un producto que se retiraría.</p>}{confirmando && destino && <p className="mt-3 flex gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"><AlertTriangle className="h-4 w-4 shrink-0" /> Se guardará un respaldo. Se conservará #{destino.id} y se retirarán {otros.length} producto(s). Los movimientos y ventas anteriores seguirán vinculados a sus registros originales.</p>}<button className="btn-primary mt-3" disabled={pendiente || !destino || !otros.length || !unidadesCompatibles || enTransito} onClick={consolidar}><Merge className="h-4 w-4" /> {confirmando ? "Confirmar consolidación" : "Revisar consolidación"}</button></div>}
+                {accion === "conservar" && <div className="mt-4">
+                  <p className="text-xs text-slate-600">Marcá solo el producto que ya tiene el stock correcto. Se retirarán todos los demás productos de este grupo, incluso si el grupo ocupa otra página. El stock del elegido y sus precios quedarán intactos.</p>
+                  {confirmando && conservado && <p className="mt-3 flex gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"><AlertTriangle className="h-4 w-4 shrink-0" /><span>Se guardará un respaldo. Se conservará <b>{conservado.nombre} (#{conservado.id})</b> y se retirarán los otros duplicados sin sumar su stock. En esta página son {descartados.length} producto(s) con {stockDescartado} de stock total. Los movimientos y ventas anteriores conservarán sus registros.</span></p>}
+                  <button className="btn-primary mt-3" disabled={pendiente || !conservado || !descartados.length} onClick={conservar}><Check className="h-4 w-4" /> {confirmando ? "Confirmar y retirar duplicados" : "Revisar antes de conservar"}</button>
+                </div>}
               </div>
               {error && <p role="alert" className="mt-3 rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{error}</p>}
               {exito && <p role="status" className="mt-3 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-700">{exito}</p>}

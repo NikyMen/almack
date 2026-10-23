@@ -2,7 +2,7 @@
 import { Overlay } from "@/components/overlay";
 
 import { ConfigProductoStock } from "@/components/stock-configuracion";
-import { useId, useRef, useState, useTransition, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, useTransition, type ReactNode } from "react";
 import { Sparkles, Loader2, Plus, Pencil, Trash2, Eye, EyeOff, ScanLine, Store, Settings2, Tag, Ellipsis, CopyCheck } from "lucide-react";
 import type { Producto, Sucursal } from "@/db/schema";
 import { vaciarStock, cargarProductosDuplicados } from "@/app/admin/(protected)/stock/actions";
@@ -37,9 +37,10 @@ type Contexto = {
 export function StockManager({
   items,
   totalProductos,
+  totalResultados, paginaActual, paginas,
   sucursales,
   sucursalActivaId, administrador, multiplicadorGeneral,
-}: { items: ProductoConStock[]; totalProductos: number } & Contexto) {
+}: { items: ProductoConStock[]; totalProductos: number; totalResultados: number; paginaActual: number; paginas: number } & Contexto) {
   const [configurando, setConfigurando] = useState<ProductoConStock | null>(null);
   const [open, setOpen] = useState(false);
   const [vaciando, setVaciando] = useState(false);
@@ -145,7 +146,8 @@ export function StockManager({
 
   return (
     <>
-      <div className="mb-4 flex flex-wrap justify-end gap-2">
+      <div className="mb-3 flex flex-wrap items-center justify-end gap-2">
+        <p className="mr-auto text-sm text-slate-500">{totalResultados} resultado(s) · página {paginaActual} de {paginas}</p>
         {administrador && <button className="btn-ghost" disabled={cargandoDuplicados} onClick={() => abrirDuplicados()}><CopyCheck className="h-4 w-4" /> {cargandoDuplicados ? "Cargando duplicados…" : "Control de duplicados"}</button>}
         {administrador && <button className="btn-ghost text-rose-600" disabled={!totalProductos} onClick={() => setVaciando(true)}><Trash2 className="h-4 w-4" /> Vaciar stock</button>}
         <button className="btn-primary" onClick={() => setOpen((v) => !v)}>
@@ -496,10 +498,19 @@ function EditarProducto({
 }
 
 function NuevoProducto({ ctx, onDone }: { ctx: Contexto; onDone: () => void }) {
+  const formRef = useRef<HTMLFormElement>(null);
   const [descripcion, setDescripcion] = useState("");
   const [genLoading, setGenLoading] = useState(false);
   const [error, setError] = useState("");
   const [archivo, setArchivo] = useState<File | null>(null);
+
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      formRef.current?.querySelector<HTMLInputElement>('input[name="nombre"]')?.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, []);
 
   // Lee nombre/categoría directo del form: los campos quedan no controlados.
   async function generar(form: HTMLFormElement) {
@@ -516,14 +527,16 @@ function NuevoProducto({ ctx, onDone }: { ctx: Contexto; onDone: () => void }) {
 
   return (
     <form
+      ref={formRef}
       action={async (fd) => {
         if (archivo) fd.set("imagenArchivo", archivo);
         const r = await crearProducto(fd);
         if (r?.ok === false) return setError(r.error);
         onDone();
       }}
-      className="card mb-6 p-5"
+      className="card mb-4 scroll-mt-4 p-4"
     >
+      <h2 className="mb-3 text-lg font-semibold">Nuevo producto</h2>
       <CamposProducto ctx={ctx} onArchivo={setArchivo} />
 
       <div className="mt-4">
@@ -542,7 +555,7 @@ function NuevoProducto({ ctx, onDone }: { ctx: Contexto; onDone: () => void }) {
             )}
           </button>
         </div>
-        <textarea name="descripcion" rows={4} className="input" value={descripcion} onChange={(e) => setDescripcion(e.target.value)} />
+        <textarea name="descripcion" rows={2} className="input" value={descripcion} onChange={(e) => setDescripcion(e.target.value)} />
       </div>
 
       {error && <p className="mt-2 text-sm text-rose-600">{error}</p>}

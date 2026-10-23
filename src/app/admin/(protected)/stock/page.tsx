@@ -1,5 +1,6 @@
 import { AlertasStock } from "@/components/alertas-stock";
 import { MultiplicadorStock } from "@/components/stock-configuracion";
+import { StockFilters } from "@/components/stock-filters";
 import Link from "next/link";
 import { requireAcceso } from "@/lib/auth";
 import { esSuperAdmin, tieneAcceso } from "@/lib/permisos";
@@ -87,7 +88,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
             : "Inventario consolidado de todas las sucursales."
         }
       />
-      <div className="mb-5 flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200/80 bg-white/90 p-2 shadow-sm">
+      <div className="mb-3 flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200/80 bg-white/90 p-2 shadow-sm">
         <span className="px-2 text-xs font-bold uppercase tracking-wider text-slate-500">Vista</span>
         {administrador && (
           <div className="flex flex-wrap gap-1" aria-label="Elegir sucursal para ver stock">
@@ -100,31 +101,12 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
       </div>
       {administrador && !modoTransito && <MultiplicadorStock valor={listado?.multiplicador ?? null} />}
       {listado && !modoAlertas && <>
-        <form action="/admin/stock" className="mb-4 flex flex-wrap items-end gap-2">
-          <input type="hidden" name="vista" value="inventario" />
-          {params.sucursal && <input type="hidden" name="sucursal" value={params.sucursal} />}
-          <label className="min-w-[180px] flex-1 text-xs text-slate-600">Buscar en todo el stock
-            <input className="input mt-1" name="buscar" defaultValue={busqueda} maxLength={100} placeholder="Nombre, SKU, categoría o precio…" />
-          </label>
-          <label className="text-xs text-slate-600">Categoría
-            <select className="input mt-1" name="categoria" defaultValue={categoria}><option value="">Todas</option>{listado.categorias.map(c => <option key={c} value={c}>{c}</option>)}</select>
-          </label>
-          <label className="text-xs text-slate-600">Ordenar
-            <select className="input mt-1" name="orden" defaultValue={orden}>
-              <option value="recientes">Más recientes</option><option value="bajo">Stock bajo primero</option>
-              <option value="stock_asc">Menor stock primero</option><option value="stock_desc">Mayor stock primero</option>
-              <option value="precio_asc">Menor precio de venta</option><option value="precio_desc">Mayor precio de venta</option>
-              <option value="transito_desc">Mayor stock en tránsito</option><option value="transito_asc">Menor stock en tránsito</option>
-            </select>
-          </label>
-          <button className="btn-primary" type="submit">Aplicar</button>
-        </form>
-        <p className="mb-3 text-sm text-slate-500">{listado.total} resultado(s) · página {listado.paginaActual} de {listado.paginas}</p>
+        <StockFilters busqueda={busqueda} categoria={categoria} orden={orden} categorias={listado.categorias} sucursal={params.sucursal} />
       </>}
       {modoTransito
         ? <StockTransitoView lineas={lineasEnTransito} sucursales={lista} destinoId={destinoSeguro} elegirDestino={administrador} unidades={transito?.unidades ?? 0} traslados={transito?.traslados ?? 0} total={transito?.total ?? 0} />
         : modoAlertas ? <AlertasStock items={filas} administrador={administrador} global={listado?.multiplicador ?? null} totalAlertas={listado?.totalAlertas ?? 0} total={listado?.total ?? 0} busqueda={busqueda} mostrarTodas={mostrarTodasAlertas} sucursal={params.sucursal} />
-        : <StockManager items={filas} totalProductos={listado?.totalProductos ?? 0} sucursales={lista} sucursalActivaId={activaId} administrador={administrador} multiplicadorGeneral={listado?.multiplicador ?? null} />}
+        : <StockManager items={filas} totalProductos={listado?.totalProductos ?? 0} totalResultados={listado?.total ?? 0} paginaActual={listado?.paginaActual ?? 1} paginas={listado?.paginas ?? 1} sucursales={lista} sucursalActivaId={activaId} administrador={administrador} multiplicadorGeneral={listado?.multiplicador ?? null} />}
       {listado && listado.paginas > 1 && <nav className="mt-5 flex items-center justify-center gap-3" aria-label="Páginas de stock">
         {listado.paginaActual > 1 && <Link className="btn-ghost" href={{ pathname: "/admin/stock", query: { vista: modoAlertas ? "alertas" : "inventario", ...(params.sucursal ? { sucursal: params.sucursal } : {}), ...(busqueda ? { buscar: busqueda } : {}), ...(!modoAlertas && categoria ? { categoria } : {}), ...(!modoAlertas ? { orden } : {}), ...(mostrarTodasAlertas ? { todas: "1" } : {}), pagina: listado.paginaActual - 1 } }}>← Anterior</Link>}
         <span className="text-sm text-slate-600">{listado.paginaActual} / {listado.paginas}</span>
