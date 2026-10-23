@@ -10,9 +10,9 @@ export function MultiplicadorStock({ valor }: { valor: number | null }) {
   const [factor,setFactor] = useState(String(valor ?? 2));
   const [abierto, setAbierto] = useState(false);
   const [mensaje,setMensaje] = useState(""); const [pendiente,iniciar] = useTransition(); const router = useRouter();
-  return <section className="mb-3">
+  return <section className="relative shrink-0">
     <button type="button" className="btn-ghost" aria-expanded={abierto} aria-controls="multiplicador-stock" onClick={() => setAbierto(v => !v)}>Multiplicador de coste <span aria-hidden="true">{abierto ? "▴" : "▾"}</span></button>
-    {abierto && <div id="multiplicador-stock" className="card mt-2 p-4">
+    {abierto && <div id="multiplicador-stock" className="card absolute left-0 top-full z-30 mt-2 w-[min(40rem,calc(100vw-3rem))] max-h-[75dvh] overflow-y-auto p-4 shadow-xl">
       <h2 className="font-semibold">Precio de venta en la carga de stock</h2>
       <p className="mt-1 text-sm text-slate-500">Si el archivo indica un precio de venta, se respeta. En los demás casos, precio de venta = costo nuevo × multiplicador; un multiplicador específico del producto tiene prioridad.</p>
       <form className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(10rem,16rem)_auto] lg:items-end" action={() => iniciar(async()=>{const r=await guardarMultiplicadorStock(activo?Number(factor):null);setMensaje(r.ok?"Configuración guardada.":r.error);if(r.ok)router.refresh();})}><label className="flex min-h-11 items-center gap-3 rounded-xl border border-slate-200 px-3 py-2 text-sm"><input type="checkbox" checked={activo} onChange={e=>setActivo(e.target.checked)} />Usar multiplicador general</label><div><label className="label" htmlFor="factor-stock">Multiplicador sobre el costo</label><input id="factor-stock" type="number" min="0.0001" max="1000" step="0.0001" disabled={!activo} required={activo} value={factor} onChange={e=>setFactor(e.target.value)} className="input h-11 w-full" /></div><button disabled={pendiente} className="btn-primary sm:col-span-2 lg:col-span-1">{pendiente?"Guardando…":"Guardar regla"}</button></form>

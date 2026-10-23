@@ -74,20 +74,19 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
   }));
 
   const filas = listado?.filas ?? [];
+  const descripcion = modoTransito
+    ? destino ? `Mercadería pendiente para ${destino.nombre}.` : "Mercadería pendiente de todas las sucursales."
+    : activa ? `Inventario de ${activa.nombre}.` : "Inventario consolidado de todas las sucursales.";
 
   return (
     <>
-      <Link href="/admin/stock" className="btn-ghost mb-4">← Opciones de stock</Link>
-      <PageHeader
-        title={modoAlertas ? "Alertas de stock" : "Stock"}
-        subtitle={
-          modoTransito
-            ? destino ? `Mercadería pendiente para ${destino.nombre}.` : "Mercadería pendiente de todas las sucursales."
-            : activa
-            ? `Inventario de ${activa.nombre}.`
-            : "Inventario consolidado de todas las sucursales."
-        }
-      />
+      <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+        <Link href="/admin/stock" className="btn-ghost shrink-0">← Opciones de stock</Link>
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">{modoAlertas ? "Alertas de stock" : "Stock"}</h1>
+          <p className="text-sm text-slate-500">{descripcion}</p>
+        </div>
+      </div>
       <div className="mb-3 flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200/80 bg-white/90 p-2 shadow-sm">
         <span className="px-2 text-xs font-bold uppercase tracking-wider text-slate-500">Vista</span>
         {administrador && (
@@ -99,7 +98,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
         <Link href="/admin/stock?sucursal=transito" aria-current={modoTransito ? "page" : undefined} className={`rounded-xl px-3 py-2 text-sm font-medium transition ${modoTransito ? "bg-amber-100 text-amber-900" : "text-slate-600 hover:bg-slate-100"}`}>Tránsito</Link>
         {tieneAcceso(usuario, "movimientos") && <Link href={`/admin/stock/mover?sucursal=${modoTransito ? destinoId ?? "todas" : activaId ?? "todas"}`} className="ml-auto rounded-xl bg-orange-50 px-3 py-2 text-sm font-semibold text-orange-800 transition hover:bg-orange-100">Mover stock →</Link>}
       </div>
-      {administrador && !modoTransito && <MultiplicadorStock valor={listado?.multiplicador ?? null} />}
+      {administrador && modoAlertas && <div className="mb-3"><MultiplicadorStock valor={listado?.multiplicador ?? null} /></div>}
       {listado && !modoAlertas && <>
         <StockFilters busqueda={busqueda} categoria={categoria} orden={orden} categorias={listado.categorias} sucursal={params.sucursal} />
       </>}

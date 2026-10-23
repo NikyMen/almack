@@ -1,7 +1,7 @@
 "use client";
 import { Overlay } from "@/components/overlay";
 
-import { ConfigProductoStock } from "@/components/stock-configuracion";
+import { ConfigProductoStock, MultiplicadorStock } from "@/components/stock-configuracion";
 import { useEffect, useId, useRef, useState, useTransition, type ReactNode } from "react";
 import { Sparkles, Loader2, Plus, Pencil, Trash2, Eye, EyeOff, ScanLine, Store, Settings2, Tag, Ellipsis, CopyCheck } from "lucide-react";
 import type { Producto, Sucursal } from "@/db/schema";
@@ -147,6 +147,7 @@ export function StockManager({
   return (
     <>
       <div className="mb-3 flex flex-wrap items-center justify-end gap-2">
+        {administrador && <MultiplicadorStock valor={multiplicadorGeneral} />}
         <p className="mr-auto text-sm text-slate-500">{totalResultados} resultado(s) · página {paginaActual} de {paginas}</p>
         {administrador && <button className="btn-ghost" disabled={cargandoDuplicados} onClick={() => abrirDuplicados()}><CopyCheck className="h-4 w-4" /> {cargandoDuplicados ? "Cargando duplicados…" : "Control de duplicados"}</button>}
         {administrador && <button className="btn-ghost text-rose-600" disabled={!totalProductos} onClick={() => setVaciando(true)}><Trash2 className="h-4 w-4" /> Vaciar stock</button>}
