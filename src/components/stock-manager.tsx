@@ -3,9 +3,9 @@ import { Overlay } from "@/components/overlay";
 
 import { ConfigProductoStock, MultiplicadorStock } from "@/components/stock-configuracion";
 import { useEffect, useId, useRef, useState, useTransition, type ReactNode } from "react";
-import { Sparkles, Loader2, Plus, Pencil, Trash2, Eye, EyeOff, ScanLine, Store, Settings2, Tag, Ellipsis, CopyCheck } from "lucide-react";
+import { Sparkles, Loader2, Plus, Pencil, Trash2, Eye, EyeOff, ScanLine, Store, Settings2, Tag, Ellipsis, CopyCheck, Camera } from "lucide-react";
 import type { Producto, Sucursal } from "@/db/schema";
-import { vaciarStock, cargarProductosDuplicados } from "@/app/admin/(protected)/stock/actions";
+import { vaciarStock, cargarProductosDuplicados, buscarCodigoStock } from "@/app/admin/(protected)/stock/actions";
 import { money } from "@/lib/format";
 import { FilterableTable, Col } from "@/components/filterable-table";
 import { BarcodeScanner } from "@/components/barcode-scanner";
@@ -48,6 +48,12 @@ export function StockManager({
   const [datosDuplicados, setDatosDuplicados] = useState<Awaited<ReturnType<typeof cargarProductosDuplicados>> | null>(null);
   const [cargandoDuplicados, setCargandoDuplicados] = useState(false);
   const [error, setError] = useState("");
+  const [escaneandoStock, setEscaneandoStock] = useState(false);
+  const [buscandoCodigo, setBuscandoCodigo] = useState(false);
+  const [codigoNuevo, setCodigoNuevo] = useState<string | null>(null);
+  const [skuInicial, setSkuInicial] = useState("");
+  const [productoEncontrado, setProductoEncontrado] = useState<ProductoConStock | null>(null);
+  const [coincidencias, setCoincidencias] = useState<ProductoConStock[]>([]);
   const [editando, setEditando] = useState<ProductoConStock | null>(null);
   const [ocultos, setOcultos] = useState<Set<number>>(new Set());
   // Ajuste (+1/−1) pendiente de que el usuario diga en qué sucursal aplicarlo.
@@ -101,6 +107,25 @@ export function StockManager({
     }
   }
 
+  async function procesarCodigo(codigo: string) {
+    setEscaneandoStock(false);
+    setBuscandoCodigo(true);
+    setError("");
+    try {
+      const resultado = await buscarCodigoStock(codigo);
+      if (!resultado.items.length) setCodigoNuevo(codigo);
+      else if (resultado.items.length === 1) setProductoEncontrado(resultado.items[0]);
+      else if (administrador && resultado.grupo) {
+        setDatosDuplicados({ items: resultado.items, grupos: [resultado.grupo], paginaActual: 1, paginas: 1, ids: resultado.grupo.ids });
+        setControlDuplicados(true);
+      } else setCoincidencias(resultado.items);
+    } catch {
+      setError("No se pudo consultar el código escaneado. Intentá de nuevo.");
+    } finally {
+      setBuscandoCodigo(false);
+    }
+  }
+
   function acciones(p: ProductoConStock) {
     return <AccionesStock nombre={p.nombre}>
       <button className="btn-ghost w-full justify-start" onClick={() => ajustar(p, -1)}>− Quitar 1</button>
@@ -150,13 +175,14 @@ export function StockManager({
         {administrador && <MultiplicadorStock valor={multiplicadorGeneral} />}
         <p className="mr-auto text-sm text-slate-500">{totalResultados} resultado(s) · página {paginaActual} de {paginas}</p>
         {administrador && <button className="btn-ghost" disabled={cargandoDuplicados} onClick={() => abrirDuplicados()}><CopyCheck className="h-4 w-4" /> {cargandoDuplicados ? "Cargando duplicados…" : "Control de duplicados"}</button>}
+        <button type="button" className="btn-ghost border border-slate-200 px-3 transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700 lg:hidden" disabled={buscandoCodigo} onClick={() => setEscaneandoStock(true)} aria-label="Escanear código para consultar stock" title="Escanear código para consultar stock"><Camera className="h-4 w-4" /> <span className="sm:hidden">Escanear</span></button>
         {administrador && <button className="btn-ghost text-rose-600" disabled={!totalProductos} onClick={() => setVaciando(true)}><Trash2 className="h-4 w-4" /> Vaciar stock</button>}
         <button className="btn-primary" onClick={() => setOpen((v) => !v)}>
           {open ? "Cerrar" : <><Plus className="h-4 w-4" /> Nuevo producto</>}
         </button>
       </div>
 
-      {open && <NuevoProducto ctx={ctx} onDone={() => setOpen(false)} />}
+      {open && <NuevoProducto key={skuInicial || "nuevo"} ctx={ctx} skuInicial={skuInicial} onDone={() => { setOpen(false); setSkuInicial(""); }} />}
       {error && <p role="alert" className="mb-3 rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
 
       <FilterableTable
@@ -200,6 +226,10 @@ export function StockManager({
       />
 
       {vaciando && <VaciarStock cantidad={totalProductos} cerrar={() => setVaciando(false)} />}
+      {escaneandoStock && <BarcodeScanner titulo="Consultar stock" ayuda="Apuntá al código para buscar el artículo en todo el inventario." onDetect={procesarCodigo} onClose={() => setEscaneandoStock(false)} />}
+      {codigoNuevo && <Overlay className="overlay" onClick={() => setCodigoNuevo(null)}><div className="sheet p-5 sm:max-w-md" role="dialog" aria-modal="true" aria-label="Código sin producto" onClick={e => e.stopPropagation()}><h2 className="text-lg font-semibold">Código sin producto</h2><p className="mt-2 text-sm text-slate-600">No encontramos un artículo con el código <strong className="break-all font-mono">{codigoNuevo}</strong>. ¿Querés crear uno nuevo con este código?</p><div className="mt-5 flex flex-wrap gap-2"><button className="btn-primary" onClick={() => { setSkuInicial(codigoNuevo); setOpen(true); setCodigoNuevo(null); }}>Crear artículo</button><button className="btn-ghost" onClick={() => setCodigoNuevo(null)}>Cancelar</button></div></div></Overlay>}
+      {productoEncontrado && <Overlay className="overlay" onClick={() => setProductoEncontrado(null)}><div className="sheet p-5 sm:max-w-md" role="dialog" aria-modal="true" aria-label="Artículo encontrado" onClick={e => e.stopPropagation()}><h2 className="text-lg font-semibold">Artículo encontrado</h2><p className="mt-3 font-semibold">{productoEncontrado.nombre}</p><p className="mt-1 break-all font-mono text-sm text-slate-500">{productoEncontrado.sku}</p><div className="mt-4 grid grid-cols-2 gap-2 text-sm"><p>Stock: <strong>{productoEncontrado.stockLocal}</strong></p><p>En tránsito: <strong>{productoEncontrado.transitoLocal}</strong></p><p>Costo: <strong>{money(productoEncontrado.precioCompra)}</strong></p><p>Venta: <strong>{money(productoEncontrado.precioVenta)}</strong></p></div><div className="mt-5 flex gap-2"><button className="btn-primary" onClick={() => { setEditando(productoEncontrado); setProductoEncontrado(null); }}>Editar artículo</button><button className="btn-ghost" onClick={() => setProductoEncontrado(null)}>Cerrar</button></div></div></Overlay>}
+      {coincidencias.length > 1 && <Overlay className="overlay" onClick={() => setCoincidencias([])}><div className="sheet p-5 sm:max-w-md" role="dialog" aria-modal="true" aria-label="Artículos con el mismo código" onClick={e => e.stopPropagation()}><h2 className="text-lg font-semibold">Código duplicado</h2><p className="mt-1 text-sm text-slate-500">{coincidencias.length} artículos comparten este código.</p><div className="mt-4 space-y-2">{coincidencias.map(p => <button key={p.id} className="btn-ghost w-full justify-between text-left" onClick={() => { setProductoEncontrado(p); setCoincidencias([]); }}><span>{p.nombre}</span><span>{p.stockLocal} en stock</span></button>)}</div><button className="btn-ghost mt-4" onClick={() => setCoincidencias([])}>Cerrar</button></div></Overlay>}
       {controlDuplicados && datosDuplicados && <ControlDuplicados key={datosDuplicados.paginaActual} items={datosDuplicados.items} grupos={datosDuplicados.grupos} pagina={datosDuplicados.paginaActual} paginas={datosDuplicados.paginas} cargando={cargandoDuplicados} onPagina={abrirDuplicados} onClose={() => setControlDuplicados(false)} onEdit={p => { setControlDuplicados(false); setEditando(p); }} />}
       {configurando && <ConfigProductoStock producto={configurando} global={multiplicadorGeneral} cerrar={() => setConfigurando(null)} />}
       {editando && <EditarProducto producto={editando} ctx={ctx} onDone={() => setEditando(null)} />}
@@ -337,9 +367,9 @@ function ElegirSucursal({
 // El SKU casi siempre ya viene impreso como código de barras en el envase, así
 // que además de tipearlo se puede leer con la cámara. Es el único campo
 // controlado del formulario: el escáner necesita poder escribirle el valor.
-function CampoSku({ p }: { p?: Producto }) {
+function CampoSku({ p, inicial = "" }: { p?: Producto; inicial?: string }) {
   const id = useId();
-  const [sku, setSku] = useState(p?.sku ?? "");
+  const [sku, setSku] = useState(p?.sku ?? inicial);
   const [escaneando, setEscaneando] = useState(false);
 
   return (
@@ -440,16 +470,18 @@ function CampoStock({ p, ctx }: { p?: ProductoConStock; ctx: Contexto }) {
 function CamposProducto({
   p,
   ctx,
+  skuInicial,
   onArchivo,
 }: {
   p?: ProductoConStock;
   ctx: Contexto;
+  skuInicial?: string;
   onArchivo: (a: File | null) => void;
 }) {
   return (
     <div className="grid gap-4 md:grid-cols-3">
       <div><label className="label">Nombre *</label><input name="nombre" className="input" defaultValue={p?.nombre} required /></div>
-      <CampoSku p={p} />
+      <CampoSku p={p} inicial={skuInicial} />
       <div><label className="label">Categoría</label><input name="categoria" className="input" defaultValue={p?.categoria ?? ""} /></div>
       <div><label className="label">Se vende por</label><select name="unidadMedida" className="input" defaultValue={p?.unidadMedida ?? "unidad"}><option value="unidad">Unidad</option><option value="kg">Peso (kg, hasta 3 decimales)</option></select></div>
       <div><label className="label">Precio venta {p?.unidadMedida === "kg" ? "por kg" : "por unidad"}</label><input name="precioVenta" disabled={!ctx.administrador} type="number" step="0.01" className="input" defaultValue={p?.precioVenta ?? 0} /></div>
@@ -498,7 +530,7 @@ function EditarProducto({
   );
 }
 
-function NuevoProducto({ ctx, onDone }: { ctx: Contexto; onDone: () => void }) {
+function NuevoProducto({ ctx, skuInicial, onDone }: { ctx: Contexto; skuInicial: string; onDone: () => void }) {
   const formRef = useRef<HTMLFormElement>(null);
   const [descripcion, setDescripcion] = useState("");
   const [genLoading, setGenLoading] = useState(false);
@@ -538,7 +570,7 @@ function NuevoProducto({ ctx, onDone }: { ctx: Contexto; onDone: () => void }) {
       className="card mb-4 scroll-mt-4 p-4"
     >
       <h2 className="mb-3 text-lg font-semibold">Nuevo producto</h2>
-      <CamposProducto ctx={ctx} onArchivo={setArchivo} />
+      <CamposProducto ctx={ctx} skuInicial={skuInicial} onArchivo={setArchivo} />
 
       <div className="mt-4">
         <div className="mb-1 flex items-center justify-between">

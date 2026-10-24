@@ -9,6 +9,36 @@ import type { ProductoTraslado } from "@/components/mover-stock";
 import { buscarProductosTraslado } from "@/lib/stock-listado";
 import { vaciarStockEnTransaccion } from "@/lib/vaciar-stock";
 import { revalidatePath } from "next/cache";
+import { esSuperAdmin } from "@/lib/permisos";
+import { getContextoSucursal } from "@/lib/sucursal";
+
+export async function buscarCodigoStock(codigo: string) {
+  const usuario = await requireAcceso("stock");
+  const sku = codigo.trim().slice(0, 100);
+  if (!sku) return { items: [] as ProductoConStock[], grupo: null };
+  const administrador = esSuperAdmin(usuario);
+  const contexto = await getContextoSucursal();
+  const sucursalId = administrador ? null : contexto.activaId;
+  const items = await db.select().from(productos).where(eq(productos.sku, sku));
+  const activos = items.filter(p => p.activo);
+  const ids = activos.map(p => p.id);
+  if (!ids.length) return { items: [] as ProductoConStock[], grupo: null };
+  const [desglose, transito, reglas] = await Promise.all([
+    desgloseStock(ids), desgloseTransito(ids),
+    db.select().from(stockReglas).where(inArray(stockReglas.productoId, ids)),
+  ]);
+  const porId = new Map(reglas.map(r => [r.productoId, r]));
+  const filas: ProductoConStock[] = activos.map(p => {
+    const porSucursal = Object.fromEntries((desglose.get(p.id) ?? []).filter(d => administrador || d.sucursalId === sucursalId).map(d => [d.sucursalId, d.cantidad]));
+    const transitoPorSucursal = Object.fromEntries((transito.get(p.id) ?? []).filter(d => administrador || d.sucursalId === sucursalId).map(d => [d.sucursalId, d.cantidad]));
+    const stockLocal = administrador ? p.stock : (sucursalId ? porSucursal[sucursalId] ?? 0 : 0);
+    return { ...p, stock: stockLocal, porSucursal, transitoPorSucursal, stockLocal,
+      transitoLocal: Object.values(transitoPorSucursal).reduce((a, b) => a + b, 0),
+      alertaActiva: porId.get(p.id)?.alertaActiva ?? true,
+      multiplicadorCosto: porId.get(p.id)?.multiplicador ?? null };
+  });
+  return { items: filas, grupo: filas.length > 1 ? { tipo: "codigo" as const, clave: sku, ids } : null };
+}
 
 export async function vaciarStock(confirmacion: string, cantidadEsperada: number) {
   const usuario = await requireAdmin();

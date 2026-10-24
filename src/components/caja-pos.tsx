@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   Search, Plus, Minus, Trash2, ShoppingCart, Loader2, CheckCircle2, Zap, Camera, ChevronUp, X, Pencil, TriangleAlert,
+  ListFilter,
 } from "lucide-react";
 import type { Producto } from "@/db/schema";
 import { money, moneyPreciso } from "@/lib/format";
@@ -18,6 +19,7 @@ import { BarcodeScanner } from "@/components/barcode-scanner";
 import { usePromocionAutomatica } from "@/components/use-promocion-automatica";
 import type { AjustePrecio } from "@/lib/caja";
 import { ajusteVigente } from "@/lib/ajuste-carrito";
+import { RightDrawer } from "@/components/right-drawer";
 
 type Ticket = { ventaId: number; total: number; items: number; medioPago: MedioPago; efectivoRecibido: number | null; vuelto: number | null };
 
@@ -27,6 +29,7 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
   const [eligiendoPago, setEligiendoPago] = useState(false);
   const [escaneando, setEscaneando] = useState(false);
   const [pedidoAbierto, setPedidoAbierto] = useState(false);
+  const [catalogoAbierto, setCatalogoAbierto] = useState(false);
   const [editandoPrecio, setEditandoPrecio] = useState<{ tipo: "producto" | "total"; productoId?: number } | null>(null);
   const [precioNuevo, setPrecioNuevo] = useState("");
   const [ajustePorConfirmar, setAjustePorConfirmar] = useState<AjustePrecio | null>(null);
@@ -74,13 +77,11 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
     setEditandoPrecio(null);
   }
 
-  const filtrados = buscar(busqueda);
+  const filtrados = catalogoAbierto ? buscar(busqueda) : [];
 
   useEffect(() => {
-    // El foco automático es útil con teclado/lector USB, pero abre el teclado
-    // virtual al entrar a Caja desde un celular.
-    if (window.matchMedia("(hover: hover) and (pointer: fine)").matches) inputRef.current?.focus();
-  }, []);
+    if (catalogoAbierto && window.matchMedia("(hover: hover) and (pointer: fine)").matches) inputRef.current?.focus();
+  }, [catalogoAbierto]);
 
   useEffect(() => {
     const captarTeclado = (event: KeyboardEvent) => {
@@ -89,6 +90,7 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
       if (target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName))) return;
       if (event.key.length !== 1 || event.key === " ") return;
       event.preventDefault();
+      setCatalogoAbierto(true);
       inputRef.current?.focus();
       setBusqueda((prev) => prev + event.key);
     };
@@ -160,7 +162,6 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
       setEligiendoPago(false);
       setPedidoAbierto(false);
       router.refresh();
-      if (window.matchMedia("(hover: hover) and (pointer: fine)").matches) inputRef.current?.focus();
     });
   }
 
@@ -249,9 +250,7 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
     </>
   );
 
-  return (
-    <div className="grid min-w-0 items-start gap-5 lg:grid-cols-[minmax(0,360px)_minmax(0,1fr)] xl:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
-      {/* Catálogo + buscador */}
+  const catalogo = catalogoAbierto ? (
       <div className="card flex min-w-0 flex-col p-3 sm:p-4">
         <div className="mb-4 flex gap-2">
           <div className="relative min-w-0 flex-1">
@@ -309,7 +308,7 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
             return (
               <button
                 key={p.id}
-                onClick={() => { setTicket(null); agregar(p); }}
+                onClick={() => { setTicket(null); agregar(p); setCatalogoAbierto(false); }}
                 disabled={agotado}
                 className="flex h-full min-h-32 min-w-0 flex-col rounded-xl border border-slate-200 bg-white/70 p-3 text-left transition hover:border-lime hover:bg-lime/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lime disabled:cursor-not-allowed disabled:opacity-40"
               >
@@ -334,9 +333,16 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
           )}
         </div>
       </div>
+  ) : null;
+
+  return (
+    <div className="min-w-0">
+      <div className="mb-3 flex justify-end"><button type="button" className="btn-ghost border border-slate-200 bg-white shadow-sm transition hover:border-lime hover:bg-lime/10" onClick={() => setCatalogoAbierto(true)} aria-haspopup="dialog" aria-expanded={catalogoAbierto}><ListFilter className="h-4 w-4" /> Buscar productos</button></div>
+      <RightDrawer title="Productos de caja" open={catalogoAbierto} onClose={() => setCatalogoAbierto(false)} width="max-w-xl">{catalogo}</RightDrawer>
+      {carrito.length === 0 && !ticket && <div className="card px-5 py-12 text-center lg:hidden"><ShoppingCart className="mx-auto h-9 w-9 text-slate-300" /><p className="mt-3 font-medium text-navy">El pedido está vacío</p><p className="mt-1 text-sm text-slate-500">Buscá un producto o escaneá su código para empezar.</p><button type="button" className="btn-primary mt-4" onClick={() => setCatalogoAbierto(true)}>Buscar productos</button></div>}
 
       {/* Pedido: columna fija en escritorio */}
-      <div className="card hidden min-h-[24rem] min-w-0 flex-col p-5 lg:sticky lg:top-4 lg:flex">{panelPedido}</div>
+      <div className="card hidden min-h-[24rem] min-w-0 flex-col p-5 lg:flex">{panelPedido}</div>
 
       {/* Pedido en mobile: barra resumen + hoja deslizante */}
       {carrito.length > 0 && !pedidoAbierto && (

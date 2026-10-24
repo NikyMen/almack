@@ -4,30 +4,15 @@ import { StockFilters } from "@/components/stock-filters";
 import Link from "next/link";
 import { requireAcceso } from "@/lib/auth";
 import { esSuperAdmin, tieneAcceso } from "@/lib/permisos";
-import { PageHeader } from "@/components/ui";
 import { StockManager } from "@/components/stock-manager";
+import { StockOptions } from "@/components/stock-options";
 import { getContextoSucursal } from "@/lib/sucursal";
 import { StockTransitoView, type LineaEnTransito } from "@/components/stock-transito-view";
-import { SectionCards } from "@/components/section-cards";
 import { listarStock, listarLineasTransito, ORDENES_STOCK, type OrdenStock } from "@/lib/stock-listado";
-import { Boxes, ArrowLeftRight, Truck, TriangleAlert, PackagePlus, Archive } from "lucide-react";
 
 export default async function StockPage({ searchParams }: { searchParams: Promise<{ sucursal?: string; vista?: string; pagina?: string; buscar?: string; categoria?: string; orden?: string; todas?: string }> }) {
   const usuario = await requireAcceso("stock");
   const params = await searchParams;
-  if (!params.vista && !params.sucursal) {
-    return <>
-      <PageHeader title="Stock" subtitle="Elegí cómo querés gestionar el inventario." />
-      <SectionCards items={[
-        ...(usuario.rol === "admin" ? [{ href: "/admin/stock/respaldos", title: "Respaldos", description: "Guardá y descargá copias del inventario y de las cargas. Solo admin.", icon: Archive }] : []),
-        { href: "/admin/stock/carga", title: "Cargar stock", description: "Ingresá comprobantes y revisá cantidades, costos y precios antes de cargar.", icon: PackagePlus },
-        { href: "/admin/stock?vista=alertas", title: "Alertas de stock", description: "Revisá faltantes y configurá los mínimos y precios de los productos.", icon: TriangleAlert },
-        { href: "/admin/stock?vista=inventario", title: "Ver stock", description: "Consultá productos y existencias de cada sucursal.", icon: Boxes },
-        ...(tieneAcceso(usuario, "movimientos") ? [{ href: "/admin/stock/mover", title: "Mover stock", description: "Trasladá mercadería entre sucursales y gestioná los remitos.", icon: ArrowLeftRight }] : []),
-        { href: "/admin/stock?sucursal=transito", title: "Stock en tránsito", description: "Revisá la mercadería pendiente de recepción.", icon: Truck },
-      ]} />
-    </>;
-  }
   const contexto = await getContextoSucursal();
   const { lista } = contexto;
   const modoAlertas = params.vista === "alertas";
@@ -81,11 +66,11 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
   return (
     <>
       <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2">
-        <Link href="/admin/stock" className="btn-ghost shrink-0">← Opciones de stock</Link>
         <div>
           <h1 className="text-2xl font-bold tracking-tight">{modoAlertas ? "Alertas de stock" : "Stock"}</h1>
           <p className="text-sm text-slate-500">{descripcion}</p>
         </div>
+        <StockOptions administrador={usuario.rol === "admin"} puedeMover={tieneAcceso(usuario, "movimientos")} actual={modoAlertas ? "/admin/stock?vista=alertas" : modoTransito ? "/admin/stock?sucursal=transito" : "/admin/stock"} />
       </div>
       <div className="mb-3 flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200/80 bg-white/90 p-2 shadow-sm">
         <span className="px-2 text-xs font-bold uppercase tracking-wider text-slate-500">Vista</span>
