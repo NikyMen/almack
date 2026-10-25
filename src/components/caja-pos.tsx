@@ -40,6 +40,7 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
   const [firmaAjuste, setFirmaAjuste] = useState("");
   const [pendiente, startTransition] = useTransition();
   const inputRef = useRef<HTMLInputElement>(null);
+  const lectorRef = useRef({ codigo: "", ultimaTecla: 0 });
   const params = useSearchParams();
   const router = useRouter();
 
@@ -85,25 +86,43 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
 
   useEffect(() => {
     const captarTeclado = (event: KeyboardEvent) => {
-      if (eligiendoPago || escaneando || pedidoAbierto || configAbierta || menuAbierto || event.ctrlKey || event.altKey || event.metaKey || event.isComposing) return;
+      if (eligiendoPago || escaneando || pedidoAbierto || configAbierta || menuAbierto || event.ctrlKey || event.altKey || event.metaKey || event.isComposing) {
+        lectorRef.current.codigo = "";
+        return;
+      }
       const target = event.target;
-      if (target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName))) return;
-      if (event.key.length !== 1 || event.key === " ") return;
+      if (target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName))) {
+        lectorRef.current.codigo = "";
+        return;
+      }
+      if (event.key === "Enter") {
+        const codigo = performance.now() - lectorRef.current.ultimaTecla <= 1000 ? lectorRef.current.codigo : "";
+        lectorRef.current.codigo = "";
+        if (!codigo) return;
+        event.preventDefault();
+        setTicket(null);
+        agregarPorCodigo(codigo);
+        setBusqueda("");
+        setCatalogoAbierto(false);
+        return;
+      }
+      if (event.key.length !== 1 || event.key === " " || event.repeat) return;
+      const ahora = performance.now();
+      if (ahora - lectorRef.current.ultimaTecla > 1000) lectorRef.current.codigo = "";
+      lectorRef.current.codigo += event.key;
+      lectorRef.current.ultimaTecla = ahora;
       event.preventDefault();
-      setCatalogoAbierto(true);
-      inputRef.current?.focus();
-      setBusqueda((prev) => prev + event.key);
     };
     document.addEventListener("keydown", captarTeclado);
     return () => document.removeEventListener("keydown", captarTeclado);
-  }, [eligiendoPago, escaneando, pedidoAbierto, configAbierta, menuAbierto]);
+  }, [eligiendoPago, escaneando, pedidoAbierto, configAbierta, menuAbierto, agregarPorCodigo]);
 
   const porCodigo = useCallback(
     (codigo: string) => {
       setTicket(null);
       agregarPorCodigo(codigo);
       setBusqueda("");
-      setPedidoAbierto(true);
+      if (window.matchMedia("(max-width: 1023px)").matches) setPedidoAbierto(true);
     },
     [agregarPorCodigo]
   );
@@ -145,6 +164,7 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
     setTicket(null);
     agregarPorCodigo(q);
     setBusqueda("");
+    setCatalogoAbierto(false);
   }
 
   function confirmarPago(medioPago: MedioPago, efectivoRecibido?: number) {
