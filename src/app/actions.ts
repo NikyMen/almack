@@ -42,6 +42,9 @@ export async function seleccionarSucursal(id: number | null) {
   if (!(await requireSuperAdmin())) {
     return { ok: false as const, error: "Solo el administrador puede cambiar de sucursal." };
   }
+  if (id !== null && !(await getSucursales()).some((s) => s.id === id)) {
+    return { ok: false as const, error: "La sucursal no está activa." };
+  }
   const store = await cookies();
   store.set(COOKIE_SUCURSAL, id ? String(id) : TODAS, {
     httpOnly: true,

@@ -1,7 +1,7 @@
 // Sucursal activa del panel.
 //
-// El panel siempre trabaja "parado" en algún lado: o en TODAS las sucursales
-// (la vista consolidada, que es la de arranque) o dentro de una en particular.
+// El panel trabaja en la sucursal elegida al ingresar. Los administradores
+// también pueden pasar a TODAS las sucursales (vista consolidada).
 // Eso vive en una cookie, no en la URL, para que la elección sobreviva a la
 // navegación entre módulos y a un F5.
 //
@@ -62,11 +62,14 @@ export async function getSucursalActivaId(): Promise<number | null> {
 
 /**
  * Sucursal a la que imputar una operación que SÍ o SÍ necesita una (una venta
- * de caja, una recepción). Si el panel está en "Todas" se usa la primera de la
- * lista, que es el local principal.
+ * de caja, una recepción). Para admins en "Todas" se usa la primera de la
+ * lista; para miembros siempre se usa su sucursal de sesión.
  */
 export async function sucursalOperativaId(): Promise<number | null> {
   const { activaId, lista } = await getContextoSucursal();
+  const usuario = await getUsuarioActual();
+  if (!usuario) return null;
+  if (usuario?.rol === "miembro") return activaId;
   return activaId ?? lista[0]?.id ?? null;
 }
 

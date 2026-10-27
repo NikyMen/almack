@@ -25,12 +25,14 @@ function sign(value: string): string {
   return createHmac("sha256", SECRET).update(value).digest("hex");
 }
 
-function makeToken(user: string): string {
-  const payload = `${user}.${Date.now()}`;
+type Sesion = { usuario: string; sucursalId: number | null };
+
+function makeToken(user: string, sucursalId: number): string {
+  const payload = JSON.stringify({ usuario: user, sucursalId, emitido: Date.now() });
   return `${Buffer.from(payload).toString("base64url")}.${sign(payload)}`;
 }
 
-export function verifyToken(token: string | undefined): string | null {
+function verificarSesion(token: string | undefined): Sesion | null {
   if (!token) return null;
   const [b64, sig] = token.split(".");
   if (!b64 || !sig) return null;
@@ -38,11 +40,29 @@ export function verifyToken(token: string | undefined): string | null {
   const expected = sign(payload);
   if (sig.length !== expected.length) return null;
   if (!timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return null;
-  const separador = payload.lastIndexOf(".");
-  if (separador <= 0) return null;
-  const emitido = Number(payload.slice(separador + 1));
+  let usuario: string;
+  let sucursalId: number | null = null;
+  let emitido: number;
+  try {
+    const data = JSON.parse(payload);
+    usuario = data.usuario;
+    sucursalId = data.sucursalId;
+    emitido = data.emitido;
+  } catch {
+    // Las sesiones anteriores siguen sirviendo para admins. Los miembros deben
+    // volver a ingresar para elegir sucursal y obtener una sesión nueva.
+    const separador = payload.lastIndexOf(".");
+    if (separador <= 0) return null;
+    usuario = payload.slice(0, separador);
+    emitido = Number(payload.slice(separador + 1));
+  }
+  if (typeof usuario !== "string" || !usuario || (sucursalId !== null && (!Number.isSafeInteger(sucursalId) || sucursalId <= 0))) return null;
   if (!Number.isSafeInteger(emitido) || emitido > Date.now() + 60_000 || Date.now() - emitido > SESSION_MS) return null;
-  return payload.slice(0, separador) || null;
+  return { usuario, sucursalId };
+}
+
+export function verifyToken(token: string | undefined): string | null {
+  return verificarSesion(token)?.usuario ?? null;
 }
 
 // --- Hash de contraseñas (scrypt nativo, sin dependencias) ------------------
@@ -85,9 +105,9 @@ export async function checkCredentials(user: string, pass: string): Promise<bool
   return false;
 }
 
-export async function createSession(user: string) {
+export async function createSession(user: string, sucursalId: number) {
   const store = await cookies();
-  store.set(COOKIE, makeToken(user), {
+  store.set(COOKIE, makeToken(user, sucursalId), {
     httpOnly: true,
     sameSite: "lax",
     // secure sólo cuando servís por HTTPS. Si entrás por http://IP:puerto sin
@@ -112,8 +132,10 @@ export async function getUser(): Promise<string | null> {
 // Carga el usuario en sesión con su rol y permisos. Si el handle es el admin por
 // env y no existe en DB, devuelve un admin sintético con todos los permisos.
 export async function getUsuarioActual(): Promise<UsuarioActual | null> {
-  const handle = await getUser();
-  if (!handle) return null;
+  const store = await cookies();
+  const sesion = verificarSesion(store.get(COOKIE)?.value);
+  if (!sesion) return null;
+  const handle = sesion.usuario;
   let u: typeof usuarios.$inferSelect | undefined;
   try {
     [u] = await db.select().from(usuarios).where(eq(usuarios.usuario, handle));
@@ -122,12 +144,18 @@ export async function getUsuarioActual(): Promise<UsuarioActual | null> {
   }
   if (u) {
     if (!u.activo) return null;
+    if (u.rol !== "admin" && !sesion.sucursalId) return null;
+    if (u.rol !== "admin") {
+      const [activa] = await db.select({ id: sucursales.id }).from(sucursales)
+        .where(and(eq(sucursales.id, sesion.sucursalId!), eq(sucursales.activo, true)));
+      if (!activa) return null;
+    }
     return {
       id: u.id,
       nombre: u.nombre,
       usuario: u.usuario,
       rol: u.rol,
-      sucursalId: u.sucursalId,
+      sucursalId: u.rol === "admin" ? null : sesion.sucursalId,
       permisos: parsePermisos(u.permisos),
     };
   }

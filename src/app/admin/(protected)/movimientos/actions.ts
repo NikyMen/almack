@@ -56,7 +56,7 @@ export async function registrarTraslado(datos: {
       usuario,
       gasto: datos.gasto ? {
         ...datos.gasto,
-        sucursalId: lista.find((s) => s.id === datos.gasto?.sucursalId)?.id ?? origen.id,
+        sucursalId: usuario.rol === "miembro" ? origen.id : lista.find((s) => s.id === datos.gasto?.sucursalId)?.id ?? origen.id,
       } : null,
     });
     revalidatePath("/admin/movimientos");

@@ -2,9 +2,8 @@
 
 // El logo de Almack es también el selector de local.
 //
-// Arranca siempre en "Todas las sucursales": ahí el panel muestra el stock y
-// las métricas consolidadas. Al entrar a una sucursal, todo el panel se para
-// en ese local y los formularios dejan de preguntar a cuál cargar la mercadería.
+// El panel arranca en la sucursal elegida al iniciar sesión. El administrador
+// puede pasar a la vista consolidada o elegir otro local desde este menú.
 //
 // Solo el superadmin puede cambiar de local o administrarlos (ver esSuperAdmin
 // en src/lib/permisos.ts). Para el resto del equipo el logo es solo el logo.

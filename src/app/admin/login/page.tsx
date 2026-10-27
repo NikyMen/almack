@@ -2,6 +2,7 @@ import Image from "next/image";
 import dynamic from "next/dynamic";
 import { redirect } from "next/navigation";
 import { getUsuarioActual } from "@/lib/auth";
+import { getSucursales } from "@/lib/sucursal";
 import { LoginForm } from "./login-form";
 
 const DotField = dynamic(() => import("@/components/fx/dot-field"));
@@ -11,6 +12,7 @@ export default async function LoginPage() {
   // acá y no en el middleware para que una cookie inservible caiga siempre en
   // esta página (que la puede reemplazar) en vez de rebotar contra /admin.
   if (await getUsuarioActual()) redirect("/admin");
+  const sucursales = await getSucursales();
 
   return (
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-navy px-4 py-10">
@@ -37,8 +39,8 @@ export default async function LoginPage() {
 
         <div className="rounded-2xl border border-white/10 bg-white/5 p-6 shadow-2xl shadow-black/30 backdrop-blur-md">
           <h1 className="mb-1 text-lg font-semibold text-white">Iniciar sesión</h1>
-          <p className="mb-5 text-xs text-slate-400">Ingresá con tus credenciales para acceder al panel.</p>
-          <LoginForm />
+          <p className="mb-5 text-xs text-slate-400">Ingresá con tus credenciales y elegí el local donde trabajás.</p>
+          <LoginForm sucursales={sucursales.map((s) => ({ id: s.id, nombre: s.nombre }))} />
         </div>
 
         <p className="mt-6 text-center text-xs text-slate-500">

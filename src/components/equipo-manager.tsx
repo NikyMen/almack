@@ -17,7 +17,6 @@ type UsuarioRow = {
   usuario: string;
   email: string;
   rol: "admin" | "miembro";
-  sucursalId: number | null;
   permisos: ModuloKey[];
   activo: boolean;
 };
@@ -29,13 +28,12 @@ const formVacio = (): UsuarioInput => ({
   usuario: "",
   email: "",
   rol: "miembro",
-  sucursalId: null,
   permisos: [...PERMISOS_DEFAULT],
   activo: true,
   password: "",
 });
 
-export function EquipoManager({ items, sucursales }: { items: UsuarioRow[]; sucursales: { id: number; nombre: string }[] }) {
+export function EquipoManager({ items }: { items: UsuarioRow[] }) {
   const router = useRouter();
   // null = panel cerrado · 0 = creando · >0 = editando ese id
   const [editId, setEditId] = useState<number | null>(null);
@@ -54,7 +52,6 @@ export function EquipoManager({ items, sucursales }: { items: UsuarioRow[]; sucu
       usuario: u.usuario,
       email: u.email,
       rol: u.rol,
-      sucursalId: u.sucursalId,
       permisos: [...u.permisos],
       activo: u.activo,
       password: "",
@@ -172,13 +169,7 @@ export function EquipoManager({ items, sucursales }: { items: UsuarioRow[]; sucu
               <option value="admin">Administrador</option>
             </select>
           </div>
-          {form.rol === "miembro" && <div>
-            <label className="label">Sucursal *</label>
-            <select className="input" required value={form.sucursalId ?? ""} onChange={(e) => setForm({ ...form, sucursalId: Number(e.target.value) || null })}>
-              <option value="">Elegí una sucursal</option>
-              {sucursales.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
-            </select>
-          </div>}
+          {form.rol === "miembro" && <p className="self-end text-sm text-slate-500">El miembro elige su sucursal al iniciar sesión.</p>}
           <div className="flex items-end">
             <label className="flex items-center gap-2 text-sm font-medium text-slate-600">
               <input
@@ -251,7 +242,6 @@ export function EquipoManager({ items, sucursales }: { items: UsuarioRow[]; sucu
               <tr key={u.id} className="align-top">
                 <td className="px-4 py-3">
                   <p className="font-medium text-slate-800">{u.nombre}</p>
-                  {u.sucursalId && <p className="text-xs text-slate-500">{sucursales.find(s => s.id === u.sucursalId)?.nombre ?? "Sucursal archivada"}</p>}
                   {u.email && <p className="text-xs text-slate-400">{u.email}</p>}
                 </td>
                 <td className="px-4 py-3 text-slate-500">{u.usuario}</td>
