@@ -5,6 +5,7 @@ import { abrirCaja, moverEfectivo, cerrarCaja, extraerEfectivo } from "@/lib/caj
 import { revalidatePath } from "next/cache";
 export async function operarCaja(datos: { operacion: "abrir" | "movimiento" | "cerrar" | "extraccion"; saldoRestante?: number; clave?: string; solicitudId?: string; turnoId?: number; monto?: number; tipo?: string; motivo?: string }) {
   const usuario = await requireAcceso("caja");
+  if (datos.operacion === "extraccion" && usuario.rol !== "admin") return { ok: false, error: "Solo administración puede realizar extracciones." };
   const sucursal = await sucursalOperativaId();
   if (!sucursal) return { ok: false, error: "Creá una sucursal antes de abrir la caja." };
   try {

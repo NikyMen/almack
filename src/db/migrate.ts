@@ -335,6 +335,8 @@ const statements = [
 // ALTER idempotentes para DBs ya existentes (SQLite no soporta ADD COLUMN IF
 // NOT EXISTS → si la columna ya existe, el execute tira error y lo ignoramos).
 const alters = [
+  `ALTER TABLE caja_turnos ADD COLUMN fondo_esperado REAL`,
+  `ALTER TABLE caja_turnos ADD COLUMN diferencia_apertura REAL`,
   `ALTER TABLE caja_extracciones ADD COLUMN saldo_restante REAL`,
   `ALTER TABLE promociones ADD COLUMN precio_fijo REAL`,
   `ALTER TABLE promociones ADD COLUMN cantidades TEXT NOT NULL DEFAULT '{}'`,

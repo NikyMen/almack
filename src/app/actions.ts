@@ -379,7 +379,7 @@ export async function cobrarVenta(
   try {
     const resultado = await venderEnCaja(sucursalId, usuario.nombre, items, medioPago, opts);
     for (const ruta of ["/admin/caja", "/admin/ventas", "/admin/stock", "/admin/ventas/promociones", "/admin", "/tienda", "/tienda/productos"]) revalidatePath(ruta);
-    return { ok: true as const, ...resultado };
+    return { ok: true as const, ...resultado, efectivoAntes: usuario.rol === "admin" ? resultado.efectivoAntes : null, efectivoDespues: usuario.rol === "admin" ? resultado.efectivoDespues : null };
   } catch (e) {
     return { ok: false as const, error: e instanceof Error ? e.message : "No se pudo cobrar la venta." };
   }

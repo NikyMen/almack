@@ -170,11 +170,12 @@ Si Gemini falla por conexión o devuelve 500/502/503/504, la imagen se transcrib
 
 ## Apertura, cierre y arqueo de caja
 
-En **Caja**, cada sucursal tiene como máximo un turno abierto. Abrir con el fondo
-inicial antes de cobrar, registrar ingresos o retiros con motivo y elegir
-**Arquear y cerrar** para cargar el efectivo contado. Si hay diferencia se exige
-una observación. El historial conserva responsable de apertura/cierre, importes,
-diferencia, observaciones y resumen por medio de pago (últimos 20 cierres).
+En **Caja**, cada sucursal tiene como máximo un turno abierto. En cada apertura se
+cuenta e ingresa el efectivo real sin mostrar el saldo anterior al empleado. En el
+cierre se vuelve a contar sin mostrar el esperado ni la diferencia. Las
+observaciones son opcionales. El servidor registra el saldo esperado y la
+diferencia de ambos conteos; solo los administradores pueden consultar el historial
+completo y filtrarlo por diferencias de apertura o cierre.
 
 Efectivo esperado = fondo inicial + ventas en efectivo + ingresos − retiros.
 QR y tarjeta se muestran separados. Las ventas previas y el checkout público no
@@ -190,12 +191,11 @@ del cajón hay que registrar el retiro correspondiente en Caja.
 
 ### Saldo anterior y extracciones autorizadas
 
-Cada apertura toma automáticamente el efectivo contado en el último cierre de
-la misma sucursal. Si hubo extracciones mientras la caja estuvo cerrada, toma
-el saldo confirmado en la última extracción. El saldo se vuelve a calcular en
-el servidor al abrir. Solo la primera apertura admite un fondo inicial manual.
+Cada apertura requiere un conteo manual. El servidor compara ese importe con el
+último cierre de la misma sucursal, descontando las extracciones posteriores.
+El conteo ingresado se convierte en el fondo inicial del nuevo turno.
 
-El botón **Extracción** está disponible con la caja abierta o cerrada y siempre
+El botón **Extracción** está disponible para administradores con la caja abierta o cerrada y siempre
 exige una **Clave de administrador**, configurable únicamente por administradores
 en **Equipo** (6 a 64 caracteres, con confirmación). Se almacena un hash con salt,
 nunca la clave en texto. Cinco errores bloquean nuevos intentos del usuario por

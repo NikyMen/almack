@@ -33,9 +33,8 @@ export async function abrirCaja(sucursalId: number, responsable: string, fondoIn
   return transaccionCaja(async tx => {
     if (await cajaAbierta(sucursalId, tx)) throw new Error("Esta sucursal ya tiene una caja abierta.");
     const anterior = await saldoUltimoCierre(sucursalId, tx);
-    const fondo = anterior?.disponible ?? fondoInicial;
-    validarMonto(fondo ?? NaN);
-    const [turno] = await tx.insert(cajaTurnos).values({ sucursalId, responsable, fondoInicial: fondo! }).returning();
+    validarMonto(fondoInicial ?? NaN);
+    const [turno] = await tx.insert(cajaTurnos).values({ sucursalId, responsable, fondoInicial: fondoInicial!, fondoEsperado: anterior?.disponible ?? null, diferenciaApertura: anterior ? redondear(fondoInicial! - anterior.disponible) : null }).returning();
     return turno;
   });
 }
@@ -57,7 +56,6 @@ export async function cerrarCaja(sucursalId: number, turnoId: number, responsabl
     if (!turno || turno.id !== turnoId) throw new Error("La caja cambió o ya está cerrada. Actualizá la pantalla.");
     const resumen = await resumenCaja(turno, tx);
     const diferencia = redondear(contado - resumen.esperado);
-    if (diferencia !== 0 && !observaciones.trim()) throw new Error("Explicá el faltante o sobrante antes de cerrar.");
     await tx.update(cajaTurnos).set({ estado: "cerrada", cerradoPor: responsable, cerradoEn: new Date(), efectivoContado: contado, efectivoEsperado: resumen.esperado, diferencia, resumen: JSON.stringify(resumen.cobros), observaciones: observaciones.trim() }).where(eq(cajaTurnos.id, turnoId));
     return { esperado: resumen.esperado, contado, diferencia };
   });

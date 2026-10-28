@@ -18,5 +18,5 @@ export async function detalleVenta(id: number) {
     cantidad: ventaItems.cantidad,
     precioUnit: ventaItems.precioUnit,
   }).from(ventaItems).leftJoin(productos, eq(ventaItems.productoId, productos.id)).where(eq(ventaItems.ventaId, id));
-  return { ok: true as const, venta, items };
+  return { ok: true as const, venta: usuario.rol === "admin" ? venta : { ...venta, efectivoAntes: null, efectivoDespues: null }, items, puedeVerSaldo: usuario.rol === "admin" };
 }

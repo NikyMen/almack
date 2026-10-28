@@ -6,6 +6,8 @@ export const cajaTurnos = sqliteTable("caja_turnos", {
   responsable: text("responsable").notNull(),
   cerradoPor: text("cerrado_por"),
   fondoInicial: real("fondo_inicial").notNull(),
+  fondoEsperado: real("fondo_esperado"),
+  diferenciaApertura: real("diferencia_apertura"),
   estado: text("estado").notNull().default("abierta"),
   abiertoEn: integer("abierto_en", { mode: "timestamp" }).default(sql`(strftime('%s','now'))`),
   cerradoEn: integer("cerrado_en", { mode: "timestamp" }),
