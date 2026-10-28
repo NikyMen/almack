@@ -190,10 +190,10 @@ del cajón hay que registrar el retiro correspondiente en Caja.
 
 ### Saldo anterior y extracciones autorizadas
 
-La apertura permite usar el efectivo contado en el último cierre de la misma
-sucursal, menos las extracciones efectuadas mientras estuvo cerrada. El saldo
-se vuelve a calcular en el servidor al abrir; también se puede ingresar un
-fondo inicial manualmente.
+Cada apertura toma automáticamente el efectivo contado en el último cierre de
+la misma sucursal. Si hubo extracciones mientras la caja estuvo cerrada, toma
+el saldo confirmado en la última extracción. El saldo se vuelve a calcular en
+el servidor al abrir. Solo la primera apertura admite un fondo inicial manual.
 
 El botón **Extracción** está disponible con la caja abierta o cerrada y siempre
 exige una **Clave de administrador**, configurable únicamente por administradores
@@ -201,8 +201,10 @@ en **Equipo** (6 a 64 caracteres, con confirmación). Se almacena un hash con sa
 nunca la clave en texto. Cinco errores bloquean nuevos intentos del usuario por
 15 minutos. El permiso de Caja más una clave válida autoriza la operación.
 
-Los retiros de efectivo pasan exclusivamente por Extracción, con importe y
-motivo. Se conserva quién realizó la operación, fecha, sucursal y estado de caja.
+Los retiros de efectivo pasan exclusivamente por Extracción, con importe,
+monto que queda en caja y motivo. Ese monto debe coincidir con el disponible
+menos lo retirado. Se conserva quién realizó la operación, fecha, sucursal y
+estado de caja.
 Con caja abierta se descuenta del arqueo; con caja cerrada se conserva intacto
 el cierre y se descuenta del saldo para la próxima apertura. No se puede retirar
 más dinero que el disponible. Los reintentos de la misma solicitud no duplican

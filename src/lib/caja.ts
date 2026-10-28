@@ -29,16 +29,13 @@ export async function resumenCaja(turno: typeof cajaTurnos.$inferSelect, executo
   const efectivo = redondear(cobros.find(c => c.medio === "efectivo")?.total ?? 0);
   return { cobros, movimientos, ingresos, retiros, efectivo, esperado: redondear(turno.fondoInicial + efectivo + ingresos - retiros) };
 }
-export async function abrirCaja(sucursalId: number, responsable: string, fondoInicial: number, usarSaldoAnterior = false) {
-  validarMonto(fondoInicial);
+export async function abrirCaja(sucursalId: number, responsable: string, fondoInicial?: number) {
   return transaccionCaja(async tx => {
     if (await cajaAbierta(sucursalId, tx)) throw new Error("Esta sucursal ya tiene una caja abierta.");
-    if (usarSaldoAnterior) {
-      const anterior = await saldoUltimoCierre(sucursalId, tx);
-      if (!anterior) throw new Error("Esta sucursal todavía no tiene un cierre anterior.");
-      fondoInicial = anterior.disponible;
-    }
-    const [turno] = await tx.insert(cajaTurnos).values({ sucursalId, responsable, fondoInicial }).returning();
+    const anterior = await saldoUltimoCierre(sucursalId, tx);
+    const fondo = anterior?.disponible ?? fondoInicial;
+    validarMonto(fondo ?? NaN);
+    const [turno] = await tx.insert(cajaTurnos).values({ sucursalId, responsable, fondoInicial: fondo! }).returning();
     return turno;
   });
 }
@@ -155,11 +152,15 @@ export async function venderEnCaja(sucursalId: number, cajero: string, items: { 
 export async function saldoUltimoCierre(sucursalId: number, executor: CajaTx | typeof db = db) {
   const [turno] = await executor.select().from(cajaTurnos).where(and(eq(cajaTurnos.sucursalId, sucursalId), eq(cajaTurnos.estado, "cerrada"))).orderBy(desc(cajaTurnos.id)).limit(1);
   if (!turno) return null;
-  const [r] = await executor.select({ total: sql<number>`coalesce(sum(${cajaExtracciones.monto}),0)` }).from(cajaExtracciones).where(and(eq(cajaExtracciones.turnoId, turno.id), eq(cajaExtracciones.estadoCaja, "cerrada")));
-  return { turnoId: turno.id, contado: turno.efectivoContado ?? 0, extraido: redondear(r.total), disponible: redondear((turno.efectivoContado ?? 0) - r.total) };
+  const extracciones = await executor.select().from(cajaExtracciones).where(and(eq(cajaExtracciones.turnoId, turno.id), eq(cajaExtracciones.estadoCaja, "cerrada"))).orderBy(cajaExtracciones.id);
+  const contado = turno.efectivoContado ?? 0;
+  const extraido = redondear(extracciones.reduce((total, e) => total + e.monto, 0));
+  const ultima = extracciones.at(-1);
+  return { turnoId: turno.id, contado, extraido, disponible: ultima?.saldoRestante ?? redondear(contado - extraido) };
 }
-export async function extraerEfectivo(datos: { sucursalId: number; turnoId: number; usuario: string; responsable: string; clave: string; monto: number; motivo: string; solicitudId: string }) {
+export async function extraerEfectivo(datos: { sucursalId: number; turnoId: number; usuario: string; responsable: string; clave: string; monto: number; saldoRestante: number; motivo: string; solicitudId: string }) {
   validarMonto(datos.monto, true);
+  validarMonto(datos.saldoRestante);
   if (!datos.motivo?.trim() || datos.motivo.length > 500) throw new Error("Indicá un motivo de hasta 500 caracteres.");
   if (!/^[a-f0-9-]{36}$/i.test(datos.solicitudId)) throw new Error("Solicitud inválida. Actualizá la pantalla.");
   return transaccionCaja(async tx => {
@@ -176,7 +177,7 @@ export async function extraerEfectivo(datos: { sucursalId: number; turnoId: numb
     await tx.delete(cajaIntentos).where(eq(cajaIntentos.usuario, datos.usuario));
     const [repetida] = await tx.select().from(cajaExtracciones).where(eq(cajaExtracciones.solicitudId, datos.solicitudId));
     if (repetida) {
-      if (repetida.sucursalId !== datos.sucursalId || repetida.turnoId !== datos.turnoId || repetida.responsable !== datos.responsable || repetida.monto !== datos.monto || repetida.motivo !== datos.motivo.trim()) throw new Error("La solicitud ya fue usada con otros datos.");
+      if (repetida.sucursalId !== datos.sucursalId || repetida.turnoId !== datos.turnoId || repetida.responsable !== datos.responsable || repetida.monto !== datos.monto || repetida.saldoRestante !== datos.saldoRestante || repetida.motivo !== datos.motivo.trim()) throw new Error("La solicitud ya fue usada con otros datos.");
       return { ok: true, error: "" };
     }
     const abierta = await cajaAbierta(datos.sucursalId, tx);
@@ -184,8 +185,9 @@ export async function extraerEfectivo(datos: { sucursalId: number; turnoId: numb
     if ((abierta?.id ?? anterior?.turnoId) !== datos.turnoId) throw new Error("La caja cambió. Actualizá la pantalla antes de extraer.");
     const disponible = abierta ? (await resumenCaja(abierta, tx)).esperado : anterior?.disponible ?? 0;
     if (datos.monto > disponible) throw new Error("La extracción supera el efectivo disponible.");
+    if (redondear(disponible - datos.monto) !== datos.saldoRestante) throw new Error("El saldo que queda en caja debe coincidir con el efectivo disponible menos la extracción. Actualizá la pantalla si hubo otros movimientos.");
     const estadoCaja = abierta ? "abierta" : "cerrada";
-    await tx.insert(cajaExtracciones).values({ solicitudId: datos.solicitudId, sucursalId: datos.sucursalId, turnoId: datos.turnoId, estadoCaja, monto: datos.monto, motivo: datos.motivo.trim(), responsable: datos.responsable });
+    await tx.insert(cajaExtracciones).values({ solicitudId: datos.solicitudId, sucursalId: datos.sucursalId, turnoId: datos.turnoId, estadoCaja, monto: datos.monto, saldoRestante: datos.saldoRestante, motivo: datos.motivo.trim(), responsable: datos.responsable });
     if (abierta) await tx.insert(cajaMovimientos).values({ turnoId: abierta.id, tipo: "retiro", monto: datos.monto, motivo: `Extracción: ${datos.motivo.trim()}`, responsable: datos.responsable });
     return { ok: true, error: "" };
   });

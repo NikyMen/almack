@@ -42,6 +42,7 @@ export const cajaExtracciones = sqliteTable("caja_extracciones", {
   turnoId: integer("turno_id").notNull().references(() => cajaTurnos.id),
   estadoCaja: text("estado_caja").notNull(),
   monto: real("monto").notNull(),
+  saldoRestante: real("saldo_restante"),
   motivo: text("motivo").notNull(),
   responsable: text("responsable").notNull(),
   fecha: integer("fecha", { mode: "timestamp" }).default(sql`(strftime('%s','now'))`),
