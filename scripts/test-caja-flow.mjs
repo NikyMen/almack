@@ -4,14 +4,14 @@ if (!/^file:caja-test-[a-f0-9-]+\.db$/.test(process.env.TURSO_DATABASE_URL ?? ""
 
 const { db, client, sucursales, productos, stockSucursal, ventas, promociones, cajaSeguridad, cajaExtracciones, cajaIntentos, cambiosPrecio, ventaItems } = await import('../src/db/index.ts');
 const { cajaDDL } = await import('../src/db/caja-ddl.ts');
-const { abrirCaja, cerrarCaja, moverEfectivo, venderEnCaja, resumenCaja, validarMonto, extraerEfectivo, saldoUltimoCierre, cajaAbierta } = await import('../src/lib/caja.ts');
+const { abrirCaja, cerrarCaja, cambiarArqueo, devolverVenta, moverEfectivo, venderEnCaja, resumenCaja, validarMonto, extraerEfectivo, saldoUltimoCierre, cajaAbierta } = await import('../src/lib/caja.ts');
 const { hashClaveAdministrador, verificarClaveAdministrador } = await import('../src/lib/clave-admin.ts');
 const { randomUUID } = await import('node:crypto');
 const { eq } = await import('drizzle-orm');
 const extraer = async (turnoId, monto, clave = 'secreta123', usuario = 'ana', solicitudId = randomUUID(), sucursalId = 1, saldoRestante) => {
   const abierta = await cajaAbierta(sucursalId);
   const disponible = abierta ? (await resumenCaja(abierta)).esperado : (await saldoUltimoCierre(sucursalId))?.disponible ?? 0;
-  return extraerEfectivo({ sucursalId, turnoId, monto, saldoRestante: saldoRestante ?? Math.max(0, Math.round((disponible - monto) * 100) / 100), clave, usuario, responsable: usuario, motivo: 'Retiro autorizado', solicitudId });
+  return extraerEfectivo({ sucursalId, turnoId, monto, saldoRestante: saldoRestante ?? Math.max(0, Math.round((disponible - monto) * 100) / 100), clave, usuario, responsable: usuario, motivo: 'Retiro autorizado', entregadoA: 'Tesorería', solicitudId });
 };
 try {
   await client.executeMultiple(`CREATE TABLE sucursales(id INTEGER PRIMARY KEY, nombre TEXT NOT NULL, direccion TEXT DEFAULT '', telefono TEXT DEFAULT '', activo INTEGER DEFAULT 1, orden INTEGER DEFAULT 0, creado_en INTEGER);
@@ -19,6 +19,7 @@ CREATE TABLE productos(id INTEGER PRIMARY KEY, sku TEXT, nombre TEXT, descripcio
 CREATE TABLE stock_sucursal(id INTEGER PRIMARY KEY, producto_id INTEGER, sucursal_id INTEGER, cantidad INTEGER, UNIQUE(producto_id, sucursal_id));
 CREATE TABLE ventas(id INTEGER PRIMARY KEY, cliente_id INTEGER, sucursal_id INTEGER, caja_turno_id INTEGER, cajero TEXT, total REAL, estado TEXT, canal TEXT, medio_pago TEXT, efectivo_recibido REAL, vuelto REAL, efectivo_antes REAL, efectivo_despues REAL, referencia TEXT, facturada INTEGER, fecha INTEGER);
 CREATE TABLE venta_items(id INTEGER PRIMARY KEY, venta_id INTEGER, producto_id INTEGER, cantidad INTEGER, precio_unit REAL);
+CREATE TABLE venta_devoluciones(id INTEGER PRIMARY KEY, venta_id INTEGER NOT NULL UNIQUE, turno_id INTEGER NOT NULL, motivo TEXT NOT NULL, referencia TEXT NOT NULL DEFAULT '', repuesto_stock INTEGER NOT NULL DEFAULT 1, usuario TEXT NOT NULL, fecha INTEGER);
 CREATE TABLE promociones(id INTEGER PRIMARY KEY, nombre TEXT NOT NULL, tipo TEXT NOT NULL, activa INTEGER NOT NULL DEFAULT 0, porcentaje REAL NOT NULL DEFAULT 0, producto_ids TEXT NOT NULL DEFAULT '[]', precio_fijo REAL, cantidades TEXT NOT NULL DEFAULT '{}', alcance TEXT NOT NULL DEFAULT 'productos', cantidad_combo INTEGER NOT NULL DEFAULT 2, modo TEXT NOT NULL DEFAULT 'continua', fecha_unica TEXT NOT NULL DEFAULT '', mes TEXT NOT NULL DEFAULT '', dias TEXT NOT NULL DEFAULT '[]', dia_semana INTEGER NOT NULL DEFAULT 6, creada_en INTEGER);
 CREATE TABLE cambios_precio(id INTEGER PRIMARY KEY, venta_id INTEGER NOT NULL, sucursal_id INTEGER NOT NULL, usuario TEXT NOT NULL, medio_pago TEXT NOT NULL, tipo TEXT NOT NULL, detalle TEXT NOT NULL, total_anterior REAL NOT NULL, total_nuevo REAL NOT NULL, fecha INTEGER);`);
   for (const ddl of cajaDDL) await client.execute(ddl);
@@ -71,7 +72,11 @@ CREATE TABLE cambios_precio(id INTEGER PRIMARY KEY, venta_id INTEGER NOT NULL, s
   const peso=await venderEnCaja(1,'Ana',[{productoId:2,cantidad:0.375}],'qr');
   assert.equal(peso.total,75);
   assert.equal((await db.select().from(stockSucursal).where(eq(stockSucursal.productoId,2)))[0].cantidad,1.625);
-  const cierre = await cerrarCaja(1,turno.id,'Ana',135,'');
+  await cambiarArqueo(1,turno.id,true);
+  await assert.rejects(venderEnCaja(1,'Ana',[{productoId:1,cantidad:1}],'efectivo'), /arqueo/);
+  await assert.rejects(moverEfectivo(1,turno.id,'Ana','ingreso',1,'Tarde'), /arqueo/);
+  await assert.rejects(cerrarCaja(1,turno.id,'Ana',135,''), /Explicá la diferencia/);
+  const cierre = await cerrarCaja(1,turno.id,'Ana',135,'Faltante al contar');
   assert.equal(cierre.diferencia,-5);
   await assert.rejects(cerrarCaja(1,turno.id,'Ana',135,'Repetido'));
   await assert.rejects(venderEnCaja(1,'Ana',[{productoId:1,cantidad:1}],'efectivo'));
@@ -96,7 +101,8 @@ CREATE TABLE cambios_precio(id INTEGER PRIMARY KEY, venta_id INTEGER NOT NULL, s
   assert.equal((await extraer(turno.id,1,'nuevaClave123')).ok,true);
   assert.equal((await saldoUltimoCierre(1)).disponible,39);
   await assert.rejects(abrirCaja(1,'Ana'), /importe válido/);
-  const aperturas = await Promise.allSettled([abrirCaja(1,'Ana',37), abrirCaja(1,'Luis',37)]);
+  await assert.rejects(abrirCaja(1,'Ana',37), /Explicá la diferencia/);
+  const aperturas = await Promise.allSettled([abrirCaja(1,'Ana',37,'Diferencia contada'), abrirCaja(1,'Luis',37,'Diferencia contada')]);
   assert.equal(aperturas.filter(r => r.status === 'fulfilled').length,1);
   const nuevo = await cajaAbierta(1);
   assert.equal(nuevo.fondoInicial,37);
@@ -104,7 +110,8 @@ CREATE TABLE cambios_precio(id INTEGER PRIMARY KEY, venta_id INTEGER NOT NULL, s
   assert.equal(nuevo.diferenciaApertura,-2);
   assert.equal((await resumenCaja(nuevo)).esperado,37);
   await assert.rejects(extraer(turno.id,1,'nuevaClave123'), /cambió/);
-  await cerrarCaja(1,nuevo.id,'Ana',39,'');
+  await cambiarArqueo(1,nuevo.id,true);
+  await cerrarCaja(1,nuevo.id,'Ana',39,'Recuento: sobrante de dos pesos');
   assert.equal((await saldoUltimoCierre(1)).disponible,39);
   await assert.rejects(extraer(nuevo.id,-1,'nuevaClave123'));
   await assert.rejects(extraer(nuevo.id,0,'nuevaClave123'));
@@ -141,6 +148,16 @@ CREATE TABLE cambios_precio(id INTEGER PRIMARY KEY, venta_id INTEGER NOT NULL, s
   assert.equal(promoParcial.total,60);
   assert.equal((await venderEnCaja(1,'Ana',[{productoId:1,cantidad:2},{productoId:3,cantidad:1}],'qr',base)).total,60);
   assert.equal((await db.select().from(cambiosPrecio)).length,4);
+  const esperadoAntesDevolucion = (await resumenCaja(await cajaAbierta(1))).esperado;
+  await devolverVenta(1,efectivo.ventaId,'Admin','Producto devuelto');
+  assert.equal((await resumenCaja(await cajaAbierta(1))).esperado,esperadoAntesDevolucion-efectivo.total);
+  assert.equal((await db.select().from(ventas).where(eq(ventas.id,efectivo.ventaId)))[0].estado,'devuelta');
+  await assert.rejects(devolverVenta(1,efectivo.ventaId,'Admin','Duplicado'), /no admite/);
+  await assert.rejects(devolverVenta(1,qr.ventaId,'Admin','Sin referencia'), /referencia/);
+  await devolverVenta(1,qr.ventaId,'Admin','Reintegro confirmado','QR-123');
+  const stockPesoAntes = (await db.select().from(stockSucursal).where(eq(stockSucursal.productoId,2)))[0].cantidad;
+  await devolverVenta(1,peso.ventaId,'Admin','Producto dañado','QR-456',false);
+  assert.equal((await db.select().from(stockSucursal).where(eq(stockSucursal.productoId,2)))[0].cantidad,stockPesoAntes);
   console.log('Caja: apertura, aislamiento por sucursal, cobros, movimientos, arqueo, reapertura y rollback OK.');
 } finally {
   client.close();

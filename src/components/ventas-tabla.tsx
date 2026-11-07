@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Plus, X } from "lucide-react";
 import { Overlay } from "@/components/overlay";
 import { FilterableTable, Col } from "@/components/filterable-table";
@@ -9,12 +10,13 @@ import { moneyPreciso } from "@/lib/format";
 import { ETIQUETA_MEDIO, type MedioPago } from "@/lib/medios-pago";
 import { NuevaVentaModal } from "@/components/nueva-venta-modal";
 import type { Producto } from "@/db/schema";
-import { detalleVenta } from "@/app/admin/(protected)/ventas/historial/actions";
+import { detalleVenta, registrarDevolucion } from "@/app/admin/(protected)/ventas/historial/actions";
 
 type Detalle = Extract<Awaited<ReturnType<typeof detalleVenta>>, { ok: true }>;
 
 type Venta = {
   id: number;
+  sucursalId?: number | null;
   total: number;
   estado: string;
   canal: string;
@@ -35,16 +37,26 @@ export function VentasTabla({
   productos,
   clientes,
   permitirAlta = true,
+  puedeDevolver = false,
+  sucursalActivaId = null,
 }: {
   ventas: Venta[];
   productos: Producto[];
   clientes: { id: number; nombre: string }[];
   permitirAlta?: boolean;
+  puedeDevolver?: boolean;
+  sucursalActivaId?: number | null;
 }) {
+  const router = useRouter();
   const [nueva, setNueva] = useState(false);
   const [seleccionada, setSeleccionada] = useState<Venta | null>(null);
   const [detalle, setDetalle] = useState<Detalle | null>(null);
   const [errorDetalle, setErrorDetalle] = useState("");
+  const [devolviendo, setDevolviendo] = useState(false);
+  const [errorDevolucion, setErrorDevolucion] = useState("");
+  useEffect(() => {
+    setSeleccionada(actual => actual ? ventas.find(v => v.id === actual.id) ?? null : null);
+  }, [ventas]);
 
   useEffect(() => {
     if (!seleccionada) return;
@@ -97,7 +109,7 @@ export function VentasTabla({
         searchPlaceholder="Buscar por cliente, estado, total…"
         sortOptions={[{ key: "fecha", label: "Más recientes", direction: "desc" }, { key: "fecha", label: "Más antiguas", direction: "asc" }]}
         groupBy={diaVenta}
-        groupHeader={(key, rows) => <div className="flex flex-wrap items-center justify-between gap-2"><span>{key === "sin-fecha" ? "Sin fecha" : new Intl.DateTimeFormat("es-AR", { dateStyle: "full", timeZone: "UTC" }).format(new Date(`${key}T12:00:00Z`))}</span><span>Total del día: {moneyPreciso(rows.reduce((sum, v) => sum + (v.estado === "cancelada" ? 0 : v.total), 0))}</span></div>}
+        groupHeader={(key, rows) => <div className="flex flex-wrap items-center justify-between gap-2"><span>{key === "sin-fecha" ? "Sin fecha" : new Intl.DateTimeFormat("es-AR", { dateStyle: "full", timeZone: "UTC" }).format(new Date(`${key}T12:00:00Z`))}</span><span>Total del día: {moneyPreciso(rows.reduce((sum, v) => sum + (v.estado === "completada" ? v.total : 0), 0))}</span></div>}
         mobileCard={(v) => (
           <div className="flex items-start gap-3">
             <div className="min-w-0 flex-1">
@@ -132,8 +144,18 @@ export function VentasTabla({
               </div></div>
               {detalle.items.reduce((n, item) => n + item.cantidad * item.precioUnit, 0) > detalle.venta.total + 0.01 && <p className="text-emerald-700">Descuento aplicado: {moneyPreciso(detalle.items.reduce((n, item) => n + item.cantidad * item.precioUnit, 0) - detalle.venta.total)}</p>}
               <div className="flex justify-between border-t border-slate-200 pt-3 text-base font-bold"><span>Total cobrado</span><span>{moneyPreciso(detalle.venta.total)}</span></div>
+              {detalle.devolucion && <div className="rounded-xl bg-rose-50 p-3 text-rose-800"><p className="font-semibold">Devolución completa · turno #{detalle.devolucion.turnoId}</p><p>{detalle.devolucion.motivo}</p><p className="text-xs">{detalle.devolucion.usuario} · {detalle.devolucion.repuestoStock ? "Stock restituido" : "Sin reposición de stock"}{detalle.devolucion.referencia ? ` · Referencia: ${detalle.devolucion.referencia}` : ""}</p></div>}
               {detalle.venta.medioPago === "efectivo" && detalle.venta.efectivoRecibido !== null && <div className="grid grid-cols-2 gap-2 rounded-xl bg-slate-50 p-3"><div><p className="text-xs text-slate-500">Recibido</p><p className="font-semibold">{moneyPreciso(detalle.venta.efectivoRecibido)}</p></div><div><p className="text-xs text-slate-500">Vuelto entregado</p><p className="font-semibold">{moneyPreciso(detalle.venta.vuelto ?? 0)}</p></div></div>}
               {detalle.puedeVerSaldo && <div className="rounded-xl bg-emerald-50 p-3"><p className="text-xs font-semibold text-emerald-800">Efectivo esperado en caja {detalle.venta.cajaTurnoId ? `· turno #${detalle.venta.cajaTurnoId}` : ""}</p>{detalle.venta.efectivoAntes !== null && detalle.venta.efectivoDespues !== null ? <p className="mt-1 text-lg font-bold tabular-nums text-navy">{moneyPreciso(detalle.venta.efectivoAntes)} → {moneyPreciso(detalle.venta.efectivoDespues)}</p> : <p className="mt-1 text-sm text-slate-600">Saldo anterior no registrado para esta venta.</p>}</div>}
+              {puedeDevolver && detalle.venta.sucursalId === sucursalActivaId && detalle.venta.canal === "local" && detalle.venta.estado === "completada" && !detalle.venta.facturada && ["efectivo", "qr", "tarjeta"].includes(detalle.venta.medioPago) && <form className="space-y-2 rounded-xl border border-rose-200 p-3" action={async fd => {
+                setErrorDevolucion(""); setDevolviendo(true);
+                try {
+                  const resultado = await registrarDevolucion(detalle.venta.id, String(fd.get("motivo") ?? ""), String(fd.get("referencia") ?? ""), fd.get("reponerStock") === "on");
+                  if (!resultado.ok) { setErrorDevolucion(resultado.error); return; }
+                  setSeleccionada(null); router.refresh();
+                } catch { setErrorDevolucion("No se pudo registrar la devolución."); }
+                finally { setDevolviendo(false); }
+              }}><p className="font-semibold">Devolución completa</p><p className="text-xs text-slate-500">{detalle.venta.medioPago === "efectivo" ? "El reintegro sale de la caja abierta." : "Confirmá primero el reintegro externo al cliente."}</p><input className="input" name="motivo" required maxLength={500} placeholder="Motivo de la devolución" />{detalle.venta.medioPago !== "efectivo" && <input className="input" name="referencia" required maxLength={100} placeholder="Referencia del reintegro confirmado" />}<label className="flex items-center gap-2"><input type="checkbox" name="reponerStock" defaultChecked />Los productos volvieron al stock disponible</label>{errorDevolucion && <p role="alert" className="text-rose-700">{errorDevolucion}</p>}<button disabled={devolviendo} className="btn-ghost border border-rose-300 text-rose-700">{devolviendo ? "Registrando…" : "Confirmar devolución completa"}</button></form>}
             </>}
           </div>
         </div>

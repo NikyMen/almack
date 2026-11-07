@@ -1,19 +1,20 @@
 "use server";
 import { requireAcceso } from "@/lib/auth";
 import { sucursalOperativaId } from "@/lib/sucursal";
-import { abrirCaja, moverEfectivo, cerrarCaja, extraerEfectivo } from "@/lib/caja";
+import { abrirCaja, moverEfectivo, cerrarCaja, extraerEfectivo, cambiarArqueo } from "@/lib/caja";
 import { revalidatePath } from "next/cache";
-export async function operarCaja(datos: { operacion: "abrir" | "movimiento" | "cerrar" | "extraccion"; saldoRestante?: number; clave?: string; solicitudId?: string; turnoId?: number; monto?: number; tipo?: string; motivo?: string }) {
+export async function operarCaja(datos: { operacion: "abrir" | "movimiento" | "cerrar" | "extraccion" | "iniciar_arqueo" | "cancelar_arqueo"; saldoRestante?: number; clave?: string; solicitudId?: string; turnoId?: number; monto?: number; tipo?: string; motivo?: string; entregadoA?: string }) {
   const usuario = await requireAcceso("caja");
   if (datos.operacion === "extraccion" && usuario.rol !== "admin") return { ok: false, error: "Solo administración puede realizar extracciones." };
   const sucursal = await sucursalOperativaId();
   if (!sucursal) return { ok: false, error: "Creá una sucursal antes de abrir la caja." };
   try {
-    if (datos.operacion === "abrir") await abrirCaja(sucursal, usuario.nombre, datos.monto);
+    if (datos.operacion === "abrir") await abrirCaja(sucursal, usuario.nombre, datos.monto, datos.motivo ?? "");
     else if (datos.operacion === "movimiento") await moverEfectivo(sucursal, datos.turnoId ?? 0, usuario.nombre, datos.tipo ?? "", datos.monto ?? NaN, datos.motivo ?? "");
+    else if (datos.operacion === "iniciar_arqueo" || datos.operacion === "cancelar_arqueo") await cambiarArqueo(sucursal, datos.turnoId ?? 0, datos.operacion === "iniciar_arqueo");
     else if (datos.operacion === "cerrar") await cerrarCaja(sucursal, datos.turnoId ?? 0, usuario.nombre, datos.monto ?? NaN, datos.motivo ?? "");
     else if (datos.operacion === "extraccion") {
-      const resultado = await extraerEfectivo({ sucursalId: sucursal, turnoId: datos.turnoId ?? 0, usuario: usuario.usuario, responsable: `${usuario.nombre} (${usuario.usuario})`, clave: datos.clave ?? "", monto: datos.monto ?? NaN, saldoRestante: datos.saldoRestante ?? NaN, motivo: datos.motivo ?? "", solicitudId: datos.solicitudId ?? "" });
+      const resultado = await extraerEfectivo({ sucursalId: sucursal, turnoId: datos.turnoId ?? 0, usuario: usuario.usuario, responsable: `${usuario.nombre} (${usuario.usuario})`, clave: datos.clave ?? "", monto: datos.monto ?? NaN, saldoRestante: datos.saldoRestante ?? NaN, motivo: datos.motivo ?? "", entregadoA: datos.entregadoA ?? "", solicitudId: datos.solicitudId ?? "" });
       if (!resultado.ok) return resultado;
     }
     else throw new Error("Operación inválida.");

@@ -195,6 +195,7 @@ export const recientes = {
     db
       .select({
         id: ventas.id,
+        sucursalId: ventas.sucursalId,
         total: ventas.total,
         estado: ventas.estado,
         canal: ventas.canal,

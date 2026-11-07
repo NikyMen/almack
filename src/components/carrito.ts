@@ -3,7 +3,7 @@
 // Lógica de carrito compartida entre la Caja (POS) y el alta manual de venta.
 // Normalmente valida stock contra lo que ya está cargado.
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Producto } from "@/db/schema";
 import { cantidadValida, redondearCantidad } from "@/lib/cantidades";
 
@@ -12,6 +12,10 @@ export type Linea = { producto: Producto; cantidad: number };
 export function useCarrito(productos: Producto[], permitirSinStock = false) {
   const [carrito, setCarrito] = useState<Linea[]>([]);
   const [error, setError] = useState("");
+  useEffect(() => {
+    const actualizados = new Map(productos.map(p => [p.id, p]));
+    setCarrito(prev => prev.map(linea => ({ ...linea, producto: actualizados.get(linea.producto.id) ?? linea.producto })));
+  }, [productos]);
 
   const enCarrito = useMemo(() => {
     const m = new Map<number, number>();

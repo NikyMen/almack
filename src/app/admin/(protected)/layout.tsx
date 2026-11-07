@@ -6,6 +6,7 @@ import { BottomNav } from "@/components/bottom-nav";
 import { NavProvider } from "@/components/nav-context";
 import { ConfigModal } from "@/components/config-modal";
 import { FondoApp } from "@/components/fx/fondo-app";
+import { ActualizacionEnVivo } from "@/components/actualizacion-en-vivo";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const usuario = await getUsuarioActual();
@@ -16,6 +17,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <NavProvider>
+      <ActualizacionEnVivo />
       <FondoApp />
       <div className="flex min-h-dvh flex-col xl:flex-row">
         <Sidebar usuario={usuario} sucursales={lista} sucursalActivaId={activaId} />

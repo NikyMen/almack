@@ -50,6 +50,7 @@ const statements = [
     dia_semana INTEGER NOT NULL DEFAULT 6, creada_en INTEGER DEFAULT (strftime('%s','now'))
   )`,
   `CREATE TABLE IF NOT EXISTS cambios_precio (id INTEGER PRIMARY KEY AUTOINCREMENT, venta_id INTEGER NOT NULL REFERENCES ventas(id), sucursal_id INTEGER NOT NULL REFERENCES sucursales(id), usuario TEXT NOT NULL, medio_pago TEXT NOT NULL, tipo TEXT NOT NULL, detalle TEXT NOT NULL, total_anterior REAL NOT NULL, total_nuevo REAL NOT NULL, fecha INTEGER DEFAULT (strftime('%s','now')))`,
+  `CREATE TABLE IF NOT EXISTS venta_devoluciones (id INTEGER PRIMARY KEY AUTOINCREMENT, venta_id INTEGER NOT NULL UNIQUE REFERENCES ventas(id), turno_id INTEGER NOT NULL REFERENCES caja_turnos(id), motivo TEXT NOT NULL, referencia TEXT NOT NULL DEFAULT '', repuesto_stock INTEGER NOT NULL DEFAULT 1, usuario TEXT NOT NULL, fecha INTEGER DEFAULT (strftime('%s','now')))`,
   `CREATE TABLE IF NOT EXISTS stock_respaldos (
     id INTEGER PRIMARY KEY AUTOINCREMENT, motivo TEXT NOT NULL, compra_id INTEGER,
     usuario_nombre TEXT NOT NULL, productos INTEGER NOT NULL, datos TEXT NOT NULL,
@@ -57,6 +58,7 @@ const statements = [
   )`,
   ...cajaDDL,
   ...stockDDL,
+  `CREATE TABLE IF NOT EXISTS app_revision (id INTEGER PRIMARY KEY CHECK(id = 1), version INTEGER NOT NULL DEFAULT 0)`,
   `CREATE TABLE IF NOT EXISTS diferencias_precios (
     id INTEGER PRIMARY KEY AUTOINCREMENT, compra_id INTEGER NOT NULL,
     producto_id INTEGER NOT NULL, sucursal_id INTEGER,
@@ -335,9 +337,13 @@ const statements = [
 // ALTER idempotentes para DBs ya existentes (SQLite no soporta ADD COLUMN IF
 // NOT EXISTS → si la columna ya existe, el execute tira error y lo ignoramos).
 const alters = [
+  `ALTER TABLE caja_turnos ADD COLUMN motivo_apertura TEXT NOT NULL DEFAULT ''`,
+  `ALTER TABLE caja_turnos ADD COLUMN arqueo_en INTEGER`,
   `ALTER TABLE caja_turnos ADD COLUMN fondo_esperado REAL`,
   `ALTER TABLE caja_turnos ADD COLUMN diferencia_apertura REAL`,
   `ALTER TABLE caja_extracciones ADD COLUMN saldo_restante REAL`,
+  `ALTER TABLE caja_extracciones ADD COLUMN entregado_a TEXT NOT NULL DEFAULT ''`,
+  `ALTER TABLE venta_devoluciones ADD COLUMN repuesto_stock INTEGER NOT NULL DEFAULT 1`,
   `ALTER TABLE promociones ADD COLUMN precio_fijo REAL`,
   `ALTER TABLE promociones ADD COLUMN cantidades TEXT NOT NULL DEFAULT '{}'`,
   `ALTER TABLE promociones ADD COLUMN alcance TEXT NOT NULL DEFAULT 'productos'`,
@@ -437,6 +443,16 @@ async function migrate() {
 
   for (const sql of indices) {
     await client.execute(sql);
+  }
+
+  await client.execute("INSERT OR IGNORE INTO app_revision (id, version) VALUES (1, 0)");
+  const { rows: tablas } = await client.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT IN ('app_revision', 'caja_intentos', 'caja_seguridad')");
+  const tablasEnVivo = tablas.map(row => String(row.name));
+  for (const tabla of tablasEnVivo) {
+    const nombreSeguro = tabla.replaceAll('"', '""');
+    for (const operacion of ["INSERT", "UPDATE", "DELETE"]) {
+      await client.execute(`CREATE TRIGGER IF NOT EXISTS "rev_${nombreSeguro}_${operacion.toLowerCase()}" AFTER ${operacion} ON "${nombreSeguro}" BEGIN UPDATE app_revision SET version = version + 1 WHERE id = 1; END`);
+    }
   }
 
   // Estados viejos de compras → nuevo flujo de control

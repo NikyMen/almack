@@ -9,7 +9,7 @@ import { PageHeader } from "@/components/ui";
 import { VentasTabla } from "@/components/ventas-tabla";
 import { moneyPreciso } from "@/lib/format";
 export default async function HistorialVentas() {
-  await requireAcceso("ventas");
+  const usuario = await requireAcceso("ventas");
   const { activa, activaId } = await getContextoSucursal();
   // El alta manual necesita el catálogo y los clientes para armar la venta.
   const [ventas, catalogo, listaClientes] = await Promise.all([
@@ -17,7 +17,7 @@ export default async function HistorialVentas() {
     db.select().from(productos).where(eq(productos.activo, true)).orderBy(asc(productos.nombre)),
     db.select({ id: clientes.id, nombre: clientes.nombre }).from(clientes).where(activaId ? or(eq(clientes.sucursalId, activaId), sql`exists (select 1 from ${ventasTabla} where ${ventasTabla.clienteId} = ${clientes.id} and ${ventasTabla.sucursalId} = ${activaId})`) : undefined).orderBy(asc(clientes.nombre)),
   ]);
-  const total = ventas.reduce((a, v) => a + (v.estado !== "cancelada" ? v.total : 0), 0);
+  const total = ventas.reduce((a, v) => a + (v.estado === "completada" ? v.total : 0), 0);
 
   // El alta manual descuenta del local abierto: se muestra su stock, no el total.
   const enLocal = activaId ? await stockDeSucursal(activaId) : null;
@@ -31,7 +31,7 @@ export default async function HistorialVentas() {
         subtitle={`${ventas.length} operaciones · ${moneyPreciso(total)} facturado${activa ? ` · ${activa.nombre}` : " · Todas las sucursales"}`}
       />
       <Link href="/admin/ventas" className="btn-ghost mb-4">← Opciones de ventas</Link>
-      <VentasTabla ventas={ventas} productos={conStockLocal} clientes={listaClientes} />
+      <VentasTabla ventas={ventas} productos={conStockLocal} clientes={listaClientes} puedeDevolver={usuario.rol === "admin"} sucursalActivaId={activaId} />
     </>
   );
 }

@@ -1,5 +1,6 @@
 export { stockConfiguracion, stockReglas } from "./stock-config-schema";
 export { cajaTurnos, cajaMovimientos, cajaSeguridad, cajaIntentos, cajaExtracciones } from "./caja-schema";
+import { cajaTurnos } from "./caja-schema";
 import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
 
@@ -151,7 +152,7 @@ export const ventas = sqliteTable("ventas", {
   // online sin local asignado).
   sucursalId: integer("sucursal_id").references(() => sucursales.id),
   total: real("total").notNull().default(0),
-  estado: text("estado").notNull().default("completada"), // completada | pendiente | cancelada
+  estado: text("estado").notNull().default("completada"), // completada | pendiente | cancelada | devuelta
   canal: text("canal").notNull().default("local"), // local | online
   medioPago: text("medio_pago").notNull().default("efectivo"), // efectivo | qr | tarjeta | mercadopago
   efectivoRecibido: real("efectivo_recibido"),
@@ -164,10 +165,21 @@ export const ventas = sqliteTable("ventas", {
   fecha: integer("fecha", { mode: "timestamp" }).default(now),
 });
 
+export const ventaDevoluciones = sqliteTable("venta_devoluciones", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  ventaId: integer("venta_id").notNull().unique().references(() => ventas.id),
+  turnoId: integer("turno_id").notNull().references(() => cajaTurnos.id),
+  motivo: text("motivo").notNull(),
+  referencia: text("referencia").notNull().default(""),
+  repuestoStock: integer("repuesto_stock", { mode: "boolean" }).notNull().default(true),
+  usuario: text("usuario").notNull(),
+  fecha: integer("fecha", { mode: "timestamp" }).default(now),
+});
+
 export const promociones = sqliteTable("promociones", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   nombre: text("nombre").notNull(),
-  tipo: text("tipo").notNull(), // envio_gratis | combo | seleccionados | total
+  tipo: text("tipo").notNull(), // envio_gratis | combo | seleccionados | segunda_unidad | total | precio_fijo
   activa: integer("activa", { mode: "boolean" }).notNull().default(false),
   porcentaje: real("porcentaje").notNull().default(0),
   productoIds: text("producto_ids").notNull().default("[]"),

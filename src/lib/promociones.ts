@@ -47,6 +47,18 @@ export function cotizarPromocion(p: Promocion, lineas: Linea[]): CouponQuote | n
   if (p.tipo === "total") descuento = subtotal * porcentaje / 100;
   if (p.tipo === "seleccionados") descuento = base * porcentaje / 100;
   if (p.tipo === "combo" && seleccionadas.reduce((n, l) => n + l.cantidad, 0) >= p.cantidadCombo) descuento = base * porcentaje / 100;
+  if (p.tipo === "segunda_unidad") {
+    const unidades = new Map<number, { cantidad: number; precio: number }>();
+    for (const linea of seleccionadas) {
+      if (!Number.isInteger(linea.cantidad) || linea.cantidad <= 0) continue;
+      const anterior = unidades.get(linea.productoId);
+      unidades.set(linea.productoId, {
+        cantidad: (anterior?.cantidad ?? 0) + linea.cantidad,
+        precio: Math.min(anterior?.precio ?? linea.precio, linea.precio),
+      });
+    }
+    descuento = [...unidades.values()].reduce((total, item) => total + Math.floor(item.cantidad / 2) * item.precio * porcentaje / 100, 0);
+  }
   if (p.tipo === "envio_gratis") return { code: `PROMO-${p.id}`, subtotal, discount: 0, total: subtotal, description: `${p.nombre} · envío gratis`, automatic: true };
   descuento = redondear(Math.min(Math.max(0, subtotal - 0.01), descuento));
   return descuento > 0 ? { code: `PROMO-${p.id}`, subtotal, discount: descuento, total: redondear(subtotal - descuento), description: p.nombre, automatic: true } : null;

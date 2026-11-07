@@ -20,7 +20,7 @@ export function ExtraccionCaja({ turnoId, disponible }: { turnoId: number | null
       {!turnoId ? <p className="mt-4 text-sm text-rose-600">Todavía no hay efectivo registrado. Abrí la caja antes de realizar la primera extracción.</p> : <form className="mt-4 space-y-3 sm:space-y-4" action={fd => iniciar(async () => {
         setError("");
         try {
-          const r = await operarCaja({ operacion: "extraccion", turnoId, monto: Number(fd.get("monto")), saldoRestante: Number(fd.get("saldoRestante")), motivo: String(fd.get("motivo") ?? ""), clave: String(fd.get("clave") ?? ""), solicitudId: solicitud.current });
+          const r = await operarCaja({ operacion: "extraccion", turnoId, monto: Number(fd.get("monto")), saldoRestante: Number(fd.get("saldoRestante")), motivo: String(fd.get("motivo") ?? ""), entregadoA: String(fd.get("entregadoA") ?? ""), clave: String(fd.get("clave") ?? ""), solicitudId: solicitud.current });
           if (!r.ok) { setError(r.error); return; }
           setAbierto(false); router.refresh();
         } catch { setError("No se pudo confirmar la extracción. Reintentá sin cambiar los datos."); }
@@ -28,6 +28,7 @@ export function ExtraccionCaja({ turnoId, disponible }: { turnoId: number | null
         <div><label htmlFor="extraccion-monto" className="label">Monto a retirar</label><input id="extraccion-monto" name="monto" type="number" min="0.01" max={disponible} step="0.01" required className="input" /></div>
         <div><label htmlFor="extraccion-restante" className="label">Monto que queda en caja para la próxima apertura</label><input id="extraccion-restante" name="saldoRestante" type="number" min="0" max={disponible} step="0.01" required className="input" /><p className="mt-1 text-xs text-slate-500">Debe ser el efectivo disponible menos lo retirado.</p></div>
         <div><label htmlFor="extraccion-motivo" className="label">Motivo</label><input id="extraccion-motivo" name="motivo" required maxLength={500} className="input" /></div>
+        <div><label htmlFor="extraccion-receptor" className="label">Quién recibe el efectivo</label><input id="extraccion-receptor" name="entregadoA" required maxLength={100} className="input" /></div>
         <div><label htmlFor="extraccion-clave" className="label">Clave de administrador</label><input id="extraccion-clave" name="clave" type="password" required minLength={4} maxLength={64} autoComplete="off" className="input" /></div>
         {error && <p role="alert" className="text-sm text-rose-600">{error}</p>}
         <button disabled={pendiente} className="btn-primary w-full justify-center">{pendiente ? "Confirmando…" : "Confirmar extracción"}</button>

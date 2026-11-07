@@ -8,6 +8,8 @@ export const cajaTurnos = sqliteTable("caja_turnos", {
   fondoInicial: real("fondo_inicial").notNull(),
   fondoEsperado: real("fondo_esperado"),
   diferenciaApertura: real("diferencia_apertura"),
+  motivoApertura: text("motivo_apertura").notNull().default(""),
+  arqueoEn: integer("arqueo_en", { mode: "timestamp" }),
   estado: text("estado").notNull().default("abierta"),
   abiertoEn: integer("abierto_en", { mode: "timestamp" }).default(sql`(strftime('%s','now'))`),
   cerradoEn: integer("cerrado_en", { mode: "timestamp" }),
@@ -46,6 +48,7 @@ export const cajaExtracciones = sqliteTable("caja_extracciones", {
   monto: real("monto").notNull(),
   saldoRestante: real("saldo_restante"),
   motivo: text("motivo").notNull(),
+  entregadoA: text("entregado_a").notNull().default(""),
   responsable: text("responsable").notNull(),
   fecha: integer("fecha", { mode: "timestamp" }).default(sql`(strftime('%s','now'))`),
 });

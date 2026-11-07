@@ -1,7 +1,7 @@
 import { verificarClaveAdministrador } from "./clave-admin";
-import { db, cajaTurnos, cajaMovimientos, ventas, ventaItems, productos, stockSucursal, cajaSeguridad, cajaIntentos, cajaExtracciones, promociones, cambiosPrecio } from "@/db";
+import { db, cajaTurnos, cajaMovimientos, ventas, ventaItems, ventaDevoluciones, productos, stockSucursal, cajaSeguridad, cajaIntentos, cajaExtracciones, promociones, cambiosPrecio } from "@/db";
 import { cotizarPromocion } from "@/lib/promociones";
-import { and, eq, sql, desc } from "drizzle-orm";
+import { and, eq, or, sql, desc } from "drizzle-orm";
 import { cantidadValida, redondearCantidad } from "@/lib/cantidades";
 export type CajaTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 // El cliente SQLite embebido comparte conexión; serializamos sus operaciones
@@ -22,19 +22,22 @@ export async function cajaAbierta(sucursalId: number, executor: CajaTx | typeof 
   return turno ?? null;
 }
 export async function resumenCaja(turno: typeof cajaTurnos.$inferSelect, executor: CajaTx | typeof db = db) {
-  const cobros = await executor.select({ medio: ventas.medioPago, total: sql<number>`coalesce(sum(${ventas.total}),0)`, cantidad: sql<number>`count(*)` }).from(ventas).where(and(eq(ventas.cajaTurnoId, turno.id), eq(ventas.estado, "completada"))).groupBy(ventas.medioPago);
+  const cobros = await executor.select({ medio: ventas.medioPago, total: sql<number>`coalesce(sum(${ventas.total}),0)`, cantidad: sql<number>`count(*)` }).from(ventas).where(and(eq(ventas.cajaTurnoId, turno.id), or(eq(ventas.estado, "completada"), eq(ventas.estado, "devuelta")))).groupBy(ventas.medioPago);
   const movimientos = await executor.select().from(cajaMovimientos).where(eq(cajaMovimientos.turnoId, turno.id)).orderBy(desc(cajaMovimientos.id));
   const ingresos = redondear(movimientos.filter(m => m.tipo === "ingreso").reduce((a,m) => a + m.monto, 0));
   const retiros = redondear(movimientos.filter(m => m.tipo === "retiro").reduce((a,m) => a + m.monto, 0));
   const efectivo = redondear(cobros.find(c => c.medio === "efectivo")?.total ?? 0);
   return { cobros, movimientos, ingresos, retiros, efectivo, esperado: redondear(turno.fondoInicial + efectivo + ingresos - retiros) };
 }
-export async function abrirCaja(sucursalId: number, responsable: string, fondoInicial?: number) {
+export async function abrirCaja(sucursalId: number, responsable: string, fondoInicial?: number, motivoApertura = "") {
   return transaccionCaja(async tx => {
     if (await cajaAbierta(sucursalId, tx)) throw new Error("Esta sucursal ya tiene una caja abierta.");
     const anterior = await saldoUltimoCierre(sucursalId, tx);
     validarMonto(fondoInicial ?? NaN);
-    const [turno] = await tx.insert(cajaTurnos).values({ sucursalId, responsable, fondoInicial: fondoInicial!, fondoEsperado: anterior?.disponible ?? null, diferenciaApertura: anterior ? redondear(fondoInicial! - anterior.disponible) : null }).returning();
+    const diferenciaApertura = anterior ? redondear(fondoInicial! - anterior.disponible) : null;
+    if (diferenciaApertura && !motivoApertura.trim()) throw new Error("Explicá la diferencia con el saldo del cierre anterior.");
+    if (motivoApertura.length > 500) throw new Error("El motivo no puede superar 500 caracteres.");
+    const [turno] = await tx.insert(cajaTurnos).values({ sucursalId, responsable, fondoInicial: fondoInicial!, fondoEsperado: anterior?.disponible ?? null, diferenciaApertura, motivoApertura: motivoApertura.trim() }).returning();
     return turno;
   });
 }
@@ -45,17 +48,55 @@ export async function moverEfectivo(sucursalId: number, turnoId: number, respons
   await transaccionCaja(async tx => {
     const turno = await cajaAbierta(sucursalId, tx);
     if (!turno || turno.id !== turnoId) throw new Error("La caja cambió o ya está cerrada. Actualizá la pantalla.");
+    if (turno.arqueoEn) throw new Error("El arqueo está en curso. Cancelalo antes de registrar movimientos.");
 await tx.insert(cajaMovimientos).values({ turnoId, responsable, tipo, monto, motivo: motivo.trim() });
   });
 }
+export async function cambiarArqueo(sucursalId: number, turnoId: number, activo: boolean) {
+  return transaccionCaja(async tx => {
+    const turno = await cajaAbierta(sucursalId, tx);
+    if (!turno || turno.id !== turnoId) throw new Error("La caja cambió o ya está cerrada. Actualizá la pantalla.");
+    await tx.update(cajaTurnos).set({ arqueoEn: activo ? new Date() : null }).where(eq(cajaTurnos.id, turnoId));
+  });
+}
+
+export async function devolverVenta(sucursalId: number, ventaId: number, usuario: string, motivo: string, referencia = "", reponerStock = true) {
+  if (!Number.isSafeInteger(ventaId) || ventaId <= 0) throw new Error("Venta inválida.");
+  if (!motivo.trim() || motivo.length > 500) throw new Error("Indicá un motivo de hasta 500 caracteres.");
+  if (referencia.length > 100) throw new Error("La referencia no puede superar 100 caracteres.");
+  return transaccionCaja(async tx => {
+    const turno = await cajaAbierta(sucursalId, tx);
+    if (!turno || turno.arqueoEn) throw new Error("Abrí la caja y terminá el arqueo antes de registrar una devolución.");
+    const [venta] = await tx.select().from(ventas).where(eq(ventas.id, ventaId));
+    if (!venta || venta.sucursalId !== sucursalId || venta.canal !== "local" || venta.estado !== "completada") throw new Error("La venta no admite una devolución local completa.");
+    if (venta.facturada) throw new Error("La venta está facturada. Resolvé primero la nota de crédito correspondiente.");
+    if (!["efectivo", "qr", "tarjeta"].includes(venta.medioPago)) throw new Error("Este medio de pago requiere un proceso de devolución externo.");
+    if (venta.medioPago !== "efectivo" && !referencia.trim()) throw new Error("Registrá la referencia del reintegro confirmado al cliente.");
+    if (venta.medioPago === "efectivo" && (await resumenCaja(turno, tx)).esperado < venta.total) throw new Error("No hay suficiente efectivo registrado para devolver esta venta.");
+    const items = await tx.select().from(ventaItems).where(eq(ventaItems.ventaId, ventaId));
+    if (!items.length) throw new Error("La venta no tiene productos para restituir.");
+    await tx.insert(ventaDevoluciones).values({ ventaId, turnoId: turno.id, motivo: motivo.trim(), referencia: referencia.trim(), repuestoStock: reponerStock, usuario });
+    if (reponerStock) for (const item of items) {
+      await tx.insert(stockSucursal).values({ productoId: item.productoId, sucursalId, cantidad: item.cantidad })
+        .onConflictDoUpdate({ target: [stockSucursal.productoId, stockSucursal.sucursalId], set: { cantidad: sql`round(${stockSucursal.cantidad} + ${item.cantidad}, 3)` } });
+      await tx.update(productos).set({ stock: sql`(select coalesce(sum(cantidad),0) from stock_sucursal where producto_id = ${item.productoId})` }).where(eq(productos.id, item.productoId));
+    }
+    if (venta.medioPago === "efectivo") await tx.insert(cajaMovimientos).values({ turnoId: turno.id, tipo: "retiro", monto: venta.total, motivo: `Devolución venta #${ventaId}: ${motivo.trim()}`, responsable: usuario });
+    await tx.update(ventas).set({ estado: "devuelta" }).where(eq(ventas.id, ventaId));
+    return { turnoId: turno.id, monto: venta.total };
+  });
+}
+
 export async function cerrarCaja(sucursalId: number, turnoId: number, responsable: string, contado: number, observaciones: string) {
   validarMonto(contado);
   if (observaciones.length > 2000) throw new Error("Las observaciones no pueden superar 2000 caracteres.");
   return transaccionCaja(async tx => {
     const turno = await cajaAbierta(sucursalId, tx);
     if (!turno || turno.id !== turnoId) throw new Error("La caja cambió o ya está cerrada. Actualizá la pantalla.");
+    if (!turno.arqueoEn) throw new Error("Iniciá el arqueo antes de cerrar la caja.");
     const resumen = await resumenCaja(turno, tx);
     const diferencia = redondear(contado - resumen.esperado);
+    if (diferencia && !observaciones.trim()) throw new Error("Explicá la diferencia de efectivo antes de cerrar.");
     await tx.update(cajaTurnos).set({ estado: "cerrada", cerradoPor: responsable, cerradoEn: new Date(), efectivoContado: contado, efectivoEsperado: resumen.esperado, diferencia, resumen: JSON.stringify(resumen.cobros), observaciones: observaciones.trim() }).where(eq(cajaTurnos.id, turnoId));
     return { esperado: resumen.esperado, contado, diferencia };
   });
@@ -73,6 +114,7 @@ export async function venderEnCaja(sucursalId: number, cajero: string, items: { 
   return transaccionCaja(async tx => {
     const turno = await cajaAbierta(sucursalId, tx);
     if (!turno) throw new Error("Abrí la caja de esta sucursal antes de cobrar.");
+    if (turno.arqueoEn) throw new Error("La caja está en arqueo. No se pueden registrar ventas.");
     const lineas: { productoId: number; cantidad: number; precioUnit: number; nombre: string; precioAnterior: number }[] = [];
     let total = 0;
     for (const [productoId, cantidad] of cantidades) {
@@ -156,10 +198,11 @@ export async function saldoUltimoCierre(sucursalId: number, executor: CajaTx | t
   const ultima = extracciones.at(-1);
   return { turnoId: turno.id, contado, extraido, disponible: ultima?.saldoRestante ?? redondear(contado - extraido) };
 }
-export async function extraerEfectivo(datos: { sucursalId: number; turnoId: number; usuario: string; responsable: string; clave: string; monto: number; saldoRestante: number; motivo: string; solicitudId: string }) {
+export async function extraerEfectivo(datos: { sucursalId: number; turnoId: number; usuario: string; responsable: string; clave: string; monto: number; saldoRestante: number; motivo: string; entregadoA: string; solicitudId: string }) {
   validarMonto(datos.monto, true);
   validarMonto(datos.saldoRestante);
   if (!datos.motivo?.trim() || datos.motivo.length > 500) throw new Error("Indicá un motivo de hasta 500 caracteres.");
+  if (!datos.entregadoA?.trim() || datos.entregadoA.length > 100) throw new Error("Indicá quién recibe el efectivo (hasta 100 caracteres).");
   if (!/^[a-f0-9-]{36}$/i.test(datos.solicitudId)) throw new Error("Solicitud inválida. Actualizá la pantalla.");
   return transaccionCaja(async tx => {
     const [config] = await tx.select().from(cajaSeguridad).where(eq(cajaSeguridad.id, 1));
@@ -175,17 +218,18 @@ export async function extraerEfectivo(datos: { sucursalId: number; turnoId: numb
     await tx.delete(cajaIntentos).where(eq(cajaIntentos.usuario, datos.usuario));
     const [repetida] = await tx.select().from(cajaExtracciones).where(eq(cajaExtracciones.solicitudId, datos.solicitudId));
     if (repetida) {
-      if (repetida.sucursalId !== datos.sucursalId || repetida.turnoId !== datos.turnoId || repetida.responsable !== datos.responsable || repetida.monto !== datos.monto || repetida.saldoRestante !== datos.saldoRestante || repetida.motivo !== datos.motivo.trim()) throw new Error("La solicitud ya fue usada con otros datos.");
+      if (repetida.sucursalId !== datos.sucursalId || repetida.turnoId !== datos.turnoId || repetida.responsable !== datos.responsable || repetida.monto !== datos.monto || repetida.saldoRestante !== datos.saldoRestante || repetida.motivo !== datos.motivo.trim() || repetida.entregadoA !== datos.entregadoA.trim()) throw new Error("La solicitud ya fue usada con otros datos.");
       return { ok: true, error: "" };
     }
     const abierta = await cajaAbierta(datos.sucursalId, tx);
+    if (abierta?.arqueoEn) throw new Error("El arqueo está en curso. Cancelalo antes de extraer efectivo.");
     const anterior = abierta ? null : await saldoUltimoCierre(datos.sucursalId, tx);
     if ((abierta?.id ?? anterior?.turnoId) !== datos.turnoId) throw new Error("La caja cambió. Actualizá la pantalla antes de extraer.");
     const disponible = abierta ? (await resumenCaja(abierta, tx)).esperado : anterior?.disponible ?? 0;
     if (datos.monto > disponible) throw new Error("La extracción supera el efectivo disponible.");
     if (redondear(disponible - datos.monto) !== datos.saldoRestante) throw new Error("El saldo que queda en caja debe coincidir con el efectivo disponible menos la extracción. Actualizá la pantalla si hubo otros movimientos.");
     const estadoCaja = abierta ? "abierta" : "cerrada";
-    await tx.insert(cajaExtracciones).values({ solicitudId: datos.solicitudId, sucursalId: datos.sucursalId, turnoId: datos.turnoId, estadoCaja, monto: datos.monto, saldoRestante: datos.saldoRestante, motivo: datos.motivo.trim(), responsable: datos.responsable });
+    await tx.insert(cajaExtracciones).values({ solicitudId: datos.solicitudId, sucursalId: datos.sucursalId, turnoId: datos.turnoId, estadoCaja, monto: datos.monto, saldoRestante: datos.saldoRestante, motivo: datos.motivo.trim(), entregadoA: datos.entregadoA.trim(), responsable: datos.responsable });
     if (abierta) await tx.insert(cajaMovimientos).values({ turnoId: abierta.id, tipo: "retiro", monto: datos.monto, motivo: `Extracción: ${datos.motivo.trim()}`, responsable: datos.responsable });
     return { ok: true, error: "" };
   });

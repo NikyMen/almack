@@ -10,10 +10,10 @@ export async function guardarPromocion(datos: Datos) {
   await requireAdmin();
   const nombre = datos.nombre.trim();
   if (!nombre || nombre.length > 100) return { ok: false, error: "Indicá un nombre de hasta 100 caracteres." };
-  if (!["envio_gratis", "combo", "seleccionados", "total"].includes(datos.tipo)) return { ok: false, error: "Tipo inválido." };
+  if (!["envio_gratis", "combo", "seleccionados", "segunda_unidad", "total"].includes(datos.tipo)) return { ok: false, error: "Tipo inválido." };
   if (!["unica", "dias", "semanal", "continua"].includes(datos.modo)) return { ok: false, error: "Frecuencia inválida." };
   if (datos.tipo !== "envio_gratis" && (!Number.isFinite(datos.porcentaje) || datos.porcentaje <= 0 || datos.porcentaje > 99)) return { ok: false, error: "El descuento debe ser mayor que 0% y hasta 99%." };
-  if (["combo", "seleccionados"].includes(datos.tipo) && !datos.productoIds.length) return { ok: false, error: "Seleccioná productos para la promoción." };
+  if (["combo", "seleccionados", "segunda_unidad"].includes(datos.tipo) && !datos.productoIds.length) return { ok: false, error: "Seleccioná productos para la promoción." };
   if (datos.tipo === "combo" && (!Number.isInteger(datos.cantidadCombo) || datos.cantidadCombo < 2)) return { ok: false, error: "El combo requiere al menos 2 unidades." };
   if (datos.modo === "unica" && !/^\d{4}-\d{2}-\d{2}$/.test(datos.fechaUnica)) return { ok: false, error: "Elegí una fecha válida." };
   if (["dias", "semanal"].includes(datos.modo) && !/^\d{4}-(0[1-9]|1[0-2])$/.test(datos.mes)) return { ok: false, error: "Elegí un mes válido." };

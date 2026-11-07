@@ -171,11 +171,21 @@ Si Gemini falla por conexión o devuelve 500/502/503/504, la imagen se transcrib
 ## Apertura, cierre y arqueo de caja
 
 En **Caja**, cada sucursal tiene como máximo un turno abierto. En cada apertura se
-cuenta e ingresa el efectivo real sin mostrar el saldo anterior al empleado. En el
-cierre se vuelve a contar sin mostrar el esperado ni la diferencia. Las
-observaciones son opcionales. El servidor registra el saldo esperado y la
-diferencia de ambos conteos; solo los administradores pueden consultar el historial
-completo y filtrarlo por diferencias de apertura o cierre.
+cuenta e ingresa el efectivo real sin mostrar el saldo anterior. Si hay una
+diferencia, el motivo es obligatorio. Al iniciar el arqueo se bloquean ventas y
+movimientos hasta cerrar o cancelar el conteo. Si el cierre tiene una diferencia,
+también requiere una explicación. El historial completo está disponible para
+administradores desde Caja y desde Ventas.
+
+Las extracciones requieren clave de administrador y registran quién recibe el
+efectivo. Las devoluciones completas de ventas locales no facturadas se registran
+desde Ventas históricas; un reintegro en efectivo se descuenta del turno abierto.
+Para QR y tarjeta se registra la referencia del reintegro externo ya confirmado.
+La reposición del stock se decide al registrar la devolución.
+
+El panel escucha cambios de la base compartida mediante eventos y actualiza las
+vistas abiertas automáticamente. Para activar el emisor y las columnas nuevas en
+una instalación existente, ejecutar `pnpm db:push` antes de iniciar esta versión.
 
 Efectivo esperado = fondo inicial + ventas en efectivo + ingresos − retiros.
 QR y tarjeta se muestran separados. Las ventas previas y el checkout público no
