@@ -44,12 +44,15 @@ export function CajaTurnoPanel({ turno, resumen, cambios, sucursal, anterior, ex
         {turno && resumen && <div className="flex flex-wrap items-center gap-1.5">{!turno.arqueoEn && <button disabled={pendiente} className="btn-ghost border border-white/20 bg-white px-2 py-1 text-xs text-navy" onClick={() => {setModo("movimiento"); setError("");}}>Registrar ingreso</button>}<button disabled={pendiente || !!turno.arqueoEn} className="btn-primary px-2 py-1 text-xs" onClick={() => arqueo(true)}>{turno.arqueoEn ? "Arqueo en curso" : "Contar y cerrar"}</button>{esAdmin && !turno.arqueoEn && <ExtraccionCaja turnoId={turno.id} disponible={resumen.esperado} />}</div>}
       </div>
       <div className="p-2 sm:p-3">
-        {!turno && esAdmin && anterior && <p className="mb-4 text-sm text-slate-500">Contá el efectivo antes de abrir. Si hay una diferencia respecto del cierre #{anterior.turnoId}, explicala. Para retirar dinero después del cierre, usá Extracción y registrá quién lo recibe.</p>}
-        {!turno ? <form action={fd => enviar(fd, "abrir")} className="flex flex-wrap items-end gap-4">
-          <div className="min-w-48 flex-1"><label className="label" htmlFor="fondo">Efectivo contado para abrir</label><input id="fondo" name="monto" type="number" min="0" step="0.01" required className="input" placeholder="0,00" /><p className="mt-2 text-sm text-slate-500">Contá el dinero del cajón y cargá el importe que encontraste.</p></div>
-          <div className="min-w-48 flex-1"><label className="label" htmlFor="motivo-apertura">Motivo si hay una diferencia</label><input id="motivo-apertura" name="motivo" maxLength={500} className="input" placeholder="Explicá cualquier diferencia" /></div>
-          <button disabled={pendiente} className="btn-primary">{pendiente ? "Abriendo…" : "Abrir caja"}</button>
-        </form> : resumen && <>
+        {!turno ? <div className="space-y-4">
+          <p className="text-sm text-slate-500">Contá el efectivo del cajón antes de abrir.{anterior && ` Si difiere del cierre #${anterior.turnoId}, indicá el motivo.`}</p>
+          <form action={fd => enviar(fd, "abrir")} className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] lg:items-end">
+            <div className="min-w-0"><label className="label" htmlFor="fondo">Efectivo contado para abrir</label><input id="fondo" name="monto" type="number" min="0" step="0.01" required className="input h-11" placeholder="0,00" /></div>
+            <div className="min-w-0"><label className="label" htmlFor="motivo-apertura">Motivo si hay una diferencia</label><input id="motivo-apertura" name="motivo" maxLength={500} className="input h-11" placeholder="Explicá cualquier diferencia" /></div>
+            <button disabled={pendiente} className="btn-primary w-full sm:col-span-2 lg:col-span-1 lg:min-w-32">{pendiente ? "Abriendo…" : "Abrir caja"}</button>
+          </form>
+          {esAdmin && anterior && anterior.disponible > 0 && <div className="flex flex-wrap items-center gap-3 border-t border-slate-100 pt-3"><p className="text-sm text-slate-500">¿Necesitás retirar efectivo del cierre anterior?</p><ExtraccionCaja turnoId={anterior.turnoId} disponible={anterior.disponible} /></div>}
+        </div> : resumen && <>
           {esAdmin && !turno.arqueoEn && <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
             {[ ["Fondo inicial", turno.fondoInicial], ["Ventas en efectivo", resumen.efectivo], ["Ingresos / retiros", resumen.ingresos - resumen.retiros] ].map(([label, value]) => <div key={label} className="rounded-xl bg-slate-50 px-3 py-2"><p className="text-xs text-slate-500">{label}</p><p className="text-base font-bold tabular-nums text-navy">{money(Number(value))}</p></div>)}
             {puedeVerVentas ? <Link href="/admin/ventas/historial" target="_blank" rel="noopener noreferrer" aria-label={`Efectivo esperado ${money(resumen.esperado)}. Abrir ventas históricas en otra ventana`} className="group rounded-xl bg-slate-50 px-3 py-2 transition hover:bg-lime/15 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lime"><p className="text-xs text-slate-500 group-hover:text-navy">Efectivo esperado <span aria-hidden="true">↗</span></p><p className="text-base font-bold tabular-nums text-navy">{money(resumen.esperado)}</p></Link> : <div className="rounded-xl bg-slate-50 px-3 py-2"><p className="text-xs text-slate-500">Efectivo esperado</p><p className="text-base font-bold tabular-nums text-navy">{money(resumen.esperado)}</p></div>}
@@ -65,7 +68,6 @@ export function CajaTurnoPanel({ turno, resumen, cambios, sucursal, anterior, ex
           </form>}
           {esAdmin && resumen.movimientos.length > 0 && <details className="mt-5"><summary className="cursor-pointer text-sm font-medium">Movimientos del turno ({resumen.movimientos.length})</summary><div className="mt-2 divide-y divide-slate-100">{resumen.movimientos.map(m => <div key={m.id} className="flex justify-between gap-3 py-3 text-sm"><div><p>{m.motivo}</p><p className="text-xs text-slate-500">{m.responsable} · {fecha(m.fecha)}</p></div><span className="shrink-0 font-semibold">{m.tipo === "retiro" ? "−" : "+"}{money(m.monto)}</span></div>)}</div></details>}
         </>}
-        {!turno && esAdmin && <div className="mt-3"><ExtraccionCaja turnoId={anterior?.turnoId ?? null} disponible={anterior?.disponible ?? 0} /></div>}
         {error && <p role="alert" className="mt-4 rounded-lg bg-rose-50 p-3 text-sm text-rose-600">{error}</p>}
       </div>
     </section>
