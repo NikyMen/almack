@@ -3,7 +3,7 @@ import { Overlay } from "@/components/overlay";
 
 import { ConfigProductoStock, MultiplicadorStock } from "@/components/stock-configuracion";
 import { useEffect, useId, useRef, useState, useTransition, type ReactNode } from "react";
-import { Sparkles, Loader2, Plus, Pencil, Trash2, Eye, EyeOff, ScanLine, Store, Settings2, Tag, Ellipsis, CopyCheck, Camera } from "lucide-react";
+import { Sparkles, Loader2, Plus, Pencil, Trash2, Eye, EyeOff, ScanLine, Store, Settings2, Tag, Ellipsis, CopyCheck, Camera, FileSpreadsheet } from "lucide-react";
 import type { Producto, Sucursal } from "@/db/schema";
 import { vaciarStock, cargarProductosDuplicados, buscarCodigoStock } from "@/app/admin/(protected)/stock/actions";
 import { money } from "@/lib/format";
@@ -37,10 +37,10 @@ type Contexto = {
 export function StockManager({
   items,
   totalProductos,
-  totalResultados, paginaActual, paginas,
+  totalResultados, paginaActual, paginas, exportarHref,
   sucursales,
   sucursalActivaId, administrador, multiplicadorGeneral,
-}: { items: ProductoConStock[]; totalProductos: number; totalResultados: number; paginaActual: number; paginas: number } & Contexto) {
+}: { items: ProductoConStock[]; totalProductos: number; totalResultados: number; paginaActual: number; paginas: number; exportarHref: string } & Contexto) {
   const [configurando, setConfigurando] = useState<ProductoConStock | null>(null);
   const [open, setOpen] = useState(false);
   const [vaciando, setVaciando] = useState(false);
@@ -174,6 +174,7 @@ export function StockManager({
       <div className="mb-3 flex flex-wrap items-center justify-end gap-2">
         {administrador && <MultiplicadorStock valor={multiplicadorGeneral} />}
         <p className="mr-auto text-sm text-slate-500">{totalResultados} resultado(s) · página {paginaActual} de {paginas}</p>
+        <a className="btn-ghost" href={exportarHref}><FileSpreadsheet className="h-4 w-4" /> Exportar</a>
         {administrador && <button className="btn-ghost" disabled={cargandoDuplicados} onClick={() => abrirDuplicados()}><CopyCheck className="h-4 w-4" /> {cargandoDuplicados ? "Cargando duplicados…" : "Control de duplicados"}</button>}
         <button type="button" className="btn-ghost border border-slate-200 px-3 transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700 lg:hidden" disabled={buscandoCodigo} onClick={() => setEscaneandoStock(true)} aria-label="Escanear código para consultar stock" title="Escanear código para consultar stock"><Camera className="h-4 w-4" /> <span className="sm:hidden">Escanear</span></button>
         {administrador && <button className="btn-ghost text-rose-600" disabled={!totalProductos} onClick={() => setVaciando(true)}><Trash2 className="h-4 w-4" /> Vaciar stock</button>}

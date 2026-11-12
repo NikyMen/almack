@@ -44,8 +44,8 @@ export async function listarLineasTransito(destinoId: number | null, pagina: num
   return { filas, total, unidades, traslados, paginas, paginaActual };
 }
 
-export async function listarStock({ pagina, busqueda, categoria, orden, sucursalId, administrador, soloAlertas = false, contarAlertas = false }: {
-  pagina: number; busqueda: string; categoria: string; orden: OrdenStock; sucursalId: number | null; administrador: boolean; soloAlertas?: boolean; contarAlertas?: boolean;
+export async function listarStock({ pagina, busqueda, categoria, orden, sucursalId, administrador, soloAlertas = false, contarAlertas = false, sinPaginacion = false }: {
+  pagina: number; busqueda: string; categoria: string; orden: OrdenStock; sucursalId: number | null; administrador: boolean; soloAlertas?: boolean; contarAlertas?: boolean; sinPaginacion?: boolean;
 }) {
   const stockLocal = sucursalId
     ? sql<number>`coalesce((select sum(${stockSucursal.cantidad}) from ${stockSucursal} where ${stockSucursal.productoId} = ${productos.id} and ${stockSucursal.sucursalId} = ${sucursalId}), 0)`
@@ -84,7 +84,7 @@ export async function listarStock({ pagina, busqueda, categoria, orden, sucursal
     transito_desc: [desc(transitoLocal), desc(productos.id)],
   }[orden];
   const items = await db.select().from(productos).where(filtro)
-    .orderBy(...ordenSql).limit(TAMANO_PAGINA_STOCK).offset((paginaActual - 1) * TAMANO_PAGINA_STOCK);
+    .orderBy(...ordenSql).limit(sinPaginacion ? total : TAMANO_PAGINA_STOCK).offset(sinPaginacion ? 0 : (paginaActual - 1) * TAMANO_PAGINA_STOCK);
   const ids = items.map(p => p.id);
   const [desglose, transito, reglas, [config], categorias] = await Promise.all([
     ids.length ? desgloseStock(ids) : new Map(),

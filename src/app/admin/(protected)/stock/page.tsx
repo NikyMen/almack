@@ -59,6 +59,12 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
   }));
 
   const filas = listado?.filas ?? [];
+  const exportarParams = new URLSearchParams();
+  if (params.sucursal) exportarParams.set("sucursal", params.sucursal);
+  if (busqueda) exportarParams.set("buscar", busqueda);
+  if (categoria) exportarParams.set("categoria", categoria);
+  if (orden !== "recientes") exportarParams.set("orden", orden);
+  const exportarHref = `/admin/stock/exportar${exportarParams.size ? `?${exportarParams}` : ""}`;
   const descripcion = modoTransito
     ? destino ? `Mercadería pendiente para ${destino.nombre}.` : "Mercadería pendiente de todas las sucursales."
     : activa ? `Inventario de ${activa.nombre}.` : "Inventario consolidado de todas las sucursales.";
@@ -90,7 +96,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
       {modoTransito
         ? <StockTransitoView lineas={lineasEnTransito} sucursales={lista} destinoId={destinoSeguro} elegirDestino={administrador} unidades={transito?.unidades ?? 0} traslados={transito?.traslados ?? 0} total={transito?.total ?? 0} />
         : modoAlertas ? <AlertasStock items={filas} administrador={administrador} global={listado?.multiplicador ?? null} totalAlertas={listado?.totalAlertas ?? 0} total={listado?.total ?? 0} busqueda={busqueda} mostrarTodas={mostrarTodasAlertas} sucursal={params.sucursal} />
-        : <StockManager items={filas} totalProductos={listado?.totalProductos ?? 0} totalResultados={listado?.total ?? 0} paginaActual={listado?.paginaActual ?? 1} paginas={listado?.paginas ?? 1} sucursales={lista} sucursalActivaId={activaId} administrador={administrador} multiplicadorGeneral={listado?.multiplicador ?? null} />}
+        : <StockManager items={filas} totalProductos={listado?.totalProductos ?? 0} totalResultados={listado?.total ?? 0} paginaActual={listado?.paginaActual ?? 1} paginas={listado?.paginas ?? 1} exportarHref={exportarHref} sucursales={lista} sucursalActivaId={activaId} administrador={administrador} multiplicadorGeneral={listado?.multiplicador ?? null} />}
       {listado && listado.paginas > 1 && <nav className="mt-5 flex items-center justify-center gap-3" aria-label="Páginas de stock">
         {listado.paginaActual > 1 && <Link className="btn-ghost" href={{ pathname: "/admin/stock", query: { vista: modoAlertas ? "alertas" : "inventario", ...(params.sucursal ? { sucursal: params.sucursal } : {}), ...(busqueda ? { buscar: busqueda } : {}), ...(!modoAlertas && categoria ? { categoria } : {}), ...(!modoAlertas ? { orden } : {}), ...(mostrarTodasAlertas ? { todas: "1" } : {}), pagina: listado.paginaActual - 1 } }}>← Anterior</Link>}
         <span className="text-sm text-slate-600">{listado.paginaActual} / {listado.paginas}</span>
