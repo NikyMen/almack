@@ -74,7 +74,7 @@ export function esSuperAdmin(u: UsuarioActual | null): boolean {
 export function tieneAcceso(u: UsuarioActual | null, modulo: ModuloKey): boolean {
   if (!u) return false;
   if (u.rol === "admin") return true;
-  if (modulo === "whatsapp" || modulo === "equipo") return false;
+  if (modulo === "whatsapp" || modulo === "equipo" || modulo === "ia") return false;
   if (modulo === "stock" && u.permisos.includes("movimientos")) return true;
   return u.permisos.includes(modulo);
 }
@@ -83,7 +83,7 @@ export function tieneAcceso(u: UsuarioActual | null, modulo: ModuloKey): boolean
 // solo módulos visibles: no tiene sentido aterrizar en uno oculto del menú.
 export function primerModuloPermitido(u: UsuarioActual): string {
   if (u.rol === "admin") return "/";
-  const m = MODULOS_VISIBLES.find((x) => u.permisos.includes(x.key));
+  const m = MODULOS_VISIBLES.find((x) => tieneAcceso(u, x.key));
   return m?.href ?? "/admin/login";
 }
 

@@ -192,7 +192,7 @@ export function EquipoManager({ items }: { items: UsuarioRow[] }) {
               </p>
             ) : (
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                {MODULOS_VISIBLES.filter((m) => m.key !== "equipo").map((m) => (
+                {MODULOS_VISIBLES.filter((m) => m.key !== "equipo" && m.key !== "ia").map((m) => (
                   <label
                     key={m.key}
                     className="flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm hover:bg-slate-50"

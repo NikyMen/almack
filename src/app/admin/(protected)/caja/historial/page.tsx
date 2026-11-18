@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { and, desc, eq, lt, ne, or, type SQL } from "drizzle-orm";
-import { db, cajaTurnos } from "@/db";
+import { and, desc, eq, inArray, lt, ne, or, type SQL } from "drizzle-orm";
+import { db, cajaTurnos, cajaTraspasos, cajaRevisiones, cajaSaldoMovimientos } from "@/db";
 import { requireAdmin } from "@/lib/auth";
 import { getSucursales } from "@/lib/sucursal";
 import { money } from "@/lib/format";
@@ -25,6 +25,12 @@ export default async function HistorialCaja({ searchParams }: { searchParams: Pr
   const registros = await db.select().from(cajaTurnos).where(filtros.length ? and(...filtros) : undefined).orderBy(desc(cajaTurnos.id)).limit(31);
   const mas = registros.length > 30;
   const visibles = registros.slice(0, 30);
+  const ids = visibles.map(t => t.id);
+  const [traspasos, revisiones, ingresosCerrada] = ids.length ? await Promise.all([
+    db.select().from(cajaTraspasos).where(inArray(cajaTraspasos.turnoId, ids)).orderBy(desc(cajaTraspasos.id)),
+    db.select().from(cajaRevisiones).where(inArray(cajaRevisiones.turnoId, ids)).orderBy(desc(cajaRevisiones.id)),
+    db.select().from(cajaSaldoMovimientos).where(inArray(cajaSaldoMovimientos.turnoId, ids)).orderBy(desc(cajaSaldoMovimientos.id)),
+  ]) : [[], [], []];
   const siguiente = new URLSearchParams();
   if (sucursal) siguiente.set("sucursal", String(sucursal.id));
   if (diferencia !== "todas") siguiente.set("diferencia", diferencia!);
@@ -37,7 +43,11 @@ export default async function HistorialCaja({ searchParams }: { searchParams: Pr
       <div className="min-w-40 flex-1"><label className="label" htmlFor="diferencia">Filtrar diferencias</label><select id="diferencia" name="diferencia" defaultValue={diferencia} className="input"><option value="todas">Todas</option><option value="apertura">En apertura</option><option value="cierre">En cierre</option><option value="ambas">En cualquiera</option></select></div>
       <button className="btn-primary">Filtrar</button>
     </form>
-    <div className="space-y-3">{visibles.length === 0 && <div className="card p-5 text-sm text-slate-500">No hay registros para este filtro.</div>}{visibles.map(t => <article key={t.id} className="card p-4"><div className="flex flex-wrap items-center justify-between gap-2"><strong>Turno #{t.id} · {sucursales.find(s => s.id === t.sucursalId)?.nombre ?? "Sucursal archivada"}</strong><span className="text-xs text-slate-500">{t.estado === "abierta" ? "Abierta" : `Cerrada ${fecha(t.cerradoEn)}`}</span></div><div className="mt-3 grid gap-3 text-sm sm:grid-cols-2"><div className="rounded-lg bg-slate-50 p-3"><p className="font-semibold">Apertura · {fecha(t.abiertoEn)}</p><p>Contado: {money(t.fondoInicial)}</p><p>Esperado: {t.fondoEsperado === null ? "Sin registro anterior" : money(t.fondoEsperado)}</p><p className={t.diferenciaApertura ? "font-semibold text-rose-700" : "text-slate-600"}>Diferencia: {t.diferenciaApertura === null ? "No disponible" : money(t.diferenciaApertura)}</p>{t.motivoApertura && <p className="mt-1">Motivo: {t.motivoApertura}</p>}<p className="text-slate-500">{t.responsable}</p></div><div className="rounded-lg bg-slate-50 p-3"><p className="font-semibold">Cierre</p>{t.estado === "cerrada" ? <><p>Contado: {money(t.efectivoContado ?? 0)}</p><p>Esperado: {money(t.efectivoEsperado ?? 0)}</p><p className={t.diferencia ? "font-semibold text-rose-700" : "text-slate-600"}>Diferencia: {money(t.diferencia ?? 0)}</p><p className="text-slate-500">{t.cerradoPor}</p>{t.observaciones && <p className="mt-1">{t.observaciones}</p>}</> : <p className="text-slate-500">Turno en curso.</p>}</div></div></article>)}</div>
+    <div className="space-y-3">{visibles.length === 0 && <div className="card p-5 text-sm text-slate-500">No hay registros para este filtro.</div>}{visibles.map(t => <article key={t.id} className="card p-4"><div className="flex flex-wrap items-center justify-between gap-2"><strong>Turno #{t.id} · {sucursales.find(s => s.id === t.sucursalId)?.nombre ?? "Sucursal archivada"}</strong><span className="text-xs text-slate-500">{t.estado === "abierta" ? "Abierta" : t.estado === "pendiente" ? "Pendiente de aprobación" : "Aprobada " + fecha(t.aprobadoEn ?? t.cerradoEn)}</span></div><div className="mt-3 grid gap-3 text-sm sm:grid-cols-2"><div className="rounded-lg bg-slate-50 p-3"><p className="font-semibold">Apertura · {fecha(t.abiertoEn)}</p><p>Contado: {money(t.fondoContado ?? t.fondoInicial)}</p><p>Esperado: {t.fondoEsperado === null ? "Sin registro anterior" : money(t.fondoEsperado)}</p><p className={t.diferenciaApertura ? "font-semibold text-rose-700" : "text-slate-600"}>Diferencia: {t.diferenciaApertura === null ? "No disponible" : money(t.diferenciaApertura)}</p>{t.motivoApertura && <p className="mt-1">Observación: {t.motivoApertura}</p>}<p className="text-slate-500">{t.responsable}</p></div><div className="rounded-lg bg-slate-50 p-3"><p className="font-semibold">Cierre</p>{t.estado !== "abierta" ? <><p>Enviado: {money(t.declaradoCierre ?? t.efectivoContado ?? 0)}</p><p>Contado aprobado o vigente: {money(t.efectivoContado ?? 0)}</p><p>Esperado: {money(t.efectivoEsperado ?? 0)}</p><p className={t.diferencia ? "font-semibold text-rose-700" : "text-slate-600"}>Diferencia: {money(t.diferencia ?? 0)}</p><p className="text-slate-500">Envió: {t.cerradoPor} · Aprobó: {t.aprobadoPor ?? "Pendiente"}</p>{t.observaciones && <p className="mt-1">{t.observaciones}</p>}</> : <p className="text-slate-500">Turno en curso.</p>}</div></div>
+      {traspasos.filter(x => x.turnoId === t.id).map(x => <div key={x.id} className="mt-2 rounded-lg border border-slate-200 p-3 text-sm"><p className="font-semibold">Traspaso · {fecha(x.iniciadoEn)} · {x.estado}</p><p>{x.saliente} entregó {money(x.contadoSalida)} · {x.entrante ?? "Sin receptor"} recibió {x.contadoEntrada === null ? "pendiente" : money(x.contadoEntrada)}</p><p>Esperado: {money(x.esperado)} · Diferencia en la recepción: {x.contadoEntrada === null ? "pendiente" : money(x.contadoEntrada - x.esperado)}</p>{x.motivoCancelacion && <p>Canceló {x.canceladoPor}: {x.motivoCancelacion}</p>}</div>)}
+      {revisiones.filter(x => x.turnoId === t.id).map(x => <p key={x.id} className="mt-2 text-sm">Rectificación · {fecha(x.fecha)} · {x.administrador}: {money(x.contadoAnterior)} → {money(x.contadoNuevo)}. Motivo: {x.motivo}</p>)}
+      {ingresosCerrada.filter(x => x.turnoId === t.id).map(x => <p key={x.id} className="mt-2 text-sm">{x.tipo === "ajuste" ? "Ajuste aprobado" : "Ingreso con caja cerrada"} · {money(x.monto)} · {x.motivo} · {x.responsable}</p>)}
+    </article>)}</div>
     {mas && <Link className="btn-ghost inline-flex" href={`/admin/caja/historial?${siguiente.toString()}`}>Ver registros anteriores</Link>}
   </main>;
 }

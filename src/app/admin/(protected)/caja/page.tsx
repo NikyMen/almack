@@ -4,11 +4,10 @@ import { asc, desc, eq } from "drizzle-orm";
 import { requireAcceso } from "@/lib/auth";
 import { getContextoSucursal } from "@/lib/sucursal";
 import { stockDeSucursal } from "@/lib/stock";
-import { cajaAbierta, resumenCaja, saldoUltimoCierre } from "@/lib/caja";
+import { cajaAbierta, cierrePendiente, traspasoPendiente, resumenCaja, saldoUltimoCierre } from "@/lib/caja";
 import { PageHeader } from "@/components/ui";
-import { tieneAcceso } from "@/lib/permisos";
 import { CajaPOS } from "@/components/caja-pos";
-import { CajaTurnoPanel } from "@/components/caja-turno-panel";
+import { CajaOperacionPanel } from "@/components/caja-operacion-panel";
 export default async function CajaPage() {
   const usuario = await requireAcceso("caja");
   const contexto = await getContextoSucursal();
@@ -16,15 +15,20 @@ export default async function CajaPage() {
   if (!sucursal) return <><PageHeader title="Caja" subtitle="Apertura, ventas y arqueo" /><div className="card p-6">Creá una sucursal desde el selector de locales antes de abrir la caja.</div></>;
   const turno = await cajaAbierta(sucursal.id);
   const esAdmin = usuario.rol === "admin";
-  const [anterior, extracciones, resumen, cambios] = await Promise.all([
+  const [pendiente, traspaso, anterior, extracciones, resumen, cambios] = await Promise.all([
+    cierrePendiente(sucursal.id),
+    turno ? traspasoPendiente(turno.id) : Promise.resolve(null),
     esAdmin ? saldoUltimoCierre(sucursal.id) : Promise.resolve(null),
     esAdmin ? db.select().from(cajaExtracciones).where(eq(cajaExtracciones.sucursalId, sucursal.id)).orderBy(desc(cajaExtracciones.id)).limit(20) : Promise.resolve([]),
     turno && esAdmin ? resumenCaja(turno) : Promise.resolve(null),
-    db.select().from(cambiosPrecio).where(eq(cambiosPrecio.sucursalId, sucursal.id)).orderBy(desc(cambiosPrecio.id)).limit(100),
+    esAdmin ? db.select().from(cambiosPrecio).where(eq(cambiosPrecio.sucursalId, sucursal.id)).orderBy(desc(cambiosPrecio.id)).limit(100) : Promise.resolve([]),
   ]);
-  const resumenVisible = turno && !esAdmin ? { cobros: [], movimientos: [], ingresos: 0, retiros: 0, efectivo: 0, esperado: 0 } : resumen;
-  const turnoVisible = esAdmin || !turno ? turno : { ...turno, fondoInicial: 0, fondoEsperado: null, diferenciaApertura: null };
-  const [items, stock] = turno ? await Promise.all([db.select().from(productos).where(eq(productos.activo, true)).orderBy(asc(productos.nombre)), stockDeSucursal(sucursal.id)]) : [[], new Map<number, number>()];
+  const esResponsable = !!turno && (turno.responsableUsuario || turno.responsable) === (turno.responsableUsuario ? usuario.usuario : usuario.nombre);
+  const resumenVisible = esAdmin ? resumen : null;
+  const turnoVisible = esAdmin || !turno ? turno : { ...turno, fondoInicial: 0, fondoEsperado: null, diferenciaApertura: null, fondoContado: null, efectivoEsperado: null, efectivoContado: null, diferencia: null, resumen: null, detalleApertura: "{}", detalleCierre: "{}" };
+  const pendienteVisible = esAdmin || !pendiente ? pendiente : { ...pendiente, fondoInicial: 0, fondoEsperado: null, diferenciaApertura: null, fondoContado: null, efectivoContado: null, declaradoCierre: pendiente.responsableUsuario === usuario.usuario ? pendiente.declaradoCierre : null, efectivoEsperado: null, diferencia: null, resumen: null, detalleApertura: "{}", detalleCierre: "{}" };
+  const traspasoVisible = esAdmin || !traspaso ? traspaso : { ...traspaso, esperado: 0, contadoSalida: traspaso.salienteUsuario === usuario.usuario ? traspaso.contadoSalida : 0, detalleSalida: "{}", contadoEntrada: null, detalleEntrada: null };
+  const [items, stock] = turno && esResponsable && !traspaso && !turno.arqueoEn ? await Promise.all([db.select().from(productos).where(eq(productos.activo, true)).orderBy(asc(productos.nombre)), stockDeSucursal(sucursal.id)]) : [[], new Map<number, number>()];
   const catalogo = items.map(p => ({ ...p, stock: stock.get(p.id) ?? 0 }));
-  return <><div className="mb-2 hidden items-center gap-3 xl:flex"><h1 className="text-lg font-bold">Caja</h1><p className="text-sm text-slate-500">Apertura, ventas y arqueo · {sucursal.nombre}</p></div><CajaTurnoPanel key={`${sucursal.id}-${turno?.id ?? "cerrada"}`} anterior={esAdmin ? anterior : null} extracciones={extracciones} turno={turnoVisible} resumen={resumenVisible} cambios={cambios} sucursal={sucursal.nombre} puedeVerVentas={tieneAcceso(usuario, "ventas")} esAdmin={esAdmin} />{turno && !turno.arqueoEn && <Suspense fallback={<div className="card p-6">Cargando caja…</div>}><CajaPOS productos={catalogo} /></Suspense>}</>;
+  return <><div className="mb-2 hidden items-center gap-3 xl:flex"><h1 className="text-lg font-bold">Caja</h1><p className="text-sm text-slate-500">Apertura, ventas y arqueo · {sucursal.nombre}</p></div><CajaOperacionPanel key={`${sucursal.id}-${turno?.id ?? pendiente?.id ?? "cerrada"}`} anterior={esAdmin ? anterior : null} pendiente={pendienteVisible} traspaso={traspasoVisible} usuario={usuario.usuario} esResponsable={esResponsable} extracciones={extracciones} turno={turnoVisible} resumen={resumenVisible} cambios={cambios} sucursal={sucursal.nombre} esAdmin={esAdmin} />{turno && esResponsable && !traspaso && !turno.arqueoEn && <Suspense fallback={<div className="card p-6">Cargando caja…</div>}><CajaPOS productos={catalogo} /></Suspense>}</>;
 }

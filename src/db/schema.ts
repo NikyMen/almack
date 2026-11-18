@@ -1,5 +1,5 @@
 export { stockConfiguracion, stockReglas } from "./stock-config-schema";
-export { cajaTurnos, cajaMovimientos, cajaSeguridad, cajaIntentos, cajaExtracciones } from "./caja-schema";
+export { cajaTurnos, cajaMovimientos, cajaSeguridad, cajaIntentos, cajaExtracciones, cajaTraspasos, cajaRevisiones, cajaSaldoMovimientos } from "./caja-schema";
 import { cajaTurnos } from "./caja-schema";
 import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";

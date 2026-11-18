@@ -1,10 +1,10 @@
-import { requireAcceso } from "@/lib/auth";
+import { requireAdmin } from "@/lib/auth";
 import { PageHeader } from "@/components/ui";
 import { AsistenteIA } from "@/components/asistente-ia";
 import { listarConversaciones } from "./actions";
 
 export default async function IAPage() {
-  await requireAcceso("ia");
+  await requireAdmin();
   const conversaciones = await listarConversaciones();
   return (
     <>

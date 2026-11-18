@@ -2,14 +2,14 @@ import { asc, eq, or, sql } from "drizzle-orm";
 import Link from "next/link";
 import { ventas as ventasTabla, db, productos, clientes } from "@/db";
 import { recientes } from "@/lib/queries";
-import { requireAcceso } from "@/lib/auth";
+import { requireAdmin } from "@/lib/auth";
 import { getContextoSucursal } from "@/lib/sucursal";
 import { stockDeSucursal } from "@/lib/stock";
 import { PageHeader } from "@/components/ui";
 import { VentasTabla } from "@/components/ventas-tabla";
 import { moneyPreciso } from "@/lib/format";
 export default async function HistorialVentas() {
-  const usuario = await requireAcceso("ventas");
+  await requireAdmin();
   const { activa, activaId } = await getContextoSucursal();
   // El alta manual necesita el catálogo y los clientes para armar la venta.
   const [ventas, catalogo, listaClientes] = await Promise.all([
@@ -31,7 +31,7 @@ export default async function HistorialVentas() {
         subtitle={`${ventas.length} operaciones · ${moneyPreciso(total)} facturado${activa ? ` · ${activa.nombre}` : " · Todas las sucursales"}`}
       />
       <Link href="/admin/ventas" className="btn-ghost mb-4">← Opciones de ventas</Link>
-      <VentasTabla ventas={ventas} productos={conStockLocal} clientes={listaClientes} puedeDevolver={usuario.rol === "admin"} sucursalActivaId={activaId} />
+      <VentasTabla ventas={ventas} productos={conStockLocal} clientes={listaClientes} puedeDevolver sucursalActivaId={activaId} />
     </>
   );
 }

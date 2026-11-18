@@ -4,7 +4,7 @@ import { and, asc, desc, eq, isNull, type SQL } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
 import { iaConversaciones, iaMensajes } from "@/db/schema";
-import { requireAcceso } from "@/lib/auth";
+import { requireAdmin } from "@/lib/auth";
 import { chatNegocio } from "@/lib/ai";
 import { getContextoNegocio } from "@/lib/queries";
 
@@ -14,7 +14,7 @@ export type ConversacionResumen = { id: number; titulo: string; actualizadoEn: D
 // Toda operación valida acceso al módulo y ata la conversación al usuario en
 // sesión: el historial de uno no tiene por qué ser visible para otro.
 async function usuarioIA() {
-  return requireAcceso("ia");
+  return requireAdmin();
 }
 
 // El admin de respaldo por .env no existe en la tabla usuarios y viene con id 0.

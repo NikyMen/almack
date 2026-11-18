@@ -28,7 +28,7 @@ function limpiar(input: UsuarioInput) {
     email: input.email.trim(),
     rol: input.rol === "admin" ? "admin" : "miembro",
     sucursalId: null,
-    permisos: input.permisos.filter((p) => MODULO_KEYS.includes(p)),
+    permisos: input.permisos.filter((p) => MODULO_KEYS.includes(p) && (input.rol === "admin" || p !== "ia")),
     activo: Boolean(input.activo),
   };
 }

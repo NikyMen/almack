@@ -112,8 +112,8 @@ export async function archivarSucursal(id: number) {
   }
 
   const [cajaPendiente] = await db.select({ id: cajaTurnos.id }).from(cajaTurnos)
-    .where(sql`${cajaTurnos.sucursalId} = ${id} and ${cajaTurnos.estado} = 'abierta'`).limit(1);
-  if (cajaPendiente) return { ok: false as const, error: "Cerrá la caja antes de archivar esta sucursal." };
+    .where(sql`${cajaTurnos.sucursalId} = ${id} and ${cajaTurnos.estado} in ('abierta','pendiente')`).limit(1);
+  if (cajaPendiente) return { ok: false as const, error: "Cerrá y aprobá la caja antes de archivar esta sucursal." };
   const [conStock] = await db
     .select({ unidades: sql<number>`coalesce(sum(${stockSucursal.cantidad}),0)` })
     .from(stockSucursal)
@@ -377,7 +377,7 @@ export async function cobrarVenta(
   const sucursalId = await sucursalOperativaId();
   if (!sucursalId) return { ok: false as const, error: "Creá una sucursal antes de cobrar." };
   try {
-    const resultado = await venderEnCaja(sucursalId, usuario.nombre, items, medioPago, opts);
+    const resultado = await venderEnCaja(sucursalId, usuario.nombre, items, medioPago, { ...opts, usuario: usuario.usuario });
     for (const ruta of ["/admin/caja", "/admin/ventas", "/admin/stock", "/admin/ventas/promociones", "/admin", "/tienda", "/tienda/productos"]) revalidatePath(ruta);
     return { ok: true as const, ...resultado, efectivoAntes: usuario.rol === "admin" ? resultado.efectivoAntes : null, efectivoDespues: usuario.rol === "admin" ? resultado.efectivoDespues : null };
   } catch (e) {
@@ -418,7 +418,7 @@ export async function accionPublicacion(
   red: "instagram" | "facebook" | "tiktok" | "whatsapp",
   promo: string
 ) {
-  await requireAcceso("ia");
+  await requireAdmin();
   try {
     return { ok: true as const, texto: await generarPublicacionRedes({ nombre, red, promo }) };
   } catch (e) {
@@ -427,7 +427,7 @@ export async function accionPublicacion(
 }
 
 export async function accionConsulta(pregunta: string) {
-  await requireAcceso("ia");
+  await requireAdmin();
   try {
     const contexto = await getContextoNegocio();
     return { ok: true as const, texto: await consultaNegocio({ pregunta, contexto }) };
