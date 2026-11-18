@@ -7,7 +7,7 @@ Una caja física tiene un solo responsable activo. Cada persona ingresa con su u
 1. El responsable cuenta el efectivo y carga **un único monto total**. No ve el saldo esperado ni si contó de más o de menos.
 2. El sistema toma como fondo registrado el saldo de la última acción informada: cierre, extracción o ingreso para cambio. Si el cierre anterior sigue pendiente de revisión, usa el importe contado como **saldo provisional**. En la primera apertura, el conteo establece el fondo inicial.
 3. Si el conteo de apertura es menor al esperado, después de enviarlo el sistema pide al responsable un motivo obligatorio. El conteo enviado ya no puede editarlo.
-4. Administración revisa el importe, el saldo esperado y la diferencia. Puede aprobar, rectificar el conteo con motivo o anular la apertura. Las rectificaciones y anulaciones quedan auditadas. La diferencia de apertura no reemplaza automáticamente el fondo esperado.
+4. Administración revisa las aperturas en la sección **Revisión de aperturas de caja** del Panel. Compara el importe, el saldo esperado y la diferencia; puede aprobar, rectificar el conteo con motivo o anular la apertura. Las rectificaciones y anulaciones quedan auditadas. La diferencia de apertura no reemplaza automáticamente el fondo esperado.
 
 ## Durante el turno
 

@@ -419,6 +419,7 @@ const indices = [
   `CREATE INDEX IF NOT EXISTS idx_ventas_sucursal ON ventas(sucursal_id)`,
   `CREATE INDEX IF NOT EXISTS idx_ventas_sucursal_fecha ON ventas(sucursal_id, fecha DESC, id DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_ventas_fecha ON ventas(fecha DESC, id DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_caja_aperturas_pendientes ON caja_turnos(apertura_estado, sucursal_id, id)`,
   `CREATE INDEX IF NOT EXISTS idx_compras_sucursal ON compras(sucursal_id)`,
 ];
 

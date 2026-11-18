@@ -13,7 +13,6 @@ type Traspaso = typeof cajaTraspasos.$inferSelect;
 type Props = {
   turno: Turno | null;
   pendiente: Turno | null;
-  aperturasPendientes: Turno[];
   aperturaPorMotivarId: number | null;
   cierrePorMotivarId: number | null;
   traspaso: Traspaso | null;
@@ -31,7 +30,7 @@ function MontoContado({ etiqueta }: { etiqueta: string }) {
     <input name="monto" type="number" min="0" step="0.01" inputMode="decimal" required className="input mt-1" placeholder="0,00" />
   </label>;
 }
-export function CajaOperacionPanel({ turno, pendiente, aperturasPendientes, aperturaPorMotivarId, cierrePorMotivarId, traspaso, anterior, extracciones, resumen, cambios, sucursal, usuario, esResponsable, esAdmin }: Props) {
+export function CajaOperacionPanel({ turno, pendiente, aperturaPorMotivarId, cierrePorMotivarId, traspaso, anterior, extracciones, resumen, cambios, sucursal, usuario, esResponsable, esAdmin }: Props) {
   const [modo, setModo] = useState<"ingreso" | "cerrar" | "traspaso" | "rectificar" | "ingreso_cerrada" | "cancelar_traspaso" | null>(null);
   const [error, setError] = useState("");
   const [confirmacion, setConfirmacion] = useState<number | null>(null);
@@ -75,7 +74,7 @@ export function CajaOperacionPanel({ turno, pendiente, aperturasPendientes, aper
             <p>Enviado por {pendiente.cerradoPor}: {money(pendiente.declaradoCierre ?? pendiente.efectivoContado ?? 0)}</p>
             <p>Contado vigente: {money(pendiente.efectivoContado ?? 0)} · Esperado: {money(pendiente.efectivoEsperado ?? 0)} · Diferencia: {money(pendiente.diferencia ?? 0)}</p>
             {pendiente.observaciones && <p>Observaciones: {pendiente.observaciones}</p>}
-            {pendiente.aperturaEstado === "pendiente" && <p className="text-amber-800">Revisá primero la apertura de este turno.</p>}
+            {pendiente.aperturaEstado === "pendiente" && <p className="text-amber-800">Revisá primero la apertura de este turno en el <Link href="/admin#revisar-aperturas" className="font-semibold underline">Panel</Link>.</p>}
             {(pendiente.diferencia ?? 0) < 0 && !pendiente.observaciones && <p className="text-amber-800">Falta el motivo del empleado para este cierre.</p>}
             <button disabled={ocupado || pendiente.aperturaEstado === "pendiente" || ((pendiente.diferencia ?? 0) < 0 && !pendiente.observaciones)} className="btn-primary" onClick={() => ejecutar({ operacion: "aprobar", turnoId: pendiente.id })}>Aprobar cierre</button>
             <button disabled={ocupado} className="btn-ghost" onClick={() => setModo("rectificar")}>Rectificar conteo</button>
@@ -105,6 +104,7 @@ export function CajaOperacionPanel({ turno, pendiente, aperturasPendientes, aper
           </form>}
         </>}
         {turno && <>
+          {esAdmin && turno.aperturaEstado === "pendiente" && <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">La apertura de este turno espera revisión. <Link href="/admin#revisar-aperturas" className="font-semibold underline">Revisarla en el Panel</Link>.</p>}
           {esAdmin && resumen && <div className="grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
             <div className="rounded-lg bg-slate-50 p-3">Fondo registrado<br /><strong>{money(turno.fondoInicial)}</strong></div>
             <div className="rounded-lg bg-slate-50 p-3">Ventas en efectivo<br /><strong>{money(resumen.efectivo)}</strong></div>
@@ -139,14 +139,6 @@ export function CajaOperacionPanel({ turno, pendiente, aperturasPendientes, aper
         {error && <p role="alert" className="rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{error}</p>}
       </div>
     </section>
-    {esAdmin && aperturasPendientes.length > 0 && <section className="card space-y-3 p-4"><h3 className="font-semibold">Aperturas pendientes de revisión</h3>{aperturasPendientes.map(a => <div key={a.id} className="space-y-2 border-t border-slate-200 pt-3 text-sm">
-      <p><strong>Turno #{a.id}</strong> · Abrió {a.aperturaUsuario || a.responsable} · Declaró {money(a.fondoContado ?? a.fondoInicial)} · Esperado {a.fondoEsperado === null ? "sin registro anterior" : money(a.fondoEsperado)} · Diferencia {a.diferenciaApertura === null ? "sin referencia" : money(a.diferenciaApertura)}</p>
-      {a.motivoApertura && <p>Motivo del empleado: {a.motivoApertura}</p>}
-      {(a.diferenciaApertura ?? 0) < 0 && !a.motivoApertura && <p className="text-amber-800">Falta el motivo del empleado.</p>}
-      <button disabled={ocupado || ((a.diferenciaApertura ?? 0) < 0 && !a.motivoApertura)} className="btn-primary" onClick={() => ejecutar({ operacion: "aprobar_apertura", turnoId: a.id })}>Aprobar apertura</button>
-      <details><summary className="cursor-pointer">Modificar conteo</summary><form className="mt-2 space-y-2" action={fd => ejecutar({ operacion: "rectificar_apertura", turnoId: a.id, monto: Number(fd.get("monto")), motivo: String(fd.get("motivo") ?? "") })}><MontoContado etiqueta="Nuevo monto contado" /><input name="motivo" required maxLength={500} className="input" placeholder="Motivo de la corrección" /><button disabled={ocupado} className="btn-ghost">Guardar corrección</button></form></details>
-      <details><summary className="cursor-pointer text-rose-700">Anular apertura</summary><form className="mt-2 flex gap-2" action={fd => ejecutar({ operacion: "anular_apertura", turnoId: a.id, motivo: String(fd.get("motivo") ?? "") })}><input name="motivo" required maxLength={500} className="input" placeholder="Motivo de la anulación" /><button disabled={ocupado} className="btn-ghost border border-rose-300">Confirmar anulación</button></form></details>
-    </div>)}</section>}
     {esAdmin && <Link href="/admin/caja/historial" className="card block px-4 py-3 text-sm font-medium text-navy">Historial de aperturas, traspasos y cierres ↗</Link>}
     {esAdmin && extracciones.length > 0 && <details className="card px-4 py-3"><summary className="cursor-pointer text-sm">Últimas extracciones</summary>{extracciones.map(e => <p key={e.id} className="py-2 text-sm">{e.motivo} · {money(e.monto)} · {e.responsable}</p>)}</details>}
     {esAdmin && cambios.length > 0 && <details className="card px-4 py-3"><summary className="cursor-pointer text-sm">Cambios de precio ({cambios.length})</summary>{cambios.map(c => <p key={c.id} className="py-2 text-sm">Venta #{c.ventaId} · {c.usuario} · {money(c.totalAnterior)} → {money(c.totalNuevo)}</p>)}</details>}

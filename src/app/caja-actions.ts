@@ -42,6 +42,7 @@ export async function operarCaja(datos: { operacion: "abrir" | "movimiento" | "c
     }
     else throw new Error("Operación inválida.");
     revalidatePath("/admin/caja");
+    if (["abrir", "motivo_apertura"].includes(datos.operacion)) revalidatePath("/admin");
     return { ok: true, error: "", contado: datos.operacion === "cerrar" || datos.operacion === "iniciar_traspaso" || datos.operacion === "recibir_traspaso" ? contado : undefined, requiereMotivo, turnoId: turnoResultante };
   } catch (e) { return { ok: false, error: e instanceof Error ? e.message : "No se pudo guardar la operación." }; }
 }
