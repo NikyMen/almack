@@ -1,31 +1,32 @@
 # Procedimiento de caja
 
-Una caja física tiene un solo responsable activo. Cada persona debe ingresar con su usuario; no se comparten credenciales.
+Una caja física tiene un solo responsable activo. Cada persona ingresa con su usuario y no comparte credenciales.
 
 ## Apertura
 
-1. El responsable cuenta billetes y monedas y carga las cantidades por denominación.
-2. El sistema toma como fondo registrado el saldo disponible del último cierre aprobado, actualizado por extracciones o ingresos para cambio registrados después. En la primera apertura, el conteo establece el saldo inicial.
-3. La diferencia entre el conteo y el fondo registrado queda visible solo para administración. El conteo del empleado no reemplaza automáticamente el saldo esperado.
+1. El responsable cuenta el efectivo y carga **un único monto total**. No ve el saldo esperado ni si contó de más o de menos.
+2. El sistema toma como fondo registrado el saldo de la última acción informada: cierre, extracción o ingreso para cambio. Si el cierre anterior sigue pendiente de revisión, usa el importe contado como **saldo provisional**. En la primera apertura, el conteo establece el fondo inicial.
+3. Si el conteo de apertura es menor al esperado, después de enviarlo el sistema pide al responsable un motivo obligatorio. El conteo enviado ya no puede editarlo.
+4. Administración revisa el importe, el saldo esperado y la diferencia. Puede aprobar, rectificar el conteo con motivo o anular la apertura. Las rectificaciones y anulaciones quedan auditadas. La diferencia de apertura no reemplaza automáticamente el fondo esperado.
 
 ## Durante el turno
 
 - Registrar cada venta, devolución, ingreso para cambio y extracción en el momento en que ocurre.
 - Administración registra los ingresos para cambio con motivo y las extracciones con su clave. El responsable verifica físicamente cada entrega o retiro.
-- El empleado ve los importes de las operaciones que realiza, pero no el saldo esperado, los acumulados de ventas ni las diferencias de los arqueos.
+- El empleado ve los importes de las operaciones que realiza, pero no el saldo esperado, los acumulados de ventas ni las diferencias de arqueo.
 
 ## Cambio de responsable
 
-1. El responsable saliente elige **Entregar caja**, cuenta el efectivo y envía el arqueo de entrega. La caja se bloquea.
-2. El responsable entrante entra con su propio usuario, vuelve a contar y confirma la recepción. Entonces queda habilitado para operar.
-3. Administración ve ambos conteos, el saldo esperado y las diferencias. Si el traspaso fue iniciado por error, puede cancelarlo con un motivo; la responsabilidad vuelve a la persona saliente.
+1. El responsable saliente elige **Entregar caja**, cuenta el efectivo y envía un único monto. La caja se bloquea.
+2. El responsable entrante ingresa con su usuario, vuelve a contar y confirma un único monto de recepción. Entonces queda habilitado para operar.
+3. Administración ve ambos conteos, el saldo esperado y las diferencias. Puede cancelar un traspaso iniciado por error con un motivo.
 
 ## Cierre y revisión
 
 1. El responsable elige **Contar y cerrar**. Mientras cuenta, no se permiten ventas ni movimientos.
-2. Envía el conteo por denominación. El sistema le confirma el importe que envió y ya no puede editarlo.
-3. Administración revisa el importe declarado, el esperado y la diferencia. Puede rectificar el conteo con un motivo; el envío original y cada rectificación quedan registrados.
-4. Administración aprueba el cierre. Si existe una diferencia, el sistema registra un ajuste con el administrador responsable. Solo entonces el importe aprobado pasa a ser la base del próximo fondo. Mientras el cierre esté pendiente no se puede reabrir ni extraer efectivo.
+2. Envía **un único monto total**. El sistema le confirma cuánto envió y ya no puede editarlo. Si el monto es menor al esperado, después del envío le exige un motivo; no le muestra el importe esperado ni la diferencia.
+3. El cierre queda **pendiente de revisión**. El importe contado se utiliza de manera provisional para la siguiente apertura. Administración puede rectificarlo con un motivo y el fondo registrado de esa apertura se recalcula.
+4. Administración revisa el cierre después de revisar su apertura. Puede aprobar, rectificar o anular el cierre. Cada acción queda auditada. Al aprobarlo, el ajuste pasa a ser permanente. Si lo anula, se descarta el conteo de ese cierre y se usa el saldo esperado registrado.
 5. Con la caja cerrada y aprobada, administración puede registrar extracciones o ingresos para cambio. Cada acción cambia el saldo de la próxima apertura.
 
-Si dos personas usan el mismo cajón a la vez, el sistema no puede atribuir una diferencia a una sola. Hay que completar el traspaso antes de que la siguiente persona cobre.
+Si dos personas usan el mismo cajón, deben completar el traspaso antes de que la siguiente persona cobre. Así queda registrado quién era responsable en cada momento.

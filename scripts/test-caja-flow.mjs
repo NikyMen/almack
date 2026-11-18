@@ -4,7 +4,7 @@ if (!/^file:caja-test-[a-f0-9-]+\.db$/.test(process.env.TURSO_DATABASE_URL ?? ""
 
 const { db, client, sucursales, productos, stockSucursal, ventas, promociones, cajaSeguridad, cajaExtracciones, cajaSaldoMovimientos, cajaIntentos, cambiosPrecio, ventaItems } = await import('../src/db/index.ts');
 const { cajaDDL } = await import('../src/db/caja-ddl.ts');
-const { abrirCaja, cerrarCaja, aprobarCierre, rectificarCierre, iniciarTraspaso, recibirTraspaso, cancelarTraspaso, traspasoPendiente, ingresarCambioCerrada, cambiarArqueo, devolverVenta, moverEfectivo, venderEnCaja, resumenCaja, validarMonto, extraerEfectivo, saldoUltimoCierre, cajaAbierta } = await import('../src/lib/caja.ts');
+const { abrirCaja, cerrarCaja, aprobarCierre, rectificarCierre, registrarMotivoCierre, registrarMotivoApertura, revisarApertura, anularCierre, iniciarTraspaso, recibirTraspaso, cancelarTraspaso, traspasoPendiente, ingresarCambioCerrada, cambiarArqueo, devolverVenta, moverEfectivo, venderEnCaja, resumenCaja, validarMonto, extraerEfectivo, saldoUltimoCierre, cajaAbierta } = await import('../src/lib/caja.ts');
 const { hashClaveAdministrador, verificarClaveAdministrador } = await import('../src/lib/clave-admin.ts');
 const { randomUUID } = await import('node:crypto');
 const { eq } = await import('drizzle-orm');
@@ -35,6 +35,7 @@ CREATE TABLE cambios_precio(id INTEGER PRIMARY KEY, venta_id INTEGER NOT NULL, s
   await assert.rejects(venderEnCaja(1,'Ana',[{productoId:1,cantidad:1}],'efectivo'), /Abrí/);
   await assert.rejects(abrirCaja(1,'Ana'), /importe válido/);
   const turno = await abrirCaja(1,'Ana',100);
+  await revisarApertura(1,turno.id,'admin','aprobar');
   await assert.rejects(abrirCaja(1,'Ana',0), /ya tiene/);
   await abrirCaja(2,'Luis',0);
   await assert.rejects(venderEnCaja(1,'Ana',[{productoId:1,cantidad:1}],'efectivo',{efectivoRecibido:10}), /no alcanza/);
@@ -76,13 +77,17 @@ CREATE TABLE cambios_precio(id INTEGER PRIMARY KEY, venta_id INTEGER NOT NULL, s
   await assert.rejects(venderEnCaja(1,'Ana',[{productoId:1,cantidad:1}],'efectivo'), /arqueo/);
   await assert.rejects(moverEfectivo(1,turno.id,'Ana','ingreso',1,'Tarde'), /arqueo/);
   const cierre = await cerrarCaja(1,turno.id,'Ana',135,'');
-  assert.deepEqual(cierre,{contado:135});
+  assert.deepEqual(cierre,{contado:135,requiereMotivo:true});
   assert.equal((await client.execute(`SELECT estado FROM caja_turnos WHERE id=${turno.id}`)).rows[0].estado,'pendiente');
-  await assert.rejects(abrirCaja(1,'Ana',135),/espera la aprobación/);
+  assert.equal((await saldoUltimoCierre(1)).provisional,true);
+  assert.equal((await saldoUltimoCierre(1)).disponible,135);
   await assert.rejects(extraer(turno.id,1),/espera aprobación/);
   await rectificarCierre(1,turno.id,'admin',136,'Recuento supervisado');
   assert.equal((await client.execute(`SELECT declarado_cierre, efectivo_contado FROM caja_turnos WHERE id=${turno.id}`)).rows[0].declarado_cierre,135);
   await rectificarCierre(1,turno.id,'admin',135,'Confirmación');
+  await assert.rejects(aprobarCierre(1,turno.id,'admin'), /motivo del faltante/);
+  await assert.rejects(registrarMotivoCierre(1,turno.id,'Luis','Sin dinero'), /no se puede modificar/);
+  await registrarMotivoCierre(1,turno.id,'Ana','Faltó efectivo al contar');
   await aprobarCierre(1,turno.id,'admin');
   assert.equal((await db.select().from(cajaSaldoMovimientos).where(eq(cajaSaldoMovimientos.turnoId,turno.id)))[0].monto,-5);
   await assert.rejects(rectificarCierre(1,turno.id,'admin',134,'Tarde'),/ya no admite/);
@@ -116,6 +121,9 @@ CREATE TABLE cambios_precio(id INTEGER PRIMARY KEY, venta_id INTEGER NOT NULL, s
   assert.equal(nuevo.fondoContado,37);
   assert.equal(nuevo.fondoEsperado,39);
   assert.equal(nuevo.diferenciaApertura,-2);
+  await assert.rejects(revisarApertura(1,nuevo.id,'admin','aprobar'), /motivo del faltante/);
+  await registrarMotivoApertura(1,nuevo.id,nuevo.aperturaUsuario,'Recibí menos efectivo');
+  await revisarApertura(1,nuevo.id,'admin','aprobar');
   assert.equal((await resumenCaja(nuevo)).esperado,39);
   await assert.rejects(extraer(turno.id,1,'nuevaClave123'), /cambió/);
   await cambiarArqueo(1,nuevo.id,true);
@@ -183,6 +191,31 @@ CREATE TABLE cambios_precio(id INTEGER PRIMARY KEY, venta_id INTEGER NOT NULL, s
   const stockPesoAntes = (await db.select().from(stockSucursal).where(eq(stockSucursal.productoId,2)))[0].cantidad;
   await devolverVenta(1,peso.ventaId,'Ana','Producto dañado','QR-456',false);
   assert.equal((await db.select().from(stockSucursal).where(eq(stockSucursal.productoId,2)))[0].cantidad,stockPesoAntes);
+  const otraCaja = await cajaAbierta(2);
+  await revisarApertura(2,otraCaja.id,'admin','aprobar');
+  await cambiarArqueo(2,otraCaja.id,true);
+  assert.deepEqual(await cerrarCaja(2,otraCaja.id,'Luis',0,''),{contado:0,requiereMotivo:false});
+  assert.equal((await saldoUltimoCierre(2)).provisional,true);
+  const siguiente = await abrirCaja(2,'Luis',0);
+  assert.equal(siguiente.fondoInicial,0);
+  await rectificarCierre(2,otraCaja.id,'admin',5,'Recuento supervisado');
+  const siguienteActualizado = await cajaAbierta(2);
+  assert.equal(siguienteActualizado.fondoInicial,5);
+  assert.equal(siguienteActualizado.diferenciaApertura,-5);
+  await registrarMotivoApertura(2,siguiente.id,'Luis','Había menos al recibir');
+  await revisarApertura(2,siguiente.id,'admin','aprobar');
+  await aprobarCierre(2,otraCaja.id,'admin');
+  assert.equal((await cajaAbierta(2)).fondoInicial,5);
+  await db.insert(sucursales).values({id:3,nombre:'Prueba de anulación'});
+  const paraAnular = await abrirCaja(3,'Mara',10);
+  await revisarApertura(3,paraAnular.id,'admin','aprobar');
+  await cambiarArqueo(3,paraAnular.id,true);
+  await cerrarCaja(3,paraAnular.id,'Mara',5,'');
+  const posterior = await abrirCaja(3,'Mara',5);
+  assert.equal(posterior.fondoInicial,5);
+  await anularCierre(3,paraAnular.id,'admin','Conteo inválido');
+  assert.equal((await cajaAbierta(3)).fondoInicial,10);
+  assert.equal((await saldoUltimoCierre(3)).anulado,true);
   console.log('Caja: apertura ciega, cobros, traspasos, revisión de cierre, saldo posterior y rollback OK.');
 } finally {
   client.close();

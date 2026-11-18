@@ -5,6 +5,11 @@ export const cajaTurnos = sqliteTable("caja_turnos", {
   sucursalId: integer("sucursal_id").notNull(),
   responsable: text("responsable").notNull(),
   responsableUsuario: text("responsable_usuario").notNull().default(""),
+  aperturaUsuario: text("apertura_usuario").notNull().default(""),
+  aperturaEstado: text("apertura_estado").notNull().default("aprobada"),
+  aperturaRevisadaPor: text("apertura_revisada_por"),
+  aperturaRevisadaEn: integer("apertura_revisada_en", { mode: "timestamp" }),
+  anulacionMotivo: text("anulacion_motivo"),
   fondoContado: real("fondo_contado"),
   detalleApertura: text("detalle_apertura").notNull().default("{}"),
   detalleCierre: text("detalle_cierre").notNull().default("{}"),
@@ -85,6 +90,7 @@ export const cajaRevisiones = sqliteTable("caja_revisiones", {
   contadoAnterior: real("contado_anterior").notNull(),
   contadoNuevo: real("contado_nuevo").notNull(),
   motivo: text("motivo").notNull(),
+  tipo: text("tipo").notNull().default("cierre"),
   fecha: integer("fecha", { mode: "timestamp" }).default(sql`(strftime('%s','now'))`),
 });
 export const cajaSaldoMovimientos = sqliteTable("caja_saldo_movimientos", {

@@ -337,6 +337,12 @@ const statements = [
 // ALTER idempotentes para DBs ya existentes (SQLite no soporta ADD COLUMN IF
 // NOT EXISTS → si la columna ya existe, el execute tira error y lo ignoramos).
 const alters = [
+  `ALTER TABLE caja_turnos ADD COLUMN apertura_usuario TEXT NOT NULL DEFAULT ''`,
+  `ALTER TABLE caja_turnos ADD COLUMN apertura_estado TEXT NOT NULL DEFAULT 'aprobada'`,
+  `ALTER TABLE caja_turnos ADD COLUMN apertura_revisada_por TEXT`,
+  `ALTER TABLE caja_turnos ADD COLUMN apertura_revisada_en INTEGER`,
+  `ALTER TABLE caja_turnos ADD COLUMN anulacion_motivo TEXT`,
+  `ALTER TABLE caja_revisiones ADD COLUMN tipo TEXT NOT NULL DEFAULT 'cierre'`,
   `ALTER TABLE caja_turnos ADD COLUMN responsable_usuario TEXT NOT NULL DEFAULT ''`,
   `ALTER TABLE caja_turnos ADD COLUMN fondo_contado REAL`,
   `ALTER TABLE caja_turnos ADD COLUMN detalle_apertura TEXT NOT NULL DEFAULT '{}'`,
@@ -443,6 +449,7 @@ async function migrate() {
       if (!(error instanceof Error) || !error.message.toLowerCase().includes("duplicate column name")) throw error;
     }
   }
+  await client.execute("DROP INDEX IF EXISTS idx_caja_turno_activo");
   if (nuevaColumnaRecibida) {
     await client.execute("UPDATE stock_movimiento_items SET cantidad_recibida = cantidad");
   }
