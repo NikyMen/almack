@@ -21,7 +21,7 @@ const tarjetas = [
 const graficos = [["mes", "Ventas por mes"], ["canal", "Ventas por canal"], ["sucursal", "Ventas por sucursal"], ["inventario", "Top inventario por valor"]] as const;
 const inicial: Preferencias = { tarjetas: tarjetas.map(t => t[0]), graficos: { mes: "barras", canal: "dona", sucursal: "horizontales", inventario: "horizontales" } };
 
-export function PanelPersonalizable({ metricas: r, sucursales, activaId, administrador, usuarioId, revisionAperturas }: { metricas: Metricas; sucursales: { id: number; nombre: string }[]; activaId: number | null; administrador: boolean; usuarioId: number; revisionAperturas?: ReactNode }) {
+export function PanelPersonalizable({ metricas: r, sucursales, activaId, administrador, usuarioId, revisionAperturas, revisionCierres }: { metricas: Metricas; sucursales: { id: number; nombre: string }[]; activaId: number | null; administrador: boolean; usuarioId: number; revisionAperturas?: ReactNode; revisionCierres?: ReactNode }) {
   const router = useRouter();
   const [pendiente, start] = useTransition();
   const [configurar, setConfigurar] = useState(false);
@@ -51,6 +51,7 @@ export function PanelPersonalizable({ metricas: r, sucursales, activaId, adminis
     </div>
     {configurar && <section className="card mb-5 grid gap-5 p-5 lg:grid-cols-2"><div><h2 className="mb-2 font-semibold">Métricas visibles</h2><div className="grid gap-2 sm:grid-cols-2">{tarjetas.map(([id, nombre]) => <label key={id} className="flex gap-2 text-sm"><input type="checkbox" checked={preferencias.tarjetas.includes(id)} onChange={e => cambiar({ ...preferencias, tarjetas: e.target.checked ? [...preferencias.tarjetas, id] : preferencias.tarjetas.filter(x => x !== id) })} />{nombre}</label>)}</div></div><div><h2 className="mb-2 font-semibold">Gráficos y formato</h2><div className="space-y-2">{graficos.filter(([id]) => id !== "sucursal" || (!activaId && administrador)).map(([id, nombre]) => <label key={id} className="flex items-center justify-between gap-2 text-sm"><span>{nombre}</span><select className="input w-auto" value={preferencias.graficos[id] ?? "oculto"} onChange={e => cambiar({ ...preferencias, graficos: { ...preferencias.graficos, [id]: e.target.value as TipoGrafico | "oculto" } })}><option value="oculto">Oculto</option><option value="barras">Barras verticales</option><option value="horizontales">Barras horizontales</option><option value="dona">Dona</option></select></label>)}</div></div></section>}
     {revisionAperturas}
+    {revisionCierres}
     <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">{tarjetas.filter(([id]) => preferencias.tarjetas.includes(id)).map(([id, nombre]) => <StatCard key={id} label={nombre} value={valores[id].value} hint={valores[id].hint} accent={id === "ventas"} />)}</div>
     <div className="mt-8 grid gap-6 lg:grid-cols-2">{graficos.filter(([id]) => preferencias.graficos[id] !== "oculto" && (id !== "sucursal" || (!activaId && administrador))).map(([id, nombre]) => <div key={id} className="card p-5"><h2 className="mb-4 text-base font-semibold">{nombre}</h2>{!datos[id].length ? <p className="py-8 text-center text-sm text-slate-400">Sin datos todavía.</p> : preferencias.graficos[id] === "dona" ? <DonutChart data={datos[id]} /> : preferencias.graficos[id] === "barras" ? <BarChart data={datos[id]} /> : <HBarChart data={datos[id]} />}</div>)}</div>
   </>;

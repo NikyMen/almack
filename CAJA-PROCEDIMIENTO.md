@@ -26,7 +26,7 @@ Una caja física tiene un solo responsable activo. Cada persona ingresa con su u
 1. El responsable elige **Contar y cerrar**. Mientras cuenta, no se permiten ventas ni movimientos.
 2. Envía **un único monto total**. El sistema le confirma cuánto envió y ya no puede editarlo. Si el monto es menor al esperado, después del envío le exige un motivo; no le muestra el importe esperado ni la diferencia.
 3. El cierre queda **pendiente de revisión**. El importe contado se utiliza de manera provisional para la siguiente apertura. Administración puede rectificarlo con un motivo y el fondo registrado de esa apertura se recalcula.
-4. Administración revisa el cierre después de revisar su apertura. Puede aprobar, rectificar o anular el cierre. Cada acción queda auditada. Al aprobarlo, el ajuste pasa a ser permanente. Si lo anula, se descarta el conteo de ese cierre y se usa el saldo esperado registrado.
+4. Administración revisa el cierre en la sección **Revisión de cierres de caja** del Panel, después de revisar su apertura. Puede aprobar, rectificar o anular el cierre. Cada acción queda auditada. Al aprobarlo, el ajuste pasa a ser permanente. Si lo anula, se descarta el conteo de ese cierre y se usa el saldo esperado registrado.
 5. Con la caja cerrada y aprobada, administración puede registrar extracciones o ingresos para cambio. Cada acción cambia el saldo de la próxima apertura.
 
 Si dos personas usan el mismo cajón, deben completar el traspaso antes de que la siguiente persona cobre. Así queda registrado quién era responsable en cada momento.

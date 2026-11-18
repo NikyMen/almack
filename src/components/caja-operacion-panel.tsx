@@ -31,7 +31,7 @@ function MontoContado({ etiqueta }: { etiqueta: string }) {
   </label>;
 }
 export function CajaOperacionPanel({ turno, pendiente, aperturaPorMotivarId, cierrePorMotivarId, traspaso, anterior, extracciones, resumen, cambios, sucursal, usuario, esResponsable, esAdmin }: Props) {
-  const [modo, setModo] = useState<"ingreso" | "cerrar" | "traspaso" | "rectificar" | "ingreso_cerrada" | "cancelar_traspaso" | null>(null);
+  const [modo, setModo] = useState<"ingreso" | "cerrar" | "traspaso" | "ingreso_cerrada" | "cancelar_traspaso" | null>(null);
   const [error, setError] = useState("");
   const [confirmacion, setConfirmacion] = useState<number | null>(null);
   const [ocupado, iniciar] = useTransition();
@@ -69,22 +69,7 @@ export function CajaOperacionPanel({ turno, pendiente, aperturaPorMotivarId, cie
         {pendiente && <>
           {ultimoDeclarado && <p className="rounded-lg bg-slate-50 p-3 text-sm">Arqueo enviado: <strong>{money(pendiente.declaradoCierre ?? pendiente.efectivoContado ?? 0)}</strong>. Espera revisión del administrador; ya no podés modificarlo.</p>}
           {!ultimoDeclarado && !esAdmin && <p className="text-sm text-slate-600">Hay un cierre pendiente de revisión administrativa.</p>}
-          {esAdmin && <div className="space-y-3 rounded-xl border border-slate-200 p-4 text-sm">
-            <h3 className="font-semibold">Revisar cierre</h3>
-            <p>Enviado por {pendiente.cerradoPor}: {money(pendiente.declaradoCierre ?? pendiente.efectivoContado ?? 0)}</p>
-            <p>Contado vigente: {money(pendiente.efectivoContado ?? 0)} · Esperado: {money(pendiente.efectivoEsperado ?? 0)} · Diferencia: {money(pendiente.diferencia ?? 0)}</p>
-            {pendiente.observaciones && <p>Observaciones: {pendiente.observaciones}</p>}
-            {pendiente.aperturaEstado === "pendiente" && <p className="text-amber-800">Revisá primero la apertura de este turno en el <Link href="/admin#revisar-aperturas" className="font-semibold underline">Panel</Link>.</p>}
-            {(pendiente.diferencia ?? 0) < 0 && !pendiente.observaciones && <p className="text-amber-800">Falta el motivo del empleado para este cierre.</p>}
-            <button disabled={ocupado || pendiente.aperturaEstado === "pendiente" || ((pendiente.diferencia ?? 0) < 0 && !pendiente.observaciones)} className="btn-primary" onClick={() => ejecutar({ operacion: "aprobar", turnoId: pendiente.id })}>Aprobar cierre</button>
-            <button disabled={ocupado} className="btn-ghost" onClick={() => setModo("rectificar")}>Rectificar conteo</button>
-            <details><summary className="cursor-pointer text-rose-700">Anular cierre</summary><form className="mt-2 flex gap-2" action={fd => ejecutar({ operacion: "anular_cierre", turnoId: pendiente.id, motivo: String(fd.get("motivo") ?? "") })}><input name="motivo" required maxLength={500} className="input" placeholder="Motivo de la anulación" /><button disabled={ocupado} className="btn-ghost border border-rose-300">Confirmar anulación</button></form></details>
-            {modo === "rectificar" && <form className="space-y-2" action={fd => ejecutar({ operacion: "rectificar", turnoId: pendiente.id, monto: Number(fd.get("monto")), motivo: String(fd.get("motivo") ?? "") })}>
-              <label className="label">Nuevo total contado<input name="monto" type="number" min="0" step="0.01" required className="input" /></label>
-              <label className="label">Motivo de la rectificación<input name="motivo" required maxLength={500} className="input" /></label>
-              <button disabled={ocupado} className="btn-primary">Guardar rectificación</button>
-            </form>}
-          </div>}
+          {esAdmin && <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">El cierre del turno #{pendiente.id} espera revisión administrativa. <Link href="/admin#revisar-cierres" className="font-semibold underline">Revisarlo en el Panel</Link>.</p>}
         </>}
         {!turno && <>
           <p className="text-sm text-slate-600">Quien recibe la caja debe contar el efectivo antes de abrir. El saldo esperado solo lo ve administración.</p>
