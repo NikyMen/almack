@@ -417,6 +417,8 @@ const indices = [
   `CREATE INDEX IF NOT EXISTS idx_mov_items_mov ON stock_movimiento_items(movimiento_id)`,
   `CREATE INDEX IF NOT EXISTS idx_gastos_sucursal ON gastos(sucursal_id)`,
   `CREATE INDEX IF NOT EXISTS idx_ventas_sucursal ON ventas(sucursal_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_ventas_sucursal_fecha ON ventas(sucursal_id, fecha DESC, id DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_ventas_fecha ON ventas(fecha DESC, id DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_compras_sucursal ON compras(sucursal_id)`,
 ];
 

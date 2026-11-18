@@ -8,9 +8,11 @@ import { FilterableTable, Col } from "@/components/filterable-table";
 import { Estado } from "@/components/ui";
 import { moneyPreciso } from "@/lib/format";
 import { ETIQUETA_MEDIO, type MedioPago } from "@/lib/medios-pago";
-import { NuevaVentaModal } from "@/components/nueva-venta-modal";
+import dynamic from "next/dynamic";
 import type { Producto } from "@/db/schema";
-import { detalleVenta, registrarDevolucion } from "@/app/admin/(protected)/ventas/historial/actions";
+import { datosNuevaVenta, detalleVenta, registrarDevolucion } from "@/app/admin/(protected)/ventas/historial/actions";
+
+const NuevaVentaModal = dynamic(() => import("@/components/nueva-venta-modal").then(m => m.NuevaVentaModal));
 
 type Detalle = Extract<Awaited<ReturnType<typeof detalleVenta>>, { ok: true }>;
 
@@ -29,7 +31,7 @@ type Venta = {
 };
 
 const medio = (v: string) => ETIQUETA_MEDIO[v as MedioPago] ?? v;
-const fechaVenta = (v: Venta) => v.fecha ? new Intl.DateTimeFormat("es-AR", { dateStyle: "short", timeStyle: "short", timeZone: "America/Argentina/Buenos_Aires" }).format(v.fecha instanceof Date ? v.fecha : new Date(v.fecha * 1000)) : "—";
+const fechaVenta = (v: Venta) => v.fecha ? new Intl.DateTimeFormat("es-AR", { dateStyle: "short", timeStyle: "medium", timeZone: "America/Argentina/Buenos_Aires" }).format(v.fecha instanceof Date ? v.fecha : new Date(v.fecha * 1000)) : "—";
 const diaVenta = (v: Venta) => v.fecha ? new Intl.DateTimeFormat("sv-SE", { timeZone: "America/Argentina/Buenos_Aires", year: "numeric", month: "2-digit", day: "2-digit" }).format(v.fecha instanceof Date ? v.fecha : new Date(v.fecha * 1000)) : "sin-fecha";
 
 export function VentasTabla({
@@ -49,11 +51,26 @@ export function VentasTabla({
 }) {
   const router = useRouter();
   const [nueva, setNueva] = useState(false);
+  const [datosAlta, setDatosAlta] = useState<{ productos: Producto[]; clientes: { id: number; nombre: string }[] } | null>(null);
+  const [cargandoAlta, setCargandoAlta] = useState(false);
+  const [errorAlta, setErrorAlta] = useState("");
   const [seleccionada, setSeleccionada] = useState<Venta | null>(null);
   const [detalle, setDetalle] = useState<Detalle | null>(null);
   const [errorDetalle, setErrorDetalle] = useState("");
   const [devolviendo, setDevolviendo] = useState(false);
   const [errorDevolucion, setErrorDevolucion] = useState("");
+  async function abrirAlta() {
+    setErrorAlta("");
+    setCargandoAlta(true);
+    try {
+      setDatosAlta(await datosNuevaVenta());
+      setNueva(true);
+    } catch {
+      setErrorAlta("No se pudo cargar el formulario de venta.");
+    } finally {
+      setCargandoAlta(false);
+    }
+  }
   useEffect(() => {
     setSeleccionada(actual => actual ? ventas.find(v => v.id === actual.id) ?? null : null);
   }, [ventas]);
@@ -88,17 +105,18 @@ export function VentasTabla({
     { key: "cajero", head: "Usuario", cell: (v) => <span className="text-slate-500">{v.cajero || "Sin registrar"}</span>, value: (v) => v.cajero || "Sin registrar", filter: true },
     { key: "medioPago", head: "Pago", cell: (v) => <span className="text-slate-500">{medio(v.medioPago)}</span>, value: (v) => medio(v.medioPago), filter: true },
     { key: "estado", head: "Estado", cell: (v) => <Estado value={v.estado} />, value: (v) => v.estado, filter: true },
-    { key: "fecha", head: "Fecha", cell: (v) => <span className="text-slate-500">{fechaVenta(v)}</span>, value: (v) => (v.fecha instanceof Date ? v.fecha.getTime() : Number(v.fecha)), sort: true },
+    { key: "fecha", head: "Fecha y hora", cell: (v) => <span className="text-slate-500">{fechaVenta(v)}</span>, value: (v) => (v.fecha instanceof Date ? v.fecha.getTime() : Number(v.fecha)), sort: true },
     { key: "total", head: "Total", cell: (v) => <span className="font-semibold tabular-nums">{moneyPreciso(v.total)}</span>, value: (v) => v.total, className: "font-semibold" },
   ];
 
   return (
     <>
       {permitirAlta && <div className="mb-4 flex justify-end">
-        <button className="btn-primary" onClick={() => setNueva(true)}>
-          <Plus className="h-4 w-4" /> Añadir venta
+        <button className="btn-primary" disabled={cargandoAlta} onClick={abrirAlta}>
+          <Plus className="h-4 w-4" /> {cargandoAlta ? "Cargando…" : "Añadir venta"}
         </button>
       </div>}
+      {errorAlta && <p role="alert" className="text-sm text-rose-700">{errorAlta}</p>}
 
       <FilterableTable
         rows={ventas}
@@ -109,7 +127,7 @@ export function VentasTabla({
         searchPlaceholder="Buscar por cliente, estado, total…"
         sortOptions={[{ key: "fecha", label: "Más recientes", direction: "desc" }, { key: "fecha", label: "Más antiguas", direction: "asc" }]}
         groupBy={diaVenta}
-        groupHeader={(key, rows) => <div className="flex flex-wrap items-center justify-between gap-2"><span>{key === "sin-fecha" ? "Sin fecha" : new Intl.DateTimeFormat("es-AR", { dateStyle: "full", timeZone: "UTC" }).format(new Date(`${key}T12:00:00Z`))}</span><span>Total del día: {moneyPreciso(rows.reduce((sum, v) => sum + (v.estado === "completada" ? v.total : 0), 0))}</span></div>}
+        groupHeader={(key, rows) => <div className="flex flex-wrap items-center justify-between gap-2"><span>{key === "sin-fecha" ? "Sin fecha" : new Intl.DateTimeFormat("es-AR", { dateStyle: "full", timeZone: "UTC" }).format(new Date(`${key}T12:00:00Z`))}</span><span>Total de estas filas: {moneyPreciso(rows.reduce((sum, v) => sum + (v.estado === "completada" ? v.total : 0), 0))}</span></div>}
         mobileCard={(v) => (
           <div className="flex items-start gap-3">
             <div className="min-w-0 flex-1">
@@ -161,8 +179,8 @@ export function VentasTabla({
         </div>
       </Overlay>}
 
-      {permitirAlta && nueva && (
-        <NuevaVentaModal productos={productos} clientes={clientes} onClose={() => setNueva(false)} />
+      {permitirAlta && nueva && datosAlta && (
+        <NuevaVentaModal productos={datosAlta.productos} clientes={datosAlta.clientes} onClose={() => setNueva(false)} />
       )}
     </>
   );

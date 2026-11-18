@@ -1,11 +1,25 @@
 "use server";
 
-import { eq } from "drizzle-orm";
-import { db, ventas, ventaItems, ventaDevoluciones, productos } from "@/db";
+import { asc, eq, or, sql } from "drizzle-orm";
+import { db, ventas, ventaItems, ventaDevoluciones, productos, clientes } from "@/db";
 import { requireAdmin } from "@/lib/auth";
 import { sucursalOperativaId } from "@/lib/sucursal";
 import { devolverVenta } from "@/lib/caja";
 import { revalidatePath } from "next/cache";
+import { stockDeSucursal } from "@/lib/stock";
+
+export async function datosNuevaVenta() {
+  await requireAdmin();
+  const sucursalId = await sucursalOperativaId();
+  const [catalogo, listaClientes, stock] = await Promise.all([
+    db.select().from(productos).where(eq(productos.activo, true)).orderBy(asc(productos.nombre)),
+    db.select({ id: clientes.id, nombre: clientes.nombre }).from(clientes)
+      .where(sucursalId ? or(eq(clientes.sucursalId, sucursalId), sql`exists (select 1 from ${ventas} where ${ventas.clienteId} = ${clientes.id} and ${ventas.sucursalId} = ${sucursalId})`) : undefined)
+      .orderBy(asc(clientes.nombre)),
+    sucursalId ? stockDeSucursal(sucursalId) : Promise.resolve(null),
+  ]);
+  return { productos: stock ? catalogo.map(p => ({ ...p, stock: stock.get(p.id) ?? 0 })) : catalogo, clientes: listaClientes };
+}
 
 export async function registrarDevolucion(ventaId: number, motivo: string, referencia: string, reponerStock: boolean) {
   const usuario = await requireAdmin();

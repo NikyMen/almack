@@ -10,6 +10,7 @@ import { money } from "@/lib/format";
 import { FilterableTable, Col } from "@/components/filterable-table";
 import { BarcodeScanner } from "@/components/barcode-scanner";
 import { CampoImagenProducto } from "@/components/product-image-input";
+import { ImportarStock } from "@/components/importar-stock";
 import { ControlDuplicados } from "@/components/stock-duplicados";
 import { ajustarStock, crearProducto, editarProducto, eliminarProducto, accionDescripcion, togglePublicado, toggleOfertaTienda } from "@/app/actions";
 
@@ -175,6 +176,7 @@ export function StockManager({
         {administrador && <MultiplicadorStock valor={multiplicadorGeneral} />}
         <p className="mr-auto text-sm text-slate-500">{totalResultados} resultado(s) · página {paginaActual} de {paginas}</p>
         <a className="btn-ghost" href={exportarHref}><FileSpreadsheet className="h-4 w-4" /> Exportar</a>
+        {administrador && <ImportarStock key={sucursalActivaId ?? "todas"} sucursales={sucursales} sucursalActivaId={sucursalActivaId} />}
         {administrador && <button className="btn-ghost" disabled={cargandoDuplicados} onClick={() => abrirDuplicados()}><CopyCheck className="h-4 w-4" /> {cargandoDuplicados ? "Cargando duplicados…" : "Control de duplicados"}</button>}
         <button type="button" className="btn-ghost border border-slate-200 px-3 transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700 lg:hidden" disabled={buscandoCodigo} onClick={() => setEscaneandoStock(true)} aria-label="Escanear código para consultar stock" title="Escanear código para consultar stock"><Camera className="h-4 w-4" /> <span className="sm:hidden">Escanear</span></button>
         {administrador && <button className="btn-ghost text-rose-600" disabled={!totalProductos} onClick={() => setVaciando(true)}><Trash2 className="h-4 w-4" /> Vaciar stock</button>}
