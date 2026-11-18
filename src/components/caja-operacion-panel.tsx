@@ -11,6 +11,7 @@ import type { resumenCaja, saldoUltimoCierre } from "@/lib/caja";
 type Turno = typeof cajaTurnos.$inferSelect;
 type Traspaso = typeof cajaTraspasos.$inferSelect;
 type Props = {
+  cajaId: number;
   turno: Turno | null;
   pendiente: Turno | null;
   aperturaPorMotivarId: number | null;
@@ -30,7 +31,7 @@ function MontoContado({ etiqueta }: { etiqueta: string }) {
     <input name="monto" type="number" min="0" step="0.01" inputMode="decimal" required className="input mt-1" placeholder="0,00" />
   </label>;
 }
-export function CajaOperacionPanel({ turno, pendiente, aperturaPorMotivarId, cierrePorMotivarId, traspaso, anterior, extracciones, resumen, cambios, sucursal, usuario, esResponsable, esAdmin }: Props) {
+export function CajaOperacionPanel({ cajaId, turno, pendiente, aperturaPorMotivarId, cierrePorMotivarId, traspaso, anterior, extracciones, resumen, cambios, sucursal, usuario, esResponsable, esAdmin }: Props) {
   const [modo, setModo] = useState<"ingreso" | "cerrar" | "traspaso" | "ingreso_cerrada" | "cancelar_traspaso" | null>(null);
   const [error, setError] = useState("");
   const [confirmacion, setConfirmacion] = useState<number | null>(null);
@@ -39,7 +40,7 @@ export function CajaOperacionPanel({ turno, pendiente, aperturaPorMotivarId, cie
   function ejecutar(datos: Parameters<typeof operarCaja>[0]) {
     setError("");
     iniciar(async () => {
-      const r = await operarCaja(datos);
+      const r = await operarCaja({ ...datos, cajaId });
       if (!r.ok) { setError(r.error); return; }
       if ("contado" in r && r.contado !== undefined) setConfirmacion(r.contado);
       setModo(null);

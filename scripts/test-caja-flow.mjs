@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 if (!/^file:caja-test-[a-f0-9-]+\.db$/.test(process.env.TURSO_DATABASE_URL ?? "")) throw new Error("Usá pnpm test:caja: requiere una base temporal aislada.");
 
 
-const { db, client, sucursales, productos, stockSucursal, ventas, promociones, cajaSeguridad, cajaExtracciones, cajaSaldoMovimientos, cajaIntentos, cambiosPrecio, ventaItems } = await import('../src/db/index.ts');
+const { db, client, sucursales, cajas, productos, stockSucursal, ventas, promociones, cajaSeguridad, cajaExtracciones, cajaSaldoMovimientos, cajaIntentos, cambiosPrecio, ventaItems } = await import('../src/db/index.ts');
 const { cajaDDL } = await import('../src/db/caja-ddl.ts');
 const { abrirCaja, cerrarCaja, aprobarCierre, rectificarCierre, registrarMotivoCierre, registrarMotivoApertura, revisarApertura, anularCierre, iniciarTraspaso, recibirTraspaso, cancelarTraspaso, traspasoPendiente, ingresarCambioCerrada, cambiarArqueo, devolverVenta, moverEfectivo, venderEnCaja, resumenCaja, validarMonto, extraerEfectivo, saldoUltimoCierre, cajaAbierta } = await import('../src/lib/caja.ts');
 const { hashClaveAdministrador, verificarClaveAdministrador } = await import('../src/lib/clave-admin.ts');
@@ -14,7 +14,8 @@ const extraer = async (turnoId, monto, clave = 'secreta123', usuario = 'ana', so
   return extraerEfectivo({ sucursalId, turnoId, monto, saldoRestante: saldoRestante ?? Math.max(0, Math.round((disponible - monto) * 100) / 100), clave, usuario, responsable: usuario, motivo: 'Retiro autorizado', entregadoA: 'Tesorería', solicitudId });
 };
 try {
-  await client.executeMultiple(`CREATE TABLE sucursales(id INTEGER PRIMARY KEY, nombre TEXT NOT NULL, direccion TEXT DEFAULT '', telefono TEXT DEFAULT '', activo INTEGER DEFAULT 1, orden INTEGER DEFAULT 0, creado_en INTEGER);
+  await client.executeMultiple(`CREATE TABLE sucursales(id INTEGER PRIMARY KEY, nombre TEXT NOT NULL, direccion TEXT DEFAULT '', telefono TEXT DEFAULT '', activo INTEGER DEFAULT 1, orden INTEGER DEFAULT 0, es_deposito INTEGER NOT NULL DEFAULT 0, es_punto_venta INTEGER NOT NULL DEFAULT 1, es_mayorista INTEGER NOT NULL DEFAULT 0, deposito_id INTEGER, creado_en INTEGER);
+CREATE TABLE cajas(id INTEGER PRIMARY KEY, sucursal_id INTEGER NOT NULL, numero INTEGER NOT NULL, activa INTEGER NOT NULL DEFAULT 1, UNIQUE(sucursal_id, numero));
 CREATE TABLE productos(id INTEGER PRIMARY KEY, sku TEXT, nombre TEXT, descripcion TEXT, categoria TEXT, precio_venta REAL, precio_compra REAL, stock REAL, unidad_medida TEXT NOT NULL DEFAULT 'unidad', activo INTEGER NOT NULL DEFAULT 1, stock_minimo INTEGER, imagen TEXT, publicado INTEGER, descripcion_web TEXT, creado_en INTEGER);
 CREATE TABLE stock_sucursal(id INTEGER PRIMARY KEY, producto_id INTEGER, sucursal_id INTEGER, cantidad INTEGER, UNIQUE(producto_id, sucursal_id));
 CREATE TABLE ventas(id INTEGER PRIMARY KEY, cliente_id INTEGER, sucursal_id INTEGER, caja_turno_id INTEGER, cajero TEXT, total REAL, estado TEXT, canal TEXT, medio_pago TEXT, efectivo_recibido REAL, vuelto REAL, efectivo_antes REAL, efectivo_despues REAL, referencia TEXT, facturada INTEGER, fecha INTEGER);
@@ -24,6 +25,7 @@ CREATE TABLE promociones(id INTEGER PRIMARY KEY, nombre TEXT NOT NULL, tipo TEXT
 CREATE TABLE cambios_precio(id INTEGER PRIMARY KEY, venta_id INTEGER NOT NULL, sucursal_id INTEGER NOT NULL, usuario TEXT NOT NULL, medio_pago TEXT NOT NULL, tipo TEXT NOT NULL, detalle TEXT NOT NULL, total_anterior REAL NOT NULL, total_nuevo REAL NOT NULL, fecha INTEGER);`);
   for (const ddl of cajaDDL) await client.execute(ddl);
   await db.insert(sucursales).values([{id:1,nombre:'Centro'}, {id:2,nombre:'Otra'}]);
+  await db.insert(cajas).values([{ id: 1, sucursalId: 1, numero: 1 }, { id: 2, sucursalId: 2, numero: 1 }]);
   await db.insert(productos).values({id:1,sku:'A',nombre:'Arroz',precioVenta:25,stock:10});
   await db.insert(stockSucursal).values({productoId:1,sucursalId:1,cantidad:10});
   assert.throws(() => validarMonto(NaN));
@@ -207,6 +209,7 @@ CREATE TABLE cambios_precio(id INTEGER PRIMARY KEY, venta_id INTEGER NOT NULL, s
   await aprobarCierre(2,otraCaja.id,'admin');
   assert.equal((await cajaAbierta(2)).fondoInicial,5);
   await db.insert(sucursales).values({id:3,nombre:'Prueba de anulación'});
+  await db.insert(cajas).values({ id: 3, sucursalId: 3, numero: 1 });
   const paraAnular = await abrirCaja(3,'Mara',10);
   await revisarApertura(3,paraAnular.id,'admin','aprobar');
   await cambiarArqueo(3,paraAnular.id,true);
@@ -216,7 +219,19 @@ CREATE TABLE cambios_precio(id INTEGER PRIMARY KEY, venta_id INTEGER NOT NULL, s
   await anularCierre(3,paraAnular.id,'admin','Conteo inválido');
   assert.equal((await cajaAbierta(3)).fondoInicial,10);
   assert.equal((await saldoUltimoCierre(3)).anulado,true);
-  console.log('Caja: apertura ciega, cobros, traspasos, revisión de cierre, saldo posterior y rollback OK.');
+  await db.insert(cajas).values({ id: 4, sucursalId: 3, numero: 2 });
+  const segundo = await abrirCaja(3,'Lucía',0,'','lucia','{}',4);
+  assert.equal(segundo.cajaId,4);
+  assert.equal((await cajaAbierta(3,db,4))?.id, segundo.id);
+  assert.equal((await cajaAbierta(3))?.id, posterior.id);
+  await revisarApertura(3,segundo.id,'admin','aprobar');
+  await moverEfectivo(3,segundo.id,'Lucía','ingreso',7,'Cambio','lucia');
+  await cambiarArqueo(3,segundo.id,true,'lucia','Lucía');
+  await cerrarCaja(3,segundo.id,'Lucía',7,'','lucia');
+  await aprobarCierre(3,segundo.id,'admin');
+  assert.equal((await saldoUltimoCierre(3,db,4))?.disponible,7);
+  assert.equal((await cajaAbierta(3))?.id,posterior.id);
+  console.log('Caja: apertura ciega, cobros, traspasos, revisión, saldos y cajas independientes OK.');
 } finally {
   client.close();
 

@@ -2,7 +2,7 @@
 import { leerReglasStock, precioDesdeCosto } from "@/lib/reglas-stock";
 import { venderEnCaja } from "@/lib/caja";
 
-import { db, productos, clientes, compras, ventas, ventaItems, tiendaProductoMeta, sucursales, stockSucursal, stockTransito, stockMovimientos, cajaTurnos } from "@/db";
+import { db, cajas, productos, clientes, compras, ventas, ventaItems, tiendaProductoMeta, sucursales, stockSucursal, stockTransito, stockMovimientos, cajaTurnos } from "@/db";
 import { eq, and, sql, inArray } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
@@ -70,10 +70,11 @@ export async function crearSucursal(nombre: string, direccion = "") {
     return { ok: false as const, error: "Ya tenés una sucursal con ese nombre." };
   }
 
-  const [creada] = await db
-    .insert(sucursales)
-    .values({ nombre: limpio, direccion: direccion.trim(), orden: lista.length })
-    .returning({ id: sucursales.id });
+  const creada = await db.transaction(async tx => {
+    const [local] = await tx.insert(sucursales).values({ nombre: limpio, direccion: direccion.trim(), orden: lista.length }).returning({ id: sucursales.id });
+    await tx.insert(cajas).values({ sucursalId: local.id, numero: 1 });
+    return local;
+  });
 
   revalidatePath("/", "layout");
   return { ok: true as const, id: creada.id };
@@ -114,6 +115,8 @@ export async function archivarSucursal(id: number) {
   const [cajaPendiente] = await db.select({ id: cajaTurnos.id }).from(cajaTurnos)
     .where(sql`${cajaTurnos.sucursalId} = ${id} and ${cajaTurnos.estado} in ('abierta','pendiente')`).limit(1);
   if (cajaPendiente) return { ok: false as const, error: "Cerrá y aprobá la caja antes de archivar esta sucursal." };
+  const [abastecida] = await db.select({ id: sucursales.id }).from(sucursales).where(and(eq(sucursales.depositoId, id), eq(sucursales.activo, true))).limit(1);
+  if (abastecida && abastecida.id !== id) return { ok: false as const, error: "Otros locales usan este depósito. Reasignalos antes de archivar la sucursal." };
   const [conStock] = await db
     .select({ unidades: sql<number>`coalesce(sum(${stockSucursal.cantidad}),0)` })
     .from(stockSucursal)
@@ -370,7 +373,7 @@ type ItemCaja = { productoId: number; cantidad: number };
 export async function cobrarVenta(
   items: ItemCaja[],
   medioPago: MedioPago = "efectivo",
-  opts?: { clienteId?: number | null; canal?: string; permitirSinStock?: boolean; efectivoRecibido?: number; ajustePrecio?: import("@/lib/caja").AjustePrecio }
+  opts?: { clienteId?: number | null; canal?: string; permitirSinStock?: boolean; efectivoRecibido?: number; ajustePrecio?: import("@/lib/caja").AjustePrecio; cajaId?: number }
 ) {
   const usuario = await requireAcceso(opts && ("clienteId" in opts || "canal" in opts) ? "ventas" : "caja");
   if (opts?.ajustePrecio) await requireAcceso("caja");

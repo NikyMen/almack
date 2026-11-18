@@ -37,6 +37,7 @@ const ICONOS: Record<ModuloKey, LucideIcon> = {
   whatsapp: Users,
   ia: Sparkles,
   equipo: UserCog,
+  sucursales: LayoutDashboard,
 };
 
 // Orden de preferencia para los dos slots de cada lado. Si el usuario no tiene

@@ -43,6 +43,7 @@ const ICONOS: Record<ModuloKey, LucideIcon> = {
   whatsapp: MessageCircle,
   ia: Sparkles,
   equipo: UserCog,
+  sucursales: Store,
 };
 
 function SidebarContent({

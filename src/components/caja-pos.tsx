@@ -23,7 +23,7 @@ import { RightDrawer } from "@/components/right-drawer";
 
 type Ticket = { ventaId: number; total: number; items: number; medioPago: MedioPago; efectivoRecibido: number | null; vuelto: number | null };
 
-export function CajaPOS({ productos }: { productos: Producto[] }) {
+export function CajaPOS({ productos, cajaId }: { productos: Producto[]; cajaId: number }) {
   const [busqueda, setBusqueda] = useState("");
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [eligiendoPago, setEligiendoPago] = useState(false);
@@ -173,7 +173,7 @@ export function CajaPOS({ productos }: { productos: Producto[] }) {
     const pedido = items();
     const unidadesPedido = unidades;
     startTransition(async () => {
-      const r = await cobrarVenta(pedido, medioPago, { permitirSinStock, efectivoRecibido, ajustePrecio: ajusteActivo ?? undefined });
+      const r = await cobrarVenta(pedido, medioPago, { permitirSinStock, efectivoRecibido, ajustePrecio: ajusteActivo ?? undefined, cajaId });
       if (!r.ok) return setError(r.error);
       setTicket({ ventaId: r.ventaId, total: r.total, items: unidadesPedido, medioPago, efectivoRecibido: r.efectivoRecibido, vuelto: r.vuelto });
       vaciar();

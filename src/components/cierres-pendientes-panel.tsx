@@ -11,6 +11,7 @@ export type CierrePendientePanel = {
   id: number;
   sucursalId: number;
   sucursalNombre: string | null;
+  cajaNumero: number | null;
   cerradoPor: string | null;
   declaradoCierre: number | null;
   efectivoContado: number | null;
@@ -61,7 +62,7 @@ export function CierresPendientesPanel({ cierres, total }: { cierres: CierrePend
           const faltaMotivo = (c.diferencia ?? 0) < 0 && !c.observaciones;
           const accionAbierta = revision?.turnoId === c.id ? revision.accion : null;
           return <article key={c.id} className="rounded-xl border border-slate-200 p-4 text-sm">
-            <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="font-semibold text-navy">Turno #{c.id} · {c.sucursalNombre ?? "Sucursal"}</h3><span className="text-xs text-slate-500">Cerró {c.cerradoPor ?? "Sin registrar"}</span></div>
+            <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="font-semibold text-navy">Turno #{c.id} · {c.sucursalNombre ?? "Sucursal"} · Caja {c.cajaNumero ?? 1}</h3><span className="text-xs text-slate-500">Cerró {c.cerradoPor ?? "Sin registrar"}</span></div>
             <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-slate-700"><p>Enviado: <strong>{money(c.declaradoCierre ?? c.efectivoContado ?? 0)}</strong></p><p>Conteo vigente: <strong>{money(c.efectivoContado ?? 0)}</strong></p><p>Esperado: <strong>{money(c.efectivoEsperado ?? 0)}</strong></p><p>Diferencia: <strong>{money(c.diferencia ?? 0)}</strong></p></div>
             {c.observaciones && <p className="mt-2 rounded-lg bg-slate-50 px-3 py-2 text-slate-700">Motivo del responsable: {c.observaciones}</p>}
             {faltaApertura && <p className="mt-2 text-amber-800">Primero revisá la <Link href="/admin#revisar-aperturas" className="font-semibold underline">apertura de este turno</Link>.</p>}
@@ -75,7 +76,7 @@ export function CierresPendientesPanel({ cierres, total }: { cierres: CierrePend
             {accionAbierta === "anular" && <form className="mt-4 flex flex-wrap items-end gap-3 rounded-xl bg-rose-50 p-4" action={fd => ejecutar(c, "anular", fd)}><label className="label min-w-52 flex-1">Motivo de la anulación<input className="input mt-1" name="motivo" maxLength={500} required /></label><button className="btn-ghost border border-rose-300 text-rose-700" disabled={ocupado}>Confirmar anulación</button></form>}
           </article>;
         })}
-        {total > cierres.length && <p className="text-xs text-slate-500">Se muestra el siguiente cierre por sucursal, en orden. Al resolverlo aparecerán los posteriores.</p>}
+        {total > cierres.length && <p className="text-xs text-slate-500">Se muestra el siguiente cierre por caja, en orden. Al resolverlo aparecerán los posteriores.</p>}
       </div>}
     </div>
   </section>;

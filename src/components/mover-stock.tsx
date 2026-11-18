@@ -63,12 +63,13 @@ export function MoverStock({
   gastos: GastoVista[];
 }) {
   const router = useRouter();
-  // Estando dentro de una sucursal, lo natural es que la mercadería salga de
-  // acá: se propone como origen y el destino queda en el primer otro local.
-  const origenInicial = sucursalActivaId ?? sucursales[0]?.id ?? 0;
+  // Si el local tiene un depósito asociado, el abastecimiento parte de allí.
+  const localActivo = sucursales.find(s => s.id === sucursalActivaId);
+  const depositoAsociado = sucursales.find(s => s.id === localActivo?.depositoId && s.esDeposito);
+  const origenInicial = depositoAsociado?.id ?? sucursalActivaId ?? sucursales[0]?.id ?? 0;
   const [origenId, setOrigenId] = useState(origenInicial);
   const [destinoId, setDestinoId] = useState(
-    sucursales.find((s) => s.id !== origenInicial)?.id ?? 0
+    localActivo && localActivo.id !== origenInicial ? localActivo.id : sucursales.find((s) => s.id !== origenInicial)?.id ?? 0
   );
   const [lineas, setLineas] = useState<Linea[]>([]);
   const [nota, setNota] = useState("");

@@ -3,6 +3,7 @@ import { sql } from "drizzle-orm";
 export const cajaTurnos = sqliteTable("caja_turnos", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   sucursalId: integer("sucursal_id").notNull(),
+  cajaId: integer("caja_id").notNull(),
   responsable: text("responsable").notNull(),
   responsableUsuario: text("responsable_usuario").notNull().default(""),
   aperturaUsuario: text("apertura_usuario").notNull().default(""),

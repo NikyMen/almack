@@ -28,7 +28,18 @@ export const sucursales = sqliteTable("sucursales", {
   telefono: text("telefono").notNull().default(""),
   activo: integer("activo", { mode: "boolean" }).notNull().default(true),
   orden: integer("orden").notNull().default(0),
+  esDeposito: integer("es_deposito", { mode: "boolean" }).notNull().default(false),
+  esPuntoVenta: integer("es_punto_venta", { mode: "boolean" }).notNull().default(true),
+  esMayorista: integer("es_mayorista", { mode: "boolean" }).notNull().default(false),
+  depositoId: integer("deposito_id"),
   creadoEn: integer("creado_en", { mode: "timestamp" }).default(now),
+});
+
+export const cajas = sqliteTable("cajas", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  sucursalId: integer("sucursal_id").notNull().references(() => sucursales.id),
+  numero: integer("numero").notNull(),
+  activa: integer("activa", { mode: "boolean" }).notNull().default(true),
 });
 
 // ---------------------------------------------------------------------------

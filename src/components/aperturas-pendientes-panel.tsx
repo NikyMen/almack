@@ -10,6 +10,7 @@ export type AperturaPendientePanel = {
   id: number;
   sucursalId: number;
   sucursalNombre: string | null;
+  cajaNumero: number | null;
   responsable: string;
   aperturaUsuario: string;
   fondoInicial: number;
@@ -59,7 +60,7 @@ export function AperturasPendientesPanel({ aperturas, total }: { aperturas: Aper
           const faltaMotivo = (a.diferenciaApertura ?? 0) < 0 && !a.motivoApertura;
           const accionAbierta = revision?.turnoId === a.id ? revision.accion : null;
           return <article key={a.id} className="rounded-xl border border-slate-200 p-4 text-sm">
-            <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="font-semibold text-navy">Turno #{a.id} · {a.sucursalNombre ?? "Sucursal"}</h3><span className="text-xs text-slate-500">Abrió {a.aperturaUsuario || a.responsable}</span></div>
+            <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="font-semibold text-navy">Turno #{a.id} · {a.sucursalNombre ?? "Sucursal"} · Caja {a.cajaNumero ?? 1}</h3><span className="text-xs text-slate-500">Abrió {a.aperturaUsuario || a.responsable}</span></div>
             <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-slate-700"><p>Declarado: <strong>{money(a.fondoContado ?? a.fondoInicial)}</strong></p><p>Esperado: <strong>{a.fondoEsperado === null ? "sin registro anterior" : money(a.fondoEsperado)}</strong></p><p>Diferencia: <strong>{a.diferenciaApertura === null ? "sin referencia" : money(a.diferenciaApertura)}</strong></p></div>
             {a.motivoApertura && <p className="mt-2 rounded-lg bg-slate-50 px-3 py-2 text-slate-700">Motivo del responsable: {a.motivoApertura}</p>}
             {faltaMotivo && <p className="mt-2 text-amber-800">Falta el motivo del responsable. Podés corregir o anular; para aprobar, primero debe registrarlo.</p>}

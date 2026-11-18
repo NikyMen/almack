@@ -18,6 +18,7 @@ const MODULOS = [
 ];
 
 const statements = [
+  `CREATE TABLE IF NOT EXISTS cajas (id INTEGER PRIMARY KEY AUTOINCREMENT, sucursal_id INTEGER NOT NULL REFERENCES sucursales(id), numero INTEGER NOT NULL, activa INTEGER NOT NULL DEFAULT 1, UNIQUE(sucursal_id, numero))`,
   `CREATE TABLE IF NOT EXISTS proveedores (
     id INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT NOT NULL,
     cuit TEXT NOT NULL DEFAULT '', contacto TEXT NOT NULL DEFAULT '',
@@ -338,6 +339,11 @@ const statements = [
 // NOT EXISTS → si la columna ya existe, el execute tira error y lo ignoramos).
 const alters = [
   `ALTER TABLE caja_turnos ADD COLUMN apertura_usuario TEXT NOT NULL DEFAULT ''`,
+  `ALTER TABLE caja_turnos ADD COLUMN caja_id INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE sucursales ADD COLUMN es_deposito INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE sucursales ADD COLUMN es_punto_venta INTEGER NOT NULL DEFAULT 1`,
+  `ALTER TABLE sucursales ADD COLUMN es_mayorista INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE sucursales ADD COLUMN deposito_id INTEGER REFERENCES sucursales(id)`,
   `ALTER TABLE caja_turnos ADD COLUMN apertura_estado TEXT NOT NULL DEFAULT 'aprobada'`,
   `ALTER TABLE caja_turnos ADD COLUMN apertura_revisada_por TEXT`,
   `ALTER TABLE caja_turnos ADD COLUMN apertura_revisada_en INTEGER`,
@@ -421,6 +427,8 @@ const indices = [
   `CREATE INDEX IF NOT EXISTS idx_ventas_fecha ON ventas(fecha DESC, id DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_caja_aperturas_pendientes ON caja_turnos(apertura_estado, sucursal_id, id)`,
   `CREATE INDEX IF NOT EXISTS idx_caja_cierres_pendientes ON caja_turnos(estado, sucursal_id, id)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_caja_abierta ON caja_turnos(caja_id) WHERE estado = 'abierta'`,
+  `CREATE INDEX IF NOT EXISTS idx_caja_turnos_caja ON caja_turnos(caja_id, id DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_compras_sucursal ON compras(sucursal_id)`,
 ];
 
@@ -454,6 +462,9 @@ async function migrate() {
     }
   }
   await client.execute("DROP INDEX IF EXISTS idx_caja_turno_activo");
+  await client.execute("DROP INDEX IF EXISTS idx_caja_abierta");
+  await client.execute("INSERT OR IGNORE INTO cajas (sucursal_id, numero) SELECT id, 1 FROM sucursales");
+  await client.execute("UPDATE caja_turnos SET caja_id = (SELECT id FROM cajas WHERE sucursal_id = caja_turnos.sucursal_id AND numero = 1) WHERE caja_id = 0");
   if (nuevaColumnaRecibida) {
     await client.execute("UPDATE stock_movimiento_items SET cantidad_recibida = cantidad");
   }
@@ -508,6 +519,7 @@ async function migrate() {
       args: [process.env.SUCURSAL_INICIAL || "Casa Central"],
     });
   }
+  await client.execute("INSERT OR IGNORE INTO cajas (sucursal_id, numero) SELECT id, 1 FROM sucursales");
 
   // La sucursal más vieja es la que absorbe los datos previos a esta migración.
   const { rows: base } = await client.execute(

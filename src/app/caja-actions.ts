@@ -3,7 +3,7 @@ import { requireAcceso } from "@/lib/auth";
 import { sucursalOperativaId } from "@/lib/sucursal";
 import { abrirCaja, moverEfectivo, cerrarCaja, registrarMotivoCierre, registrarMotivoApertura, extraerEfectivo, cambiarArqueo, iniciarTraspaso, recibirTraspaso, cancelarTraspaso, ingresarCambioCerrada } from "@/lib/caja";
 import { revalidatePath } from "next/cache";
-export async function operarCaja(datos: { operacion: "abrir" | "movimiento" | "cerrar" | "motivo_cierre" | "motivo_apertura" | "extraccion" | "iniciar_arqueo" | "cancelar_arqueo" | "iniciar_traspaso" | "recibir_traspaso" | "cancelar_traspaso" | "ingreso_cerrada"; saldoRestante?: number; clave?: string; solicitudId?: string; turnoId?: number; monto?: number; tipo?: string; motivo?: string; entregadoA?: string }) {
+export async function operarCaja(datos: { operacion: "abrir" | "movimiento" | "cerrar" | "motivo_cierre" | "motivo_apertura" | "extraccion" | "iniciar_arqueo" | "cancelar_arqueo" | "iniciar_traspaso" | "recibir_traspaso" | "cancelar_traspaso" | "ingreso_cerrada"; cajaId?: number; saldoRestante?: number; clave?: string; solicitudId?: string; turnoId?: number; monto?: number; tipo?: string; motivo?: string; entregadoA?: string }) {
   const usuario = await requireAcceso("caja");
   if (["extraccion", "movimiento", "ingreso_cerrada", "cancelar_traspaso"].includes(datos.operacion) && usuario.rol !== "admin") return { ok: false, error: "Solo administración puede realizar esta operación." };
   const sucursal = await sucursalOperativaId();
@@ -13,7 +13,7 @@ export async function operarCaja(datos: { operacion: "abrir" | "movimiento" | "c
     let requiereMotivo = false;
     let turnoResultante: number | undefined;
     if (datos.operacion === "abrir") {
-      const turno = await abrirCaja(sucursal, usuario.nombre, contado, "", usuario.usuario);
+      const turno = await abrirCaja(sucursal, usuario.nombre, contado, "", usuario.usuario, "{}", datos.cajaId);
       requiereMotivo = (turno.diferenciaApertura ?? 0) < 0;
       turnoResultante = turno.id;
     }

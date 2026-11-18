@@ -13,7 +13,8 @@ export type ModuloKey =
   | "tienda"
   | "whatsapp"
   | "ia"
-  | "equipo";
+  | "equipo"
+  | "sucursales";
 
 export type Modulo = { key: ModuloKey; label: string; href: string; oculto?: boolean };
 
@@ -22,6 +23,7 @@ export type Modulo = { key: ModuloKey; label: string; href: string; oculto?: boo
 // entra por URL. Volver a mostrarlos = borrar la línea `oculto: true`.
 export const MODULOS: Modulo[] = [
   { key: "panel", label: "Panel", href: "/admin" },
+  { key: "sucursales", label: "Panel de sucursal", href: "/admin/sucursales" },
   { key: "caja", label: "Caja", href: "/admin/caja" },
   { key: "stock", label: "Stock", href: "/admin/stock" },
   { key: "movimientos", label: "Mover stock", href: "/admin/stock/mover" },
@@ -74,7 +76,7 @@ export function esSuperAdmin(u: UsuarioActual | null): boolean {
 export function tieneAcceso(u: UsuarioActual | null, modulo: ModuloKey): boolean {
   if (!u) return false;
   if (u.rol === "admin") return true;
-  if (modulo === "whatsapp" || modulo === "equipo" || modulo === "ia") return false;
+  if (modulo === "whatsapp" || modulo === "equipo" || modulo === "ia" || modulo === "sucursales") return false;
   if (modulo === "stock" && u.permisos.includes("movimientos")) return true;
   return u.permisos.includes(modulo);
 }
