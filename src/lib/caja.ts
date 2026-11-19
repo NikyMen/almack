@@ -321,17 +321,24 @@ export async function venderEnCaja(sucursalId: number, cajero: string, items: { 
       if (ajuste.tipo === "producto") {
         const linea = lineas.find(l => l.productoId === ajuste.productoId);
         if (!linea) throw new Error("El producto a modificar no está en el pedido.");
-        if (linea.precioUnit === ajuste.precio) throw new Error("El nuevo precio coincide con el actual.");
-        linea.precioUnit = ajuste.precio!;
-        total = redondear(lineas.reduce((sum, l) => sum + l.precioUnit * l.cantidad, 0));
-        if (ajuste.actualizarStock) {
-          await tx.update(productos).set({ precioVenta: ajuste.precio! }).where(eq(productos.id, linea.productoId));
-          detalleCambio = JSON.stringify({ producto: linea.nombre, productoId: linea.productoId, anterior: linea.precioAnterior, nuevo: ajuste.precio, destino: "stock" });
+        // Otra caja puede haber corregido el precio mientras este pedido estaba abierto.
+        // Si la corrección ya está aplicada, cobrar sin registrar un cambio inexistente.
+        if (linea.precioUnit !== ajuste.precio) {
+          linea.precioUnit = ajuste.precio!;
+          total = redondear(lineas.reduce((sum, l) => sum + l.precioUnit * l.cantidad, 0));
+          if (ajuste.actualizarStock) {
+            await tx.update(productos).set({ precioVenta: ajuste.precio! }).where(eq(productos.id, linea.productoId));
+            detalleCambio = JSON.stringify({ producto: linea.nombre, productoId: linea.productoId, anterior: linea.precioAnterior, nuevo: ajuste.precio, destino: "stock" });
+          } else {
+            const nombre = ajuste.nombrePromocion?.trim() ?? "";
+            if (!nombre || nombre.length > 100 || ajuste.precio! >= linea.precioAnterior) throw new Error("Indicá un nombre de promoción y un precio menor al original.");
+            promoNueva = { nombre, ids: [linea.productoId], cantidades: { [linea.productoId]: linea.cantidad }, precioFijo: redondear(ajuste.precio! * linea.cantidad), alcance: "productos" };
+            detalleCambio = JSON.stringify({ producto: linea.nombre, productoId: linea.productoId, anterior: linea.precioAnterior, nuevo: ajuste.precio, destino: "promocion", promocion: nombre });
+          }
+        } else if (ajuste.actualizarStock) {
+          total = redondear(lineas.reduce((sum, l) => sum + l.precioUnit * l.cantidad, 0));
         } else {
-          const nombre = ajuste.nombrePromocion?.trim() ?? "";
-          if (!nombre || nombre.length > 100 || ajuste.precio! >= linea.precioAnterior) throw new Error("Indicá un nombre de promoción y un precio menor al original.");
-          promoNueva = { nombre, ids: [linea.productoId], cantidades: { [linea.productoId]: linea.cantidad }, precioFijo: redondear(ajuste.precio! * linea.cantidad), alcance: "productos" };
-          detalleCambio = JSON.stringify({ producto: linea.nombre, productoId: linea.productoId, anterior: linea.precioAnterior, nuevo: ajuste.precio, destino: "promocion", promocion: nombre });
+          throw new Error("El precio promocional debe ser menor al precio actual del producto.");
         }
       } else {
         const ids = [...new Set(ajuste.productoIds ?? [])];

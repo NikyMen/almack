@@ -171,6 +171,12 @@ CREATE TABLE cambios_precio(id INTEGER PRIMARY KEY, venta_id INTEGER NOT NULL, s
   assert.equal(correccion.total,40);
   assert.equal((await db.select().from(productos).where(eq(productos.id,3)))[0].precioVenta,40);
   assert.equal((await db.select().from(ventaItems).where(eq(ventaItems.ventaId,correccion.ventaId)))[0].precioUnit,40);
+  const cambiosAntes = (await db.select().from(cambiosPrecio)).length;
+  const precioYaActualizado = await venderEnCaja(1,'Ana',[{productoId:3,cantidad:1}],'efectivo',{...base,efectivoRecibido:40,ajustePrecio:{tipo:'producto',productoId:3,precio:40,actualizarStock:true}});
+  assert.equal(precioYaActualizado.total,40);
+  assert.equal(precioYaActualizado.vuelto,0);
+  assert.equal((await db.select().from(ventaItems).where(eq(ventaItems.ventaId,precioYaActualizado.ventaId)))[0].precioUnit,40);
+  assert.equal((await db.select().from(cambiosPrecio)).length,cambiosAntes);
   const promoProducto = await venderEnCaja(1,'Ana',[{productoId:3,cantidad:1}],'tarjeta',{...base,ajustePrecio:{tipo:'producto',productoId:3,precio:20,actualizarStock:false,nombrePromocion:'Oferta queso'}});
   assert.equal(promoProducto.total,20);
   assert.equal((await db.select().from(productos).where(eq(productos.id,3)))[0].precioVenta,40);
