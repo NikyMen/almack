@@ -2,7 +2,7 @@
 import { Overlay } from "@/components/overlay";
 
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import {
   Search, Plus, Minus, Trash2, ShoppingCart, Loader2, CheckCircle2, Zap, Camera, ChevronUp, X, Pencil, TriangleAlert,
   ListFilter,
@@ -42,7 +42,6 @@ export function CajaPOS({ productos, cajaId }: { productos: Producto[]; cajaId: 
   const inputRef = useRef<HTMLInputElement>(null);
   const lectorRef = useRef({ codigo: "", ultimaTecla: 0 });
   const params = useSearchParams();
-  const router = useRouter();
 
   const [ajustes, setAjustes] = useAjustes();
   const { configAbierta, menuAbierto } = useNav();
@@ -181,7 +180,8 @@ export function CajaPOS({ productos, cajaId }: { productos: Producto[]; cajaId: 
       setBusqueda("");
       setEligiendoPago(false);
       setPedidoAbierto(false);
-      router.refresh();
+      // cobrarVenta ya revalida /admin/caja y la respuesta trae la página actualizada:
+      // un router.refresh() acá volvía a renderizarla entera (catálogo incluido).
     });
   }
 

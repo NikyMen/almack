@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { cookies } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { createHmac, timingSafeEqual, randomBytes, scryptSync } from "node:crypto";
@@ -131,7 +132,9 @@ export async function getUser(): Promise<string | null> {
 
 // Carga el usuario en sesión con su rol y permisos. Si el handle es el admin por
 // env y no existe en DB, devuelve un admin sintético con todos los permisos.
-export async function getUsuarioActual(): Promise<UsuarioActual | null> {
+// cache(): el layout, la página, requireAcceso y getContextoSucursal lo llaman en
+// el mismo request; así se consulta la base una sola vez por request.
+export const getUsuarioActual = cache(async (): Promise<UsuarioActual | null> => {
   const store = await cookies();
   const sesion = verificarSesion(store.get(COOKIE)?.value);
   if (!sesion) return null;
@@ -170,7 +173,7 @@ export async function getUsuarioActual(): Promise<UsuarioActual | null> {
     };
   }
   return null;
-}
+});
 
 // Guard para usar al inicio de las páginas del route group (app).
 export async function requireAcceso(modulo: ModuloKey): Promise<UsuarioActual> {

@@ -1,7 +1,7 @@
 import { verificarClaveAdministrador } from "./clave-admin";
 import { db, cajas, cajaTurnos, cajaMovimientos, cajaTraspasos, cajaRevisiones, cajaSaldoMovimientos, ventas, ventaItems, ventaDevoluciones, productos, stockSucursal, cajaSeguridad, cajaIntentos, cajaExtracciones, promociones, cambiosPrecio } from "@/db";
 import { cotizarPromocion } from "@/lib/promociones";
-import { and, eq, or, sql, desc, asc, gt, lt, ne } from "drizzle-orm";
+import { and, eq, or, sql, desc, asc, gt, lt, ne, inArray } from "drizzle-orm";
 import { cantidadValida, redondearCantidad } from "@/lib/cantidades";
 export type CajaTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 // El cliente SQLite embebido comparte conexión; serializamos sus operaciones
@@ -291,8 +291,12 @@ export async function venderEnCaja(sucursalId: number, cajero: string, items: { 
     if (turno.arqueoEn) throw new Error("La caja está en arqueo. No se pueden registrar ventas.");
     const lineas: { productoId: number; cantidad: number; precioUnit: number; nombre: string; precioAnterior: number }[] = [];
     let total = 0;
+    // Cada consulta es un viaje a Turso: los productos se leen en una sola consulta
+    // y el stock total se recalcula una sola vez al final.
+    const ids = [...cantidades.keys()];
+    const porId = new Map((await tx.select().from(productos).where(inArray(productos.id, ids))).map(p => [p.id, p]));
     for (const [productoId, cantidad] of cantidades) {
-      const [p] = await tx.select().from(productos).where(eq(productos.id, productoId));
+      const p = porId.get(productoId);
       if (!p || !p.activo) throw new Error("Hay un producto que ya no está disponible.");
       if (!cantidadValida(cantidad, p.unidadMedida as "unidad" | "kg")) throw new Error(`Cantidad inválida de "${p.nombre}". Usá unidades enteras o kg con hasta tres decimales.`);
       validarMonto(p.precioVenta);
@@ -304,10 +308,10 @@ export async function venderEnCaja(sucursalId: number, cajero: string, items: { 
         const r = await tx.update(stockSucursal).set({ cantidad: sql`round(${stockSucursal.cantidad} - ${cantidad}, 3)` }).where(and(eq(stockSucursal.productoId, productoId), eq(stockSucursal.sucursalId, sucursalId), sql`${stockSucursal.cantidad} >= ${cantidad}`));
         if (!r.rowsAffected) throw new Error(`Sin stock suficiente de "${p.nombre}".`);
       }
-      await tx.update(productos).set({ stock: sql`(select coalesce(sum(cantidad),0) from stock_sucursal where producto_id = ${productoId})` }).where(eq(productos.id, productoId));
       lineas.push({ productoId, cantidad, precioUnit: p.precioVenta, precioAnterior: p.precioVenta, nombre: p.nombre });
       total += p.precioVenta * cantidad;
     }
+    await tx.update(productos).set({ stock: sql`(select coalesce(sum(ss.cantidad),0) from stock_sucursal ss where ss.producto_id = productos.id)` }).where(inArray(productos.id, ids));
     total = redondear(total);
     const activas = await tx.select().from(promociones).where(eq(promociones.activa, true));
     const mejor = activas.map(p => cotizarPromocion(p, lineas.map(l => ({ productoId: l.productoId, cantidad: l.cantidad, precio: l.precioUnit })))).filter((q): q is NonNullable<typeof q> => q !== null).sort((a, b) => b.discount - a.discount)[0];
