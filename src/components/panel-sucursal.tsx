@@ -1,11 +1,15 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import type { cajas, sucursales } from "@/db/schema";
 import { guardarPanelSucursal } from "@/app/admin/(protected)/sucursales/actions";
-import { crearSucursal } from "@/app/actions";
+import { crearSucursal, seleccionarSucursal } from "@/app/actions";
+import { MapaSucursales } from "@/components/mapa-sucursales";
+import type { EstadoCaja } from "@/components/mapa-interior";
+
+export type { EstadoCaja };
 
 type Local = typeof sucursales.$inferSelect;
 type Caja = typeof cajas.$inferSelect;
@@ -73,29 +77,65 @@ function Tarjeta({ local, locales, cajas }: { local: Local; locales: Local[]; ca
   </section>;
 }
 
-export function PanelSucursal({ locales, cajas }: { locales: Local[]; cajas: Caja[] }) {
+export function PanelSucursal({ locales, cajas, estados }: { locales: Local[]; cajas: Caja[]; estados: EstadoCaja[] }) {
   const router = useRouter();
+  const [errorCajas, setErrorCajas] = useState("");
+  const [ocupadoCajas, iniciarCajas] = useTransition();
+  /** Agrega o quita cajas desde el interior del local, conservando el resto de su configuración guardada. */
+  function cambiarCajas(localId: number, cantidad: number) {
+    const local = locales.find(l => l.id === localId);
+    if (!local) return;
+    setErrorCajas("");
+    iniciarCajas(async () => {
+      const r = await guardarPanelSucursal({ id: local.id, nombre: local.nombre, direccion: local.direccion, esDeposito: local.esDeposito, esPuntoVenta: local.esPuntoVenta, esMayorista: local.esMayorista, depositoId: local.depositoId, cantidadCajas: cantidad });
+      if (!r.ok) { setErrorCajas(r.error); return; }
+      router.refresh();
+    });
+  }
+  function irACaja(localId: number, cajaId: number) {
+    setErrorCajas("");
+    iniciarCajas(async () => {
+      const r = await seleccionarSucursal(localId);
+      if (!r.ok) { setErrorCajas(r.error); return; }
+      router.push(`/admin/caja?caja=${cajaId}`);
+    });
+  }
+  const [seleccion, setSeleccion] = useState<number | null>(locales[0]?.id ?? null);
   const [nuevo, setNuevo] = useState(false);
   const [nombre, setNombre] = useState("");
   const [direccion, setDireccion] = useState("");
   const [error, setError] = useState("");
   const [ocupado, iniciar] = useTransition();
+  const detalle = useRef<HTMLDivElement>(null);
+  const elegido = useRef(false);
+  const actual = locales.find(l => l.id === seleccion) ?? null;
+  useEffect(() => {
+    if (!elegido.current) return;
+    elegido.current = false;
+    detalle.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [seleccion, nuevo]);
+  function elegir(id: number) { elegido.current = true; setSeleccion(id); setNuevo(false); }
+  function abrirNuevo() { elegido.current = true; setNuevo(true); setSeleccion(null); setError(""); }
   function agregar() {
     setError("");
     iniciar(async () => {
       const resultado = await crearSucursal(nombre, direccion);
       if (!resultado.ok) { setError(resultado.error); return; }
-      setNombre(""); setDireccion(""); setNuevo(false); router.refresh();
+      setNombre(""); setDireccion(""); setNuevo(false); setSeleccion(resultado.id); router.refresh();
     });
   }
   return <div className="space-y-5">
+    <MapaSucursales locales={locales} cajas={cajas} estados={estados} ocupadoCajas={ocupadoCajas} errorCajas={errorCajas} onCambiarCajas={cambiarCajas} onIrACaja={irACaja} seleccion={seleccion} onSeleccionar={elegir} onNuevo={abrirNuevo} creando={nuevo} />
+    <div ref={detalle} className="scroll-mt-4 space-y-5">
+      {nuevo && <section className="card p-5">
+        <div className="flex items-center justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Terreno libre</p><h2 className="text-lg font-bold text-navy">Nueva sucursal</h2></div><button type="button" className="btn-ghost" onClick={() => { setNuevo(false); setSeleccion(locales[0]?.id ?? null); }}>Cancelar</button></div>
+        <form className="mt-4 grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end" action={agregar}><label className="label">Nombre<input className="input mt-1" value={nombre} onChange={e => setNombre(e.target.value)} maxLength={100} required autoFocus /></label><label className="label">Dirección<input className="input mt-1" value={direccion} onChange={e => setDireccion(e.target.value)} maxLength={200} /></label><button className="btn-primary" disabled={ocupado}>{ocupado ? "Creando…" : "Crear local"}</button>{error && <p role="alert" className="text-sm text-rose-700 sm:col-span-3">{error}</p>}</form>
+      </section>}
+      {actual && <Tarjeta key={`${actual.id}-${cajas.filter(c => c.sucursalId === actual.id && c.activa).length}`} local={actual} locales={locales} cajas={cajas.filter(c => c.sucursalId === actual.id)} />}
+      {!nuevo && !actual && <div className="card p-6 text-sm text-slate-500">Tocá un local en el mapa para ver y cambiar su configuración, o el terreno libre para agregar una sucursal.</div>}
+    </div>
     <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-950">
       <strong>Cómo configurar:</strong> marcá una o varias funciones para cada local, elegí su depósito de abastecimiento y definí cuántas cajas pueden operar. Un local puede ser depósito y punto de venta a la vez. Cerrá y aprobá los turnos antes de quitar una caja.
     </div>
-    <div className="card p-4">
-      <div className="flex items-center justify-between gap-3"><div><h2 className="font-semibold text-navy">Locales</h2><p className="text-sm text-slate-500">{locales.length} sucursal{locales.length === 1 ? "" : "es"} activa{locales.length === 1 ? "" : "s"}</p></div><button type="button" className="btn-primary" onClick={() => setNuevo(!nuevo)}>{nuevo ? "Cancelar" : "Agregar sucursal"}</button></div>
-      {nuevo && <form className="mt-4 grid gap-3 border-t border-slate-100 pt-4 sm:grid-cols-[1fr_1fr_auto] sm:items-end" action={agregar}><label className="label">Nombre<input className="input mt-1" value={nombre} onChange={e => setNombre(e.target.value)} maxLength={100} required /></label><label className="label">Dirección<input className="input mt-1" value={direccion} onChange={e => setDireccion(e.target.value)} maxLength={200} /></label><button className="btn-primary" disabled={ocupado}>Crear local</button>{error && <p role="alert" className="text-sm text-rose-700 sm:col-span-3">{error}</p>}</form>}
-    </div>
-    {locales.map(local => <Tarjeta key={local.id} local={local} locales={locales} cajas={cajas.filter(c => c.sucursalId === local.id)} />)}
   </div>;
 }
