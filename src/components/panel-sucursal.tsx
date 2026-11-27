@@ -1,15 +1,16 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import type { cajas, sucursales } from "@/db/schema";
 import { guardarPanelSucursal } from "@/app/admin/(protected)/sucursales/actions";
 import { crearSucursal, seleccionarSucursal } from "@/app/actions";
 import { MapaSucursales } from "@/components/mapa-sucursales";
-import type { EstadoCaja } from "@/components/mapa-interior";
+import { TarjetaFlotante } from "@/components/tarjeta-flotante";
+import type { Actividad, EstadoCaja } from "@/components/mapa-interior";
 
-export type { EstadoCaja };
+export type { Actividad, EstadoCaja };
 
 type Local = typeof sucursales.$inferSelect;
 type Caja = typeof cajas.$inferSelect;
@@ -35,13 +36,7 @@ function Tarjeta({ local, locales, cajas }: { local: Local; locales: Local[]; ca
       setAviso("Configuración guardada."); router.refresh();
     });
   }
-  return <section className="card overflow-hidden">
-    <div className="border-b border-slate-100 px-5 py-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div><p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Sucursal #{local.id}</p><h2 className="text-lg font-bold text-navy">{local.nombre}</h2></div>
-        <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800">Activa</span>
-      </div>
-    </div>
+  return <div>
     <div className="grid gap-5 p-5 lg:grid-cols-2">
       <div className="space-y-4">
         <label className="label block">Nombre<input className="input mt-1" value={nombre} onChange={e => setNombre(e.target.value)} maxLength={100} /></label>
@@ -74,10 +69,10 @@ function Tarjeta({ local, locales, cajas }: { local: Local; locales: Local[]; ca
       {aviso && <p role="status" className="mb-3 text-sm text-emerald-700">{aviso}</p>}
       <button className="btn-primary" disabled={ocupado} onClick={guardar}>{ocupado ? "Guardando…" : "Guardar sucursal"}</button>
     </div>
-  </section>;
+  </div>;
 }
 
-export function PanelSucursal({ locales, cajas, estados }: { locales: Local[]; cajas: Caja[]; estados: EstadoCaja[] }) {
+export function PanelSucursal({ locales, cajas, estados, actividad }: { locales: Local[]; cajas: Caja[]; estados: EstadoCaja[]; actividad: Actividad[] }) {
   const router = useRouter();
   const [errorCajas, setErrorCajas] = useState("");
   const [ocupadoCajas, iniciarCajas] = useTransition();
@@ -100,22 +95,28 @@ export function PanelSucursal({ locales, cajas, estados }: { locales: Local[]; c
       router.push(`/admin/caja?caja=${cajaId}`);
     });
   }
-  const [seleccion, setSeleccion] = useState<number | null>(locales[0]?.id ?? null);
+  const [seleccion, setSeleccion] = useState<number | null>(null);
+  // El formulario del local aparece recién al pedir "Más detalles" desde el mapa.
+  const [detalles, setDetalles] = useState(false);
   const [nuevo, setNuevo] = useState(false);
   const [nombre, setNombre] = useState("");
   const [direccion, setDireccion] = useState("");
   const [error, setError] = useState("");
   const [ocupado, iniciar] = useTransition();
-  const detalle = useRef<HTMLDivElement>(null);
-  const elegido = useRef(false);
-  const actual = locales.find(l => l.id === seleccion) ?? null;
+  const actual = detalles ? locales.find(l => l.id === seleccion) ?? null : null;
+  // El mapa muestra turnos y clientes: se refresca cada minuto mientras la pestaña está
+  // visible y no hay un formulario abierto encima.
+  const formularioAbierto = useRef(false);
+  formularioAbierto.current = detalles || nuevo;
   useEffect(() => {
-    if (!elegido.current) return;
-    elegido.current = false;
-    detalle.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  }, [seleccion, nuevo]);
-  function elegir(id: number) { elegido.current = true; setSeleccion(id); setNuevo(false); }
-  function abrirNuevo() { elegido.current = true; setNuevo(true); setSeleccion(null); setError(""); }
+    const t = setInterval(() => { if (document.visibilityState === "visible" && !formularioAbierto.current) router.refresh(); }, 60_000);
+    return () => clearInterval(t);
+  }, [router]);
+  function elegir(id: number | null) { if (id !== seleccion) setDetalles(false); setSeleccion(id); if (id !== null) setNuevo(false); }
+  function masDetalles(id: number) { setSeleccion(id); setDetalles(true); setNuevo(false); }
+  function abrirNuevo() { setNuevo(true); setSeleccion(null); setDetalles(false); setError(""); }
+  const cerrarDetalles = useCallback(() => setDetalles(false), []);
+  const cerrarNuevo = useCallback(() => setNuevo(false), []);
   function agregar() {
     setError("");
     iniciar(async () => {
@@ -125,17 +126,17 @@ export function PanelSucursal({ locales, cajas, estados }: { locales: Local[]; c
     });
   }
   return <div className="space-y-5">
-    <MapaSucursales locales={locales} cajas={cajas} estados={estados} ocupadoCajas={ocupadoCajas} errorCajas={errorCajas} onCambiarCajas={cambiarCajas} onIrACaja={irACaja} seleccion={seleccion} onSeleccionar={elegir} onNuevo={abrirNuevo} creando={nuevo} />
-    <div ref={detalle} className="scroll-mt-4 space-y-5">
-      {nuevo && <section className="card p-5">
-        <div className="flex items-center justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Terreno libre</p><h2 className="text-lg font-bold text-navy">Nueva sucursal</h2></div><button type="button" className="btn-ghost" onClick={() => { setNuevo(false); setSeleccion(locales[0]?.id ?? null); }}>Cancelar</button></div>
-        <form className="mt-4 grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end" action={agregar}><label className="label">Nombre<input className="input mt-1" value={nombre} onChange={e => setNombre(e.target.value)} maxLength={100} required autoFocus /></label><label className="label">Dirección<input className="input mt-1" value={direccion} onChange={e => setDireccion(e.target.value)} maxLength={200} /></label><button className="btn-primary" disabled={ocupado}>{ocupado ? "Creando…" : "Crear local"}</button>{error && <p role="alert" className="text-sm text-rose-700 sm:col-span-3">{error}</p>}</form>
-      </section>}
-      {actual && <Tarjeta key={`${actual.id}-${cajas.filter(c => c.sucursalId === actual.id && c.activa).length}`} local={actual} locales={locales} cajas={cajas.filter(c => c.sucursalId === actual.id)} />}
-      {!nuevo && !actual && <div className="card p-6 text-sm text-slate-500">Tocá un local en el mapa para ver y cambiar su configuración, o el terreno libre para agregar una sucursal.</div>}
-    </div>
+    <MapaSucursales locales={locales} cajas={cajas} estados={estados} actividad={actividad} onMasDetalles={masDetalles} ocupadoCajas={ocupadoCajas} errorCajas={errorCajas} onCambiarCajas={cambiarCajas} onIrACaja={irACaja} seleccion={seleccion} onSeleccionar={elegir} onNuevo={abrirNuevo} creando={nuevo} />
+    {nuevo && <TarjetaFlotante titulo="Nueva sucursal" subtitulo="Terreno libre" ancho="max-w-2xl" onCerrar={cerrarNuevo}>
+      <div className="p-5">
+        <form className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end" action={agregar}><label className="label">Nombre<input className="input mt-1" value={nombre} onChange={e => setNombre(e.target.value)} maxLength={100} required autoFocus /></label><label className="label">Dirección<input className="input mt-1" value={direccion} onChange={e => setDireccion(e.target.value)} maxLength={200} /></label><button className="btn-primary" disabled={ocupado}>{ocupado ? "Creando…" : "Crear local"}</button>{error && <p role="alert" className="text-sm text-rose-700 sm:col-span-3">{error}</p>}</form>
+      </div>
+    </TarjetaFlotante>}
+    {actual && <TarjetaFlotante titulo={actual.nombre} subtitulo={`Sucursal #${actual.id} · Activa`} onCerrar={cerrarDetalles}>
+      <Tarjeta key={`${actual.id}-${cajas.filter(c => c.sucursalId === actual.id && c.activa).length}`} local={actual} locales={locales} cajas={cajas.filter(c => c.sucursalId === actual.id)} />
+    </TarjetaFlotante>}
     <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-950">
-      <strong>Cómo configurar:</strong> marcá una o varias funciones para cada local, elegí su depósito de abastecimiento y definí cuántas cajas pueden operar. Un local puede ser depósito y punto de venta a la vez. Cerrá y aprobá los turnos antes de quitar una caja.
+      <strong>Cómo configurar:</strong> tocá un local del mapa y elegí <strong>Más detalles</strong>. Ahí marcá una o varias funciones para cada local, elegí su depósito de abastecimiento y definí cuántas cajas pueden operar. Un local puede ser depósito y punto de venta a la vez. Cerrá y aprobá los turnos antes de quitar una caja.
     </div>
   </div>;
 }

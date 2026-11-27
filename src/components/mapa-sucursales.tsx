@@ -5,10 +5,10 @@
 // rueda o pellizcando, y al tocar un edificio se abre su configuración.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Minus, Plus, LocateFixed, Route, Move, Check } from "lucide-react";
+import { Minus, Plus, LocateFixed, Route, Move, Check, X, MapPin, Users, Store, ChevronRight } from "lucide-react";
 import type { cajas, sucursales } from "@/db/schema";
-import { InteriorLocal, type EstadoCaja } from "@/components/mapa-interior";
-import { iso, pts, clamp, tono, caja, Bloque, frenteQuad, TextoFrente, Linea, corto, type Punto } from "@/components/mapa-iso";
+import { InteriorLocal, filaAfuera, LLENO, type Actividad, type EstadoCaja } from "@/components/mapa-interior";
+import { iso, pts, clamp, tono, caja, Bloque, frenteQuad, TextoFrente, Linea, corto, Persona, Camioncito, type Punto } from "@/components/mapa-iso";
 
 type Local = typeof sucursales.$inferSelect;
 type Caja = typeof cajas.$inferSelect;
@@ -140,13 +140,9 @@ function Farol({ x, y }: { x: number; y: number }) {
 }
 
 function Camion({ desde, hasta, dur }: { desde: Punto; hasta: Punto; dur: number }) {
-  const c = caja(-0.55, -0.3, 1.1, 0.6, 14);
-  const cab = caja(0.55, -0.3, 0.35, 0.6, 10);
-  return <g>
+  return <g pointerEvents="none">
     <animateMotion dur={`${dur}s`} repeatCount="indefinite" path={`M${desde[0]},${desde[1]} L${hasta[0]},${hasta[1]}`} />
-    <polygon points={pts(cab.lado)} fill="#c94d09" /><polygon points={pts(cab.frente)} fill="#e85b0d" /><polygon points={pts(cab.techo)} fill="#ff9a5b" />
-    <polygon points={pts(c.lado)} fill="#cbd5e1" /><polygon points={pts(c.frente)} fill="#f1f5f9" /><polygon points={pts(c.techo)} fill="#ffffff" />
-    <polygon points={pts([iso(-0.4, 0.3, 4), iso(0.4, 0.3, 4), iso(0.4, 0.3, 10), iso(-0.4, 0.3, 10)])} fill="#003f31" />
+    <Camioncito />
   </g>;
 }
 
@@ -206,8 +202,15 @@ function BotonMantener({ onCompletar }: { onCompletar: () => void }) {
 const vende = (l: Local) => l.esPuntoVenta || l.esMayorista;
 const esperar = (ms: number) => new Promise(r => setTimeout(r, ms));
 
-export function MapaSucursales({ locales, cajas, estados, seleccion, onSeleccionar, onNuevo, creando, ocupadoCajas, errorCajas, onCambiarCajas, onIrACaja }: {
-  locales: Local[]; cajas: Caja[]; estados: EstadoCaja[]; seleccion: number | null; onSeleccionar: (id: number) => void; onNuevo: () => void; creando: boolean;
+/** Insignia de la ventana de detalles del local. */
+function Insignia({ children, tono: t = "neutro" }: { children: React.ReactNode; tono?: "neutro" | "verde" | "gris" | "naranja" }) {
+  const colores = { neutro: "bg-slate-100 text-slate-700", verde: "bg-emerald-100 text-emerald-800", gris: "bg-slate-200/70 text-slate-600", naranja: "bg-orange-100 text-orange-800" };
+  return <span className={`inline-flex max-w-full items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold ${colores[t]}`}>{children}</span>;
+}
+
+export function MapaSucursales({ locales, cajas, estados, actividad, seleccion, onSeleccionar, onMasDetalles, onNuevo, creando, ocupadoCajas, errorCajas, onCambiarCajas, onIrACaja }: {
+  locales: Local[]; cajas: Caja[]; estados: EstadoCaja[]; actividad: Actividad[]; seleccion: number | null; onSeleccionar: (id: number | null) => void; onMasDetalles: (id: number) => void;
+  onNuevo: () => void; creando: boolean;
   ocupadoCajas: boolean; errorCajas: string; onCambiarCajas: (localId: number, cantidad: number) => void; onIrACaja: (localId: number, cajaId: number) => void;
 }) {
   const contenedor = useRef<HTMLDivElement>(null);
@@ -244,6 +247,15 @@ export function MapaSucursales({ locales, cajas, estados, seleccion, onSeleccion
     for (const c of cajas) if (c.activa) m.set(c.sucursalId, (m.get(c.sucursalId) ?? 0) + 1);
     return m;
   }, [cajas]);
+  const actividadDe = useCallback((id: number) => actividad.find(a => a.sucursalId === id) ?? null, [actividad]);
+  /** Cajas activas del local separadas en abiertas (con turno vivo) y cerradas. */
+  const resumenCajas = (id: number) => {
+    const activas = cajas.filter(c => c.sucursalId === id && c.activa);
+    const abiertas = activas.filter(c => (estados.find(e => e.cajaId === c.id)?.estado ?? "cerrada") !== "cerrada").length;
+    return { abiertas, cerradas: activas.length - abiertas };
+  };
+  // Ventana de detalles que aparece al tocar un local.
+  const [popup, setPopup] = useState<number | null>(null);
   const centro = (l: Lote): Punto => iso(l.x + 1.5, l.y + 1.6, tipoDe(l.local!) === "venta" ? 44 : tipoDe(l.local!) === "mayorista" ? 50 : 60);
 
   const limites = useMemo(() => {
@@ -322,10 +334,11 @@ export function MapaSucursales({ locales, cajas, estados, seleccion, onSeleccion
     const el = contenedor.current;
     if (!el) return;
     const rueda = (e: WheelEvent) => {
-      if (!navegandoRef.current) return; // bloqueado: la rueda desplaza la página
+      // Bloqueado: la rueda desplaza la página, salvo con Ctrl (o el pellizco del touchpad).
+      if (!navegandoRef.current && !e.ctrlKey && !e.metaKey) return;
       e.preventDefault();
       const r = el.getBoundingClientRect();
-      zoomEn(Math.exp(-e.deltaY * 0.0015), e.clientX - r.left, e.clientY - r.top);
+      zoomEn(Math.exp(-clamp(e.deltaY, -60, 60) * (e.ctrlKey ? 0.01 : 0.0025)), e.clientX - r.left, e.clientY - r.top);
     };
     el.addEventListener("wheel", rueda, { passive: false });
     return () => el.removeEventListener("wheel", rueda);
@@ -391,6 +404,7 @@ export function MapaSucursales({ locales, cajas, estados, seleccion, onSeleccion
 
   function teclado(e: React.KeyboardEvent) {
     if (interiorId !== null) { if (e.key === "Escape") { e.preventDefault(); salir(); } return; }
+    if (popup !== null && e.key === "Escape") { e.preventDefault(); setPopup(null); onSeleccionar(null); return; }
     if (!navegando) return;
     if (e.key === "Escape") { e.preventDefault(); setNavegando(false); return; }
     const paso = 48;
@@ -401,7 +415,7 @@ export function MapaSucursales({ locales, cajas, estados, seleccion, onSeleccion
     else if (e.key === "0") { e.preventDefault(); encuadrar(); }
   }
   const activar = (accion: () => void) => ({
-    onClick: () => { if (!movio.current) accion(); },
+    onClick: (e: React.MouseEvent) => { e.stopPropagation(); if (!movio.current) accion(); },
     onKeyDown: (e: React.KeyboardEvent) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); accion(); } },
   });
 
@@ -410,6 +424,7 @@ export function MapaSucursales({ locales, cajas, estados, seleccion, onSeleccion
     if (!el || !l.local || transicion.current) return;
     transicion.current = true;
     setNavegando(false);
+    setPopup(null);
     const { width, height } = el.getBoundingClientRect();
     const [cx, cy] = iso(l.x + 1.5, l.y + 1.6, 20);
     const k = 2.8;
@@ -446,12 +461,31 @@ export function MapaSucursales({ locales, cajas, estados, seleccion, onSeleccion
 
   const fondo = caja(0, 0, W, H, 14, -14);
 
+  // Posición en pantalla de la ventana de detalles: sobre el cartel del local, dentro del mapa.
+  const popupLocal = popup !== null ? porId.get(popup) ?? null : null;
+  const popupPos = (() => {
+    const el = contenedor.current;
+    if (!popupLocal || !el) return null;
+    const [cx, cy] = centro(popupLocal);
+    const { width, height } = el.getBoundingClientRect();
+    const medio = Math.min(160, (width - 24) / 2);
+    const x = clamp(vista.x + cx * vista.k, 12 + medio, width - 12 - medio);
+    const arriba = vista.y + (cy - 56) * vista.k;
+    if (arriba >= 196) return { x, y: Math.min(arriba, height - 8), abajo: false };
+    // Sin lugar arriba del cartel: se abre debajo del edificio, sobre la vereda.
+    const base = vista.y + iso(popupLocal.x + 1.5, popupLocal.y + 3.1)[1] * vista.k;
+    return { x, y: clamp(base, 8, height - 196), abajo: true };
+  })();
+
   return <div ref={tarjeta} className={`card relative overflow-hidden transition-shadow ${navegando ? "ring-2 ring-lime ring-offset-2" : ""}`}>
     <style>{`
       .mapa-edificio { transition: transform .18s ease, filter .18s ease; cursor: pointer; outline: none; }
       .mapa-edificio:hover, .mapa-edificio:focus-visible { transform: translateY(-4px); filter: brightness(1.04) drop-shadow(0 6px 6px rgb(0 63 49 / .18)); }
       .mapa-ruta { stroke-dasharray: 7 7; }
       .mapa-anim .mapa-ruta { animation: mapa-ruta 1.1s linear infinite; }
+      .mapa-persona { transform-box: fill-box; transform-origin: 50% 100%; }
+      @media (prefers-reduced-motion: no-preference) { .mapa-persona { animation: mapa-persona 2.4s ease-in-out infinite; } }
+      @keyframes mapa-persona { 50% { transform: translateY(-1.2px); } }
       .mapa-anim .mapa-pulso { animation: mapa-pulso 1.6s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
       @keyframes mapa-ruta { to { stroke-dashoffset: -14; } }
       @keyframes mapa-pulso { 50% { opacity: .35; } }
@@ -467,7 +501,7 @@ export function MapaSucursales({ locales, cajas, estados, seleccion, onSeleccion
       onPointerDown={abajo}
       className={`relative h-[380px] select-none bg-gradient-to-b from-[#e8f3ee] to-[#fbf4ec] outline-none focus-visible:ring-2 focus-visible:ring-lime sm:h-[500px] ${navegando ? "cursor-grab touch-none active:cursor-grabbing" : "touch-pan-y"}`}
     >
-      <svg aria-hidden={interiorId !== null} className={`h-full w-full transition-opacity duration-300 ${listo && !interiorVisible ? "opacity-100" : "opacity-0"} ${movimiento ? "mapa-anim" : ""}`} role="presentation">
+      <svg aria-hidden={interiorId !== null} onClick={() => { if (!movio.current && popup !== null) { setPopup(null); onSeleccionar(null); } }} className={`h-full w-full transition-opacity duration-300 ${listo && !interiorVisible ? "opacity-100" : "opacity-0"} ${movimiento ? "mapa-anim" : ""}`} role="presentation">
         <g transform={`translate(${vista.x} ${vista.y}) scale(${vista.k})`}>
           {/* Isla de pasto */}
           <polygon points={pts(fondo.lado)} fill="#8a6a46" />
@@ -501,9 +535,16 @@ export function MapaSucursales({ locales, cajas, estados, seleccion, onSeleccion
                 const sel = seleccion === l.local.id;
                 return <g key={l.local.id} role="button" tabIndex={0} aria-pressed={sel} aria-label={`${l.local.nombre}: ${ETIQUETA[tipoDe(l.local)]}`} className="mapa-edificio"
                   onPointerEnter={() => setHover(l.local!.id)} onPointerLeave={() => setHover(h => h === l.local!.id ? null : h)} onFocus={() => setHover(l.local!.id)} onBlur={() => setHover(null)}
-                  {...activar(() => { onSeleccionar(l.local!.id); if (vende(l.local!)) void entrar(l); })}>
+                  {...activar(() => { onSeleccionar(l.local!.id); setPopup(p => p === l.local!.id ? null : l.local!.id); })}>
                   <polygon points={pts([iso(l.x - 0.05, l.y + 0.05), iso(l.x + 3.05, l.y + 0.05), iso(l.x + 3.05, l.y + 3.05), iso(l.x - 0.05, l.y + 3.05)])} fill={sel ? "rgb(255 113 31 / .22)" : "#a9d79c"} stroke={sel ? "#ff711f" : "none"} strokeWidth={2.5} className={sel ? "mapa-pulso" : undefined} />
                   <Edificio local={l.local} x={l.x} y={l.y} />
+                </g>;
+              })}
+              {deFila.map(l => {
+                if (!l.local || !vende(l.local)) return null;
+                const n = filaAfuera(actividadDe(l.local.id)?.racha ?? 0);
+                return <g key={`fila-${l.local.id}`} pointerEvents="none">
+                  {Array.from({ length: n }, (_, k) => <Persona key={k} x={l.x + 1.55 + k * 0.3} y={base + 3.45 + (k % 2) * 0.12} s={0.5} semilla={l.local!.id * 11 + k} canasta={k % 3 === 2} demora={k * 0.3} />).reverse()}
                 </g>;
               })}
               {Array.from({ length: Math.min(lotes.length - f * POR_FILA, POR_FILA) + 1 }, (_, i) => <Farol key={`farol-${i}`} x={0.5 + i * ANCHO_TERRENO} y={base + 3.5} />)}
@@ -519,13 +560,14 @@ export function MapaSucursales({ locales, cajas, estados, seleccion, onSeleccion
             const destacado = seleccion === l.local.id || hover === l.local.id;
             const nombre = l.local.nombre.length > 22 ? `${l.local.nombre.slice(0, 21)}…` : l.local.nombre;
             const n = cajasPorLocal.get(l.local.id) ?? 0;
-            const detalle = `${ETIQUETA[tipoDe(l.local)]}${n ? ` · ${n} caja${n === 1 ? "" : "s"}` : ""}`;
+            const lleno = vende(l.local) && (actividadDe(l.local.id)?.racha ?? 0) >= LLENO;
+            const detalle = lleno ? "Lleno de clientes" : `${ETIQUETA[tipoDe(l.local)]}${n ? ` · ${n} caja${n === 1 ? "" : "s"}` : ""}`;
             const ancho = Math.max(nombre.length * 7.4, detalle.length * 5.6) + 22;
             return <g key={`cartel-${l.local.id}`} pointerEvents="none" transform={`translate(${cx} ${cy - 18})`}>
               <rect x={-ancho / 2} y={-34} width={ancho} height={34} rx={9} fill={destacado ? "#003f31" : "rgb(255 255 255 / .94)"} stroke={destacado ? "#003f31" : "#d7e3dc"} />
               <path d="M-6 0 L0 7 L6 0 Z" fill={destacado ? "#003f31" : "rgb(255 255 255 / .94)"} />
               <text y={-19} textAnchor="middle" fontSize={12.5} fontWeight={700} fill={destacado ? "#ffffff" : "#003f31"}>{nombre}</text>
-              <text y={-6} textAnchor="middle" fontSize={9.5} fill={destacado ? "#ffb07d" : "#64748b"}>{detalle}</text>
+              <text y={-6} textAnchor="middle" fontSize={9.5} fontWeight={lleno ? 700 : 400} fill={lleno ? "#ff711f" : destacado ? "#ffb07d" : "#64748b"}>{detalle}</text>
             </g>;
           })}
         </g>
@@ -553,16 +595,53 @@ export function MapaSucursales({ locales, cajas, estados, seleccion, onSeleccion
             <button type="button" className="grid h-9 w-9 place-items-center border-y border-slate-100 text-navy hover:bg-slate-100" onClick={() => zoomEn(1 / 1.25)} aria-label="Alejar"><Minus className="h-4 w-4" /></button>
             <button type="button" className="grid h-9 w-9 place-items-center text-navy hover:bg-slate-100" onClick={encuadrar} aria-label="Centrar el mapa"><LocateFixed className="h-4 w-4" /></button>
           </div>
-        </> : <BotonMantener onCompletar={() => setNavegando(true)} />}
+        </> : <>
+          <div className="flex overflow-hidden rounded-full bg-white/95 shadow-sm">
+            <button type="button" className="grid h-9 w-9 place-items-center text-navy hover:bg-slate-100" onClick={() => zoomEn(1.25)} aria-label="Acercar"><Plus className="h-4 w-4" /></button>
+            <button type="button" className="grid h-9 w-9 place-items-center border-l border-slate-100 text-navy hover:bg-slate-100" onClick={() => zoomEn(1 / 1.25)} aria-label="Alejar"><Minus className="h-4 w-4" /></button>
+          </div>
+          <BotonMantener onCompletar={() => setNavegando(true)} />
+        </>}
       </div>
       <p aria-live="polite" className={`pointer-events-none absolute bottom-3 left-3 max-w-[calc(100%-10rem)] rounded-full bg-white/85 px-3 py-1 text-[11px] text-slate-500 ${navegando ? "block" : "hidden sm:block"}`}>
         {navegando
           ? <><span className="sm:hidden">Arrastrá o pellizcá</span><span className="hidden sm:inline">Arrastrá para moverte · rueda para acercar · Esc para salir</span></>
-          : "Tocá un local para configurarlo"}
+          : "Tocá un local para ver sus detalles"}
       </p>
+      {popupLocal && popupPos && (() => {
+        const l = popupLocal.local!;
+        const { abiertas, cerradas } = resumenCajas(l.id);
+        const a = actividadDe(l.id);
+        const lleno = vende(l) && (a?.racha ?? 0) >= LLENO;
+        return <div role="dialog" aria-label={`Detalles de ${l.nombre}`} onPointerDown={e => e.stopPropagation()}
+          className={`absolute z-20 w-[min(20rem,calc(100%-1.5rem))] -translate-x-1/2 ${popupPos.abajo ? "" : "-translate-y-full"} rounded-2xl bg-white p-3 shadow-xl ring-1 ring-slate-200`}
+          style={{ left: popupPos.x, top: popupPos.y }}>
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-bold text-navy">{l.nombre}</p>
+              <p className="text-[11px] text-slate-500">{ETIQUETA[tipoDe(l)]}</p>
+            </div>
+            <button type="button" onClick={() => { setPopup(null); onSeleccionar(null); }} className="-mr-1 -mt-1 grid h-7 w-7 shrink-0 place-items-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label="Cerrar"><X className="h-4 w-4" /></button>
+          </div>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {vende(l) && <>
+              <Insignia tono="verde"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />{abiertas} caja{abiertas === 1 ? "" : "s"} abierta{abiertas === 1 ? "" : "s"}</Insignia>
+              <Insignia tono="gris"><span className="h-1.5 w-1.5 rounded-full bg-slate-400" />{cerradas} caja{cerradas === 1 ? "" : "s"} cerrada{cerradas === 1 ? "" : "s"}</Insignia>
+            </>}
+            <Insignia tono={lleno ? "naranja" : "neutro"}><Users className="h-3 w-3" />{a?.ultimas5h ?? 0} cliente{(a?.ultimas5h ?? 0) === 1 ? "" : "s"} en las últimas 5 h</Insignia>
+            {lleno && <Insignia tono="naranja">Lleno ahora</Insignia>}
+            <Insignia><MapPin className="h-3 w-3 shrink-0" /><span className="truncate">{l.direccion || "Sin dirección"}</span></Insignia>
+          </div>
+          <div className="mt-3 flex gap-2">
+            {vende(l) && <button type="button" onClick={() => void entrar(popupLocal)} className="btn-ghost min-h-9 flex-1 border border-slate-200 py-1.5 text-xs"><Store className="h-3.5 w-3.5" /> Ver cajas</button>}
+            <button type="button" onClick={() => { setPopup(null); onMasDetalles(l.id); }} className="btn-primary min-h-9 flex-1 py-1.5 text-xs">Más detalles <ChevronRight className="h-3.5 w-3.5" /></button>
+          </div>
+        </div>;
+      })()}
       </>}
       {interiorLocal && vende(interiorLocal) && <div className={`absolute inset-0 bg-gradient-to-b from-[#fbf4ec] to-[#efe6d8] transition-all duration-300 ease-out ${interiorVisible ? "scale-100 opacity-100" : "pointer-events-none scale-[1.06] opacity-0"}`}>
-        <InteriorLocal key={interiorLocal.id} local={interiorLocal} cajas={cajas.filter(c => c.sucursalId === interiorLocal.id)} estados={estados}
+        <InteriorLocal key={interiorLocal.id} local={interiorLocal} cajas={cajas.filter(c => c.sucursalId === interiorLocal.id)} estados={estados} actividad={actividadDe(interiorLocal.id)}
+          onMasDetalles={() => onMasDetalles(interiorLocal.id)}
           ocupado={ocupadoCajas} error={errorCajas} onVolver={() => void salir()}
           onCambiarCantidad={n => onCambiarCajas(interiorLocal.id, n)} onIrACaja={id => onIrACaja(interiorLocal.id, id)} />
       </div>}
