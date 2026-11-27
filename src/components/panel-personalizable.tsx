@@ -3,7 +3,7 @@
 import { useEffect, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Sparkles, SlidersHorizontal } from "lucide-react";
+import { BarChart3, Sparkles, SlidersHorizontal } from "lucide-react";
 import { seleccionarSucursal } from "@/app/actions";
 import { PageHeader, StatCard } from "@/components/ui";
 import { BarChart, DonutChart, HBarChart } from "@/components/charts";
@@ -43,7 +43,7 @@ export function PanelPersonalizable({ metricas: r, sucursales, activaId, adminis
   };
   const seleccionar = (valor: string) => start(async () => { const id = valor === "todas" ? null : Number(valor); const res = await seleccionarSucursal(id); if (res.ok) router.refresh(); });
   return <>
-    <PageHeader title="Panel" subtitle={activaId ? `Indicadores de ${sucursales.find(s => s.id === activaId)?.nombre ?? "la sucursal"}.` : "Indicadores de todas las sucursales."} action={<Link href="/admin/ia" className="btn-primary"><Sparkles className="h-4 w-4" /> Preguntar a la IA</Link>} />
+    <PageHeader title="Panel" subtitle={activaId ? `Indicadores de ${sucursales.find(s => s.id === activaId)?.nombre ?? "la sucursal"}.` : "Indicadores de todas las sucursales."} action={<div className="flex flex-wrap gap-2">{administrador && <Link href="/admin/ventas/metricas" className="btn-ghost"><BarChart3 className="h-4 w-4" /> Métricas de ventas</Link>}<Link href="/admin/ia" className="btn-primary"><Sparkles className="h-4 w-4" /> Preguntar a la IA</Link></div>} />
     <div className="card mb-5 flex flex-wrap items-end gap-3 p-4">
       {administrador && <label className="text-sm font-medium">Sucursal<select aria-label="Sucursal del panel" className="input mt-1" value={activaId ?? "todas"} disabled={pendiente} onChange={e => seleccionar(e.target.value)}><option value="todas">Todas las sucursales</option>{sucursales.map(s => <option value={s.id} key={s.id}>{s.nombre}</option>)}</select></label>}
       <button className="btn-ghost" onClick={() => setConfigurar(!configurar)}><SlidersHorizontal className="h-4 w-4" /> Personalizar panel</button>

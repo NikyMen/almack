@@ -425,6 +425,13 @@ const indices = [
   `CREATE INDEX IF NOT EXISTS idx_ventas_sucursal ON ventas(sucursal_id)`,
   `CREATE INDEX IF NOT EXISTS idx_ventas_sucursal_fecha ON ventas(sucursal_id, fecha DESC, id DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_ventas_fecha ON ventas(fecha DESC, id DESC)`,
+  // Métricas de ventas: filtran por estado y rango de fecha (con o sin local),
+  // y cruzan las líneas por venta, producto y turno de caja.
+  `CREATE INDEX IF NOT EXISTS idx_ventas_estado_fecha ON ventas(estado, fecha)`,
+  `CREATE INDEX IF NOT EXISTS idx_ventas_estado_sucursal_fecha ON ventas(estado, sucursal_id, fecha)`,
+  `CREATE INDEX IF NOT EXISTS idx_ventas_turno ON ventas(caja_turno_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_venta_items_venta ON venta_items(venta_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_venta_items_producto ON venta_items(producto_id)`,
   `CREATE INDEX IF NOT EXISTS idx_caja_aperturas_pendientes ON caja_turnos(apertura_estado, sucursal_id, id)`,
   `CREATE INDEX IF NOT EXISTS idx_caja_cierres_pendientes ON caja_turnos(estado, sucursal_id, id)`,
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_caja_abierta ON caja_turnos(caja_id) WHERE estado = 'abierta'`,
